@@ -1,77 +1,38 @@
 #include <Arduino.h>
 
-// Define the GPIO pin connected to the MOSFET gate
-const int ledPin = 5;  // Adjust this to the GPIO pin you're using
-
-// Optional debounce time to avoid rapid toggling (in milliseconds)
-const unsigned long debounceDelay = 100;
-unsigned long lastToggleTime = 0;
+// Define the pin for LED control
+const int ledPin = 4;  // Update this to a PWM pin if needed
 
 void setup() {
-  // Initialize serial communication at 115200 baud rate
-  Serial.begin(115200);
-
-  // Initialize the MOSFET pin (LED control) as an output
-  pinMode(ledPin, OUTPUT);
-
-  // Turn off the LED strip initially (set the MOSFET gate low)
-  digitalWrite(ledPin, LOW);
-
-  // Print an initialization message to serial
-  Serial.println("ESP32 LED Controller Initialized.");
+  Serial.begin(115200);  // Start serial communication
+  pinMode(ledPin, OUTPUT);  // Set LED pin as output
+  digitalWrite(ledPin, LOW); // Ensure LED is off initially
 }
 
 void loop() {
   // Check if data is available on the serial port
   if (Serial.available() > 0) {
-    // Read the incoming data
-    String command = Serial.readStringUntil('\n');
-    command.trim();  // Remove any trailing newlines or spaces
+    byte command = Serial.read();  // Read the command byte
 
-    // Handle the command with debounce
-    unsigned long currentTime = millis();
-    if (currentTime - lastToggleTime >= debounceDelay) {
-      handleCommand(command);
-      lastToggleTime = currentTime;
+    // Process the command
+    if (command == 0x01) {
+      // Turn on the LED with maximum brightness
+      digitalWrite(ledPin, HIGH);  // Turn on the LED
+      delay(50);  // Small delay to ensure the LED is fully on
+      Serial.write(0x01);  // Send acknowledgment for LED ON
+    }
+    else if (command == 0x00) {
+      // Turn off the LED
+      digitalWrite(ledPin, LOW);  // Turn off the LED
+      delay(50);  // Small delay to ensure the LED is fully off
+      Serial.write(0x00);  // Send acknowledgment for LED OFF
+    }
+    else {
+      // Unknown command, send an error response or ignore
+      Serial.write(0xFF);  // Optional: send error code for unknown command
     }
   }
-}
 
-void handleCommand(String command) {
-  // Convert the command to uppercase for case-insensitive comparison
-  command.toUpperCase();
-
-  // Check for the "ON" command
-  if (command.startsWith("ON")) {
-    Serial.println("Turning LED ON");
-    digitalWrite(ledPin, HIGH);  // Set the MOSFET gate high, turning on the LED strip
-    Serial.println("LED ON");
-  }
-  // Check for the "OFF" command
-  else if (command.startsWith("OFF")) {
-    Serial.println("Turning LED OFF");
-    digitalWrite(ledPin, LOW);   // Set the MOSFET gate low, turning off the LED strip
-    Serial.println("LED OFF");
-  }
-  // Optional: Check for a timed ON command (e.g., "ON for 5")
-  else if (command.startsWith("ON FOR")) {
-    // Extract the time from the command string
-    int onTime = command.substring(7).toInt();  // Get the time in seconds
-    if (onTime > 0) {
-      Serial.print("Turning LED ON for ");
-      Serial.print(onTime);
-      Serial.println(" seconds");
-
-      digitalWrite(ledPin, HIGH);
-      delay(onTime * 1000);  // Wait for the specified time (in milliseconds)
-      digitalWrite(ledPin, LOW);
-      Serial.println("LED OFF after timed ON");
-    } else {
-      Serial.println("Invalid time for ON command.");
-    }
-  }
-  // If the command is unrecognized, send an error message
-  else {
-    Serial.println("Unknown command. Please use 'ON', 'OFF', or 'ON FOR <seconds>'.");
-  }
+  // Optional: Add some delay if you want to prevent rapid command processing
+  delay(10);
 }

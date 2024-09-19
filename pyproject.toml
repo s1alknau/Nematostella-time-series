@@ -44,6 +44,8 @@ testing = [
 [project.entry-points."napari.manifest"]
 nematostella-time-series = "timeseries_capture:napari.yaml"
 
+
+
 [project.urls]
 "Bug Tracker" = "https://github.com/s1alknau/nematostella-time-series/issues"
 "Documentation" = "https://github.com/s1alknau/nematostella-time-series#README.md"
