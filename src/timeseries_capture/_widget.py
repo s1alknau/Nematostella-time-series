@@ -19,6 +19,7 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from serial.tools import list_ports  # Import for detecting available ports
 
 
 class NematostellaTimeSeriesCapture(QWidget):
@@ -80,14 +81,26 @@ class NematostellaTimeSeriesCapture(QWidget):
         self.record_button.clicked.connect(self.start_recording_thread)
         layout.addWidget(self.record_button)
 
+        # Stop button
+        self.stop_button = QPushButton("Stop Recording")
+        self.stop_button.setEnabled(False)  # Initially disabled, enabled during recording
+        self.stop_button.clicked.connect(self.stop_recording)
+        layout.addWidget(self.stop_button)
+
         self.setLayout(layout)
 
         # Initialize selected directory variable
         self.selected_directory = None
         self.led_is_on = False  # Flag to track the LED state
+        self.stop_requested = False  # Flag to stop recording safely
 
         # Setup serial connection to ESP32
         self.serial_port = None
+        self.serial_port_name = None
+        self.init_serial_connection()  # Initialize serial connection during widget setup
+
+    def init_serial_connection(self):
+        """Initialize the serial connection to the ESP32."""
         try:
             self.serial_port_name = self.get_serial_port_name()
             print(f"Detected platform: {sys.platform}")
@@ -114,6 +127,7 @@ class NematostellaTimeSeriesCapture(QWidget):
                 f"Failed to open serial port {self.serial_port_name}: {e}"
             )
             self.serial_port = None
+            self.record_button.setEnabled(False)  # Disable recording if serial port fails
 
     def start_recording_thread(self):
         """Starts recording in a separate thread."""
@@ -122,16 +136,29 @@ class NematostellaTimeSeriesCapture(QWidget):
                 "Please select a directory to save the files before starting the recording."
             )
             return
+        self.stop_requested = False  # Reset stop flag
         self.start_recording()
 
+    def stop_recording(self):
+        """Stop the recording process safely."""
+        self.stop_requested = True
+        if self.hdf5_file:
+            self.hdf5_file.flush()
+            self.hdf5_file.close()
+        self.record_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        print("Recording stopped.")
+
     def get_serial_port_name(self):
-        """Determine the correct serial port based on the operating system."""
-        platform_name = sys.platform
-        print(f"Detected platform: {platform_name}")
-        if platform_name == "win32" or platform_name == "cygwin":
-            return "COM5"  # Update this based on the correct COM port for your Windows system
-        else:
-            return "/dev/ttyUSB0"  # Default for Linux/macOS
+        """Automatically detect and return the serial port name based on available ports."""
+        ports = list_ports.comports()
+        for port in ports:
+            print(f"Found port: {port.device}")
+            # Optionally, check port description or manufacturer to match specific device
+            return port.device
+        # Default case if no ports are found
+        self.show_error_message("No serial ports found. Ensure the ESP32 is connected.")
+        return None
 
     def select_directory(self):
         """Open a dialog to select a directory for saving the HDF5 or TIFF files."""
@@ -143,8 +170,18 @@ class NematostellaTimeSeriesCapture(QWidget):
             self.selected_dir_label.setText("No directory selected")
 
     def send_esp32_command(self, command):
-        """Sends a binary command to the ESP32 over the serial port."""
-        if self.serial_port and self.serial_port.is_open:
+        """Sends a binary command to the ESP32 over the serial port with retries."""
+        retry_count = 0
+        max_retries = 3 # Number of retries for sending commands
+
+        if not self.serial_port or not self.serial_port.is_open:
+            print("Serial port is not available, attempting to reinitialize...")
+            self.init_serial_connection()  # Attempt to reinitialize the connection
+            if not self.serial_port or not self.serial_port.is_open:
+                self.show_error_message("Failed to communicate with ESP32.")
+                return False
+
+        while retry_count < max_retries:
             try:
                 # Clear input buffer before sending a new command
                 self.serial_port.reset_input_buffer()
@@ -159,29 +196,37 @@ class NematostellaTimeSeriesCapture(QWidget):
                     response_value = int.from_bytes(response, byteorder="big")
                     print(f"ESP32 Response: {response_value:#04x}")
 
-                    if response_value == command:
-                        # Update LED status flag
-                        self.led_is_on = command == 0x01
+                    # Handle different response values
+                    if (command == 0x01 and response_value == 0x01) or (command == 0x00 and response_value == 0x02):
+                        self.led_is_on = command == 0x01  # Update LED status flag
                         return True  # Successful response
+                    elif response_value == 0xFE:
+                        print("Buffer overflow detected on ESP32.")
+                    elif response_value == 0xFD:
+                        print("Timeout error detected on ESP32.")
+                    elif response_value == 0xFC:
+                        print("Invalid command detected on ESP32.")
                     else:
                         print("Unexpected response or error.")
-                        return False
                 else:
                     print("No response from ESP32.")
-                    return False
+                retry_count += 1  # Increment retry count if response is not as expected
+
             except serial.SerialException as e:
-                # Handle serial communication errors
                 self.show_error_message(f"Error communicating with ESP32: {e}")
                 return False
-        else:
-            # Simulate ESP32 command in the test environment
-            print(f"Simulating ESP32 command: {command:#04x}")
-            self.led_is_on = command == 0x01  # Update flag in simulation
-            return True
+
+        # If maximum retries are reached, show error
+        print(f"Failed to communicate with ESP32 after {max_retries} retries.")
+        self.show_error_message(
+            f"Failed to communicate with ESP32 after {max_retries} retries."
+        )
+        return False
 
     def start_recording(self):
         """Starts the recording process, synchronizing LED and frame capturing."""
         self.record_button.setEnabled(False)
+        self.stop_button.setEnabled(True)  # Enable stop button during recording
 
         # Input validation
         if not self.validate_inputs():
@@ -286,12 +331,19 @@ class NematostellaTimeSeriesCapture(QWidget):
             self.record_button.setEnabled(True)
 
     def capture_next_frame(self):
+        """Capture the next frame in the time series."""
+        if self.stop_requested:
+            # If stop is requested, safely terminate the recording process
+            self.stop_recording()
+            return
+
         if self.current_frame >= self.total_frames:
             # Recording complete
             self.hdf5_file.flush()
             self.hdf5_file.close()
             print("Recording complete.")
             self.record_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
             return
 
         # Turn on LED
@@ -304,6 +356,7 @@ class NematostellaTimeSeriesCapture(QWidget):
             self.schedule_next_frame()
 
     def capture_frame(self):
+        """Capture the current frame from the live view."""
         try:
             # Ensure LED is on before capturing the frame
             if not self.led_is_on:
@@ -389,6 +442,7 @@ class NematostellaTimeSeriesCapture(QWidget):
         QTimer.singleShot(int(self.interval * 1000), self.capture_next_frame)
 
     def schedule_next_frame(self):
+        """Schedules the next frame capture based on the interval."""
         QTimer.singleShot(int(self.interval * 1000), self.capture_next_frame)
 
     def validate_inputs(self):
