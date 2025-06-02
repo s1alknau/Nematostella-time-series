@@ -2,12 +2,13 @@ import os
 import sys
 import time
 import traceback
+import struct
 
 import h5py
 import numpy as np
 import serial
 from napari.layers import Image
-from PIL import Image as PILImage  # Pillow library for saving TIFF files
+from PIL import Image as PILImage
 from qtpy.QtCore import QTimer
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -19,149 +20,153 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from serial.tools import list_ports  # Import for detecting available ports
+from serial.tools import list_ports  # Import für serielle Port-Erkennung
+
+
+def napari_experimental_provide_dock_widget():
+    """Stellt das Widget als Dock in Napari bereit."""
+    return NematostellaTimeSeriesCapture
 
 
 class NematostellaTimeSeriesCapture(QWidget):
+    """
+    Napari-Widget zur synchronisierten LED-Ansteuerung und Timelapse-Aufnahme (mit DHT22).
+    Unterstützt variable Belichtungszeit (Exposure) und Intervall, speichert Framefolge
+    zuverlässig als HDF5 (Mono oder RGB) sowie optional TIFF und Metadaten (Temperatur/Luftfeuchte).
+    """
+
+    # Protokoll-Bezeichner
+    CMD_LED_ON           = 0x01
+    CMD_LED_OFF          = 0x00
+    CMD_STATUS           = 0x02
+    CMD_START_TIMELAPSE  = 0x03
+    CMD_STOP_TIMELAPSE   = 0x04
+
+    RESPONSE_ACK_ON         = 0x01
+    RESPONSE_ACK_OFF        = 0x02
+    RESPONSE_STATUS_ON      = 0x11
+    RESPONSE_STATUS_OFF     = 0x10
+    RESPONSE_ERROR          = 0xFF
+    RESPONSE_BUFFER_OVERFLOW= 0xFE
+    RESPONSE_TIMEOUT        = 0xFD
+    RESPONSE_INVALID_CMD    = 0xFC
+
+    RESPONSE_TIMELAPSE_ACK  = 0xA3
+    RESPONSE_TIMELAPSE_STOP = 0xA4
+
     def __init__(self, napari_viewer):
         super().__init__()
-        self.viewer = napari_viewer  # Store the Napari viewer instance
+        self.viewer = napari_viewer
 
-        # Create the main layout
+        # Initialisierung der Parameter
+        self.selected_directory = None
+        self.serial_port = None
+        self.serial_port_name = None
+        self.stop_requested = False
+        self.timelapse_running = False
+
+        self.duration      = None  # in Sekunden
+        self.interval_s    = None  # in Sekunden
+        self.exposure_ms   = None  # in Millisekunden
+        self.total_frames  = None
+        self.current_frame = 0
+
+        self.is_rgb = None  # True = RGB, False = Monochrom
+
+        # UI-Aufbau
         layout = QVBoxLayout()
 
-        # Recording duration input (in minutes)
-        self.duration_label = QLabel("Recording Duration (minutes):")
+        # Recording Duration
+        layout.addWidget(QLabel("Recording Duration (minutes):"))
         self.duration_input = QLineEdit()
         self.duration_input.setPlaceholderText("Enter duration in minutes")
-        layout.addWidget(self.duration_label)
         layout.addWidget(self.duration_input)
 
-        # Interval between frames input (in seconds)
-        self.interval_label = QLabel("Interval Between Frames (seconds):")
+        # Interval Between Frames
+        layout.addWidget(QLabel("Interval Between Frames (seconds):"))
         self.interval_input = QLineEdit()
         self.interval_input.setPlaceholderText("Enter interval in seconds")
-        layout.addWidget(self.interval_label)
         layout.addWidget(self.interval_input)
 
-        # Checkbox for saving metadata
+        # Exposure Time
+        layout.addWidget(QLabel("Exposure Time (milliseconds):"))
+        self.exposure_input = QLineEdit()
+        self.exposure_input.setPlaceholderText("Enter exposure in ms")
+        layout.addWidget(self.exposure_input)
+
+        # Checkboxes
         self.save_metadata_checkbox = QCheckBox("Save Metadata")
         layout.addWidget(self.save_metadata_checkbox)
-
-        # Checkbox for saving as TIFF files
         self.save_as_tiff_checkbox = QCheckBox("Save Frames as TIFF Files")
         layout.addWidget(self.save_as_tiff_checkbox)
 
-        # Directory selection button and label
+        # Verzeichnis-Auswahl
         self.select_dir_button = QPushButton("Select Save Directory")
         self.select_dir_button.clicked.connect(self.select_directory)
         layout.addWidget(self.select_dir_button)
-
         self.selected_dir_label = QLabel("No directory selected")
         layout.addWidget(self.selected_dir_label)
 
-        # Manual LED control buttons
-        self.led_control_label = QLabel("Manual LED Control:")
-        layout.addWidget(self.led_control_label)
-
+        # Manuelle LED-Kontrolle
+        layout.addWidget(QLabel("Manual LED Control (Einfach):"))
         self.led_on_button = QPushButton("Turn LED On")
-        self.led_on_button.clicked.connect(
-            lambda: self.send_esp32_command(0x01)
-        )  # Send 0x01 for ON
+        self.led_on_button.clicked.connect(lambda: self.send_simple_command(self.CMD_LED_ON))
         layout.addWidget(self.led_on_button)
-
         self.led_off_button = QPushButton("Turn LED Off")
-        self.led_off_button.clicked.connect(
-            lambda: self.send_esp32_command(0x00)
-        )  # Send 0x00 for OFF
+        self.led_off_button.clicked.connect(lambda: self.send_simple_command(self.CMD_LED_OFF))
         layout.addWidget(self.led_off_button)
 
-        # Record button
+        # Start / Stop Buttons
         self.record_button = QPushButton("Start Recording")
         self.record_button.clicked.connect(self.start_recording_thread)
         layout.addWidget(self.record_button)
 
-        # Stop button
         self.stop_button = QPushButton("Stop Recording")
-        self.stop_button.setEnabled(False)  # Initially disabled, enabled during recording
+        self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_recording)
         layout.addWidget(self.stop_button)
 
         self.setLayout(layout)
 
-        # Initialize selected directory variable
-        self.selected_directory = None
-        self.led_is_on = False  # Flag to track the LED state
-        self.stop_requested = False  # Flag to stop recording safely
+        # Serielle Verbindung initialisieren
+        self.init_serial_connection()
 
-        # Setup serial connection to ESP32
-        self.serial_port = None
-        self.serial_port_name = None
-        self.init_serial_connection()  # Initialize serial connection during widget setup
+        # Timer für serielle Polling
+        self.serial_timer = QTimer(self)
+        self.serial_timer.setInterval(10)
+        self.serial_timer.timeout.connect(self.handle_serial_response)
 
     def init_serial_connection(self):
-        """Initialize the serial connection to the ESP32."""
+        """Initialisiert die serielle Kommunikation mit dem ESP32."""
         try:
             self.serial_port_name = self.get_serial_port_name()
-            print(f"Detected platform: {sys.platform}")
-            print(f"Attempting to open serial port: {self.serial_port_name}")
             self.serial_port = serial.Serial(
                 self.serial_port_name,
                 115200,
-                timeout=1,
+                timeout=0.1,
+                write_timeout=1,
                 dsrdtr=False,
                 rtscts=False,
                 xonxoff=False,
-                write_timeout=1,
             )
-
-            # Set DTR and RTS to False after opening the port
             self.serial_port.dtr = False
             self.serial_port.rts = False
-
-            time.sleep(2)  # Wait for ESP32 to finish booting
-            self.serial_port.reset_input_buffer()  # Discard any initial data
-            print("Serial port opened and initialized.")
-        except serial.SerialException as e:
-            self.show_error_message(
-                f"Failed to open serial port {self.serial_port_name}: {e}"
-            )
-            self.serial_port = None
-            self.record_button.setEnabled(False)  # Disable recording if serial port fails
-
-    def start_recording_thread(self):
-        """Starts recording in a separate thread."""
-        if not self.selected_directory:
-            self.show_error_message(
-                "Please select a directory to save the files before starting the recording."
-            )
-            return
-        self.stop_requested = False  # Reset stop flag
-        self.start_recording()
-
-    def stop_recording(self):
-        """Stop the recording process safely."""
-        self.stop_requested = True
-        if self.hdf5_file:
-            self.hdf5_file.flush()
-            self.hdf5_file.close()
-        self.record_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        print("Recording stopped.")
+            time.sleep(2)  # ESP32 braucht Zeit zum Booten
+            self.serial_port.reset_input_buffer()
+            print(f"Serial port {self.serial_port_name} initialized.")
+        except Exception as e:
+            self.show_error_message(f"Could not open serial port {self.serial_port_name}: {e}")
+            self.record_button.setEnabled(False)
 
     def get_serial_port_name(self):
-        """Automatically detect and return the serial port name based on available ports."""
+        """Gibt automatisch den ersten verfügbaren COM-Port zurück."""
         ports = list_ports.comports()
         for port in ports:
-            print(f"Found port: {port.device}")
-            # Optionally, check port description or manufacturer to match specific device
             return port.device
-        # Default case if no ports are found
-        self.show_error_message("No serial ports found. Ensure the ESP32 is connected.")
-        return None
+        raise serial.SerialException("No serial ports found.")
 
     def select_directory(self):
-        """Open a dialog to select a directory for saving the HDF5 or TIFF files."""
+        """Öffnet Dialog zum Auswählen des Speicherverzeichnisses."""
         directory = QFileDialog.getExistingDirectory(self, "Select Directory")
         if directory:
             self.selected_directory = directory
@@ -169,313 +174,311 @@ class NematostellaTimeSeriesCapture(QWidget):
         else:
             self.selected_dir_label.setText("No directory selected")
 
-    def send_esp32_command(self, command):
-        """Sends a binary command to the ESP32 over the serial port with retries."""
-        retry_count = 0
-        max_retries = 3 # Number of retries for sending commands
-
+    def send_simple_command(self, cmd_byte):
+        """
+        Sendet ein einzelnes Byte (z.B. LED_ON) und liest 1 Byte Antwort (für manuellen Test).
+        """
         if not self.serial_port or not self.serial_port.is_open:
-            print("Serial port is not available, attempting to reinitialize...")
-            self.init_serial_connection()  # Attempt to reinitialize the connection
+            self.init_serial_connection()
             if not self.serial_port or not self.serial_port.is_open:
                 self.show_error_message("Failed to communicate with ESP32.")
                 return False
 
-        while retry_count < max_retries:
-            try:
-                # Clear input buffer before sending a new command
-                self.serial_port.reset_input_buffer()
-
-                # Send the binary command (0x01 for ON, 0x00 for OFF)
-                self.serial_port.write(bytes([command]))
-                print(f"Sent binary command to ESP32: {command:#04x}")
-
-                # Read 1 byte response with a short timeout
-                response = self.serial_port.read(1)
-                if response:
-                    response_value = int.from_bytes(response, byteorder="big")
-                    print(f"ESP32 Response: {response_value:#04x}")
-
-                    # Handle different response values
-                    if (command == 0x01 and response_value == 0x01) or (command == 0x00 and response_value == 0x02):
-                        self.led_is_on = command == 0x01  # Update LED status flag
-                        return True  # Successful response
-                    elif response_value == 0xFE:
-                        print("Buffer overflow detected on ESP32.")
-                    elif response_value == 0xFD:
-                        print("Timeout error detected on ESP32.")
-                    elif response_value == 0xFC:
-                        print("Invalid command detected on ESP32.")
-                    else:
-                        print("Unexpected response or error.")
-                else:
-                    print("No response from ESP32.")
-                retry_count += 1  # Increment retry count if response is not as expected
-
-            except serial.SerialException as e:
-                self.show_error_message(f"Error communicating with ESP32: {e}")
+        try:
+            self.serial_port.reset_input_buffer()
+            self.serial_port.write(bytes([cmd_byte]))
+            resp = self.serial_port.read(1)
+            if resp:
+                val = resp[0]
+                print(f"Manual Response: 0x{val:02X}")
+                return True
+            else:
+                print("No response for simple command.")
                 return False
+        except Exception as e:
+            self.show_error_message(f"Error communicating with ESP32: {e}")
+            return False
 
-        # If maximum retries are reached, show error
-        print(f"Failed to communicate with ESP32 after {max_retries} retries.")
-        self.show_error_message(
-            f"Failed to communicate with ESP32 after {max_retries} retries."
-        )
-        return False
+    def start_recording_thread(self):
+        """Wird aufgerufen, wenn der User auf 'Start Recording' klickt."""
+        if not self.selected_directory:
+            self.show_error_message("Please select a directory before starting.")
+            return
+        self.stop_requested = False
+        self.start_recording()
 
     def start_recording(self):
-        """Starts the recording process, synchronizing LED and frame capturing."""
+        """
+        Bereitet alles vor, liest Parameter (Duration, Interval, Exposure),
+        öffnet HDF5 (Mono oder RGB), sendet START_TIMELAPSE-Paket und startet Timer.
+        """
         self.record_button.setEnabled(False)
-        self.stop_button.setEnabled(True)  # Enable stop button during recording
+        self.stop_button.setEnabled(True)
 
-        # Input validation
         if not self.validate_inputs():
             self.record_button.setEnabled(True)
             return
 
+        # Duration und Interval einlesen
+        duration_min = float(self.duration_input.text())
+        self.duration   = duration_min * 60.0  # in Sekunden
+        self.interval_s = float(self.interval_input.text())
         try:
-            # Convert duration from minutes to seconds
-            duration = float(self.duration_input.text()) * 60
-            self.interval = float(self.interval_input.text())
-
-            if duration <= 0 or self.interval <= 0:
-                raise ValueError("All input values must be greater than zero.")
-        except ValueError:
-            self.show_error_message(
-                "Invalid input values! Ensure all inputs are valid positive numbers."
-            )
+            self.exposure_ms = int(self.exposure_input.text())
+        except:
+            self.show_error_message("Exposure time must be an integer (ms).")
             self.record_button.setEnabled(True)
             return
 
-        # Check if the live view layer exists before starting
-        live_view_layer = next(
-            (
-                layer
-                for layer in self.viewer.layers
-                if isinstance(layer, Image)
-            ),
-            None,
-        )
-        if live_view_layer is None:
-            available_layers = [layer.name for layer in self.viewer.layers]
-            self.show_error_message(
-                f"Live view layer not found. Available layers: {available_layers}"
-            )
+        if self.exposure_ms <= 0:
+            self.show_error_message("Exposure must be > 0 ms.")
             self.record_button.setEnabled(True)
             return
 
-        # Initialize recording variables
+        if self.interval_s <= 0:
+            self.show_error_message("Interval must be > 0.")
+            self.record_button.setEnabled(True)
+            return
+
+        interval_ms = int(self.interval_s * 1000)
+        if self.exposure_ms > interval_ms:
+            self.show_error_message("Exposure cannot exceed interval.")
+            self.record_button.setEnabled(True)
+            return
+
+        # Anzahl Frames berechnen
+        self.total_frames  = int(self.duration / self.interval_s)
         self.current_frame = 0
-        self.total_frames = int(
-            duration / self.interval
-        )  # Total frames to capture based on duration and interval
 
-        # Get the expected frame shape
-        frame_shape = live_view_layer.data.shape
-        if len(frame_shape) == 3:
-            frame_height, frame_width, frame_channels = frame_shape
-            self.resolution = (
-                frame_height,
-                frame_width,
-            )  # Use actual frame dimensions
-            self.color_channels = frame_channels  # RGB
+        # Live-View-Layer prüfen und Shape auslesen
+        live_layer = next((l for l in self.viewer.layers if isinstance(l, Image)), None)
+        if live_layer is None:
+            self.show_error_message("Live view layer not found.")
+            self.record_button.setEnabled(True)
+            return
+
+        frame0 = live_layer.data.copy()
+        # Mono vs. RGB
+        if frame0.ndim == 2:
+            self.is_rgb = False
+            height, width = frame0.shape
+            channels = 1
+        elif frame0.ndim == 3 and frame0.shape[2] == 3:
+            self.is_rgb = True
+            height, width, _ = frame0.shape
+            channels = 3
         else:
             self.show_error_message(
-                "Live view layer data does not have the expected shape."
+                f"Unsupported frame shape: {frame0.shape}. Must be (H,W) or (H,W,3)."
             )
             self.record_button.setEnabled(True)
             return
 
-        # Open the first HDF5 file
-        self.open_new_hdf5_file(
-            num_frames=self.total_frames,
-            height=self.resolution[0],
-            width=self.resolution[1],
-        )
+        # HDF5-Datei öffnen (dynamisch Mono oder RGB)
+        self.open_new_hdf5_file(self.total_frames, height, width, channels)
 
-        # Start capturing frames
-        self.capture_next_frame()
-
-    def open_new_hdf5_file(self, num_frames, height, width):
-        """Open a new HDF5 file for storing frames."""
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        hdf5_filename = os.path.join(
-            self.selected_directory, f"recorded_frames_{timestamp}.h5"
-        )
+        # START_TIMELAPSE-Paket erstellen und senden
+        packet = bytearray()
+        packet.append(self.CMD_START_TIMELAPSE)
+        packet += struct.pack(">I", interval_ms)
+        packet += struct.pack(">I", self.exposure_ms)
 
         try:
-            self.hdf5_file = h5py.File(hdf5_filename, "w")
+            self.serial_port.reset_input_buffer()
+            self.serial_port.write(packet)
+        except Exception as e:
+            self.show_error_message(f"Failed to send START_TIMELAPSE: {e}")
+            self.record_button.setEnabled(True)
+            return
 
-            # Create the dataset with the correct shape
-            self.dataset = self.hdf5_file.create_dataset(
-                "frames",
-                shape=(
-                    num_frames,
-                    height,
-                    width,
-                    self.color_channels,
-                ),  # (total_frames, height, width, channels)
-                dtype=np.uint8,
-                chunks=(1, height, width, self.color_channels),
-                compression="gzip",
-            )
+        # Auf RESPONSE_TIMELAPSE_ACK (0xA3) warten (Timeout 2 s)
+        start_time = time.time()
+        ack = b""
+        while (time.time() - start_time) < 2.0:
+            data = self.serial_port.read(1)
+            if data:
+                ack = data
+                break
 
-            print(f"Opened new HDF5 file: {hdf5_filename}")
-            print(f"HDF5 dataset shape: {self.dataset.shape}")
-            print(f"Color channels: {self.color_channels}")
+        if not ack or ack[0] != self.RESPONSE_TIMELAPSE_ACK:
+            self.show_error_message("No Timelapse-ACK from ESP32 (0xA3). Abbruch.")
+            self.record_button.setEnabled(True)
+            return
 
-        except (OSError, ValueError) as e:
-            print(f"Exception during HDF5 file creation: {e}")
+        # Timer starten, der alle 10 ms nach ACK_ON+Temp+Hum sucht
+        self.timelapse_running = True
+        self.serial_timer.start()
+
+    def open_new_hdf5_file(self, num_frames, height, width, channels):
+        """
+        Öffnet HDF5. Für Monochrom (channels=1) = (frames, H, W).
+        Für RGB (channels=3) = (frames, H, W, 3).
+        """
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join(self.selected_directory, f"recorded_frames_{ts}.h5")
+        try:
+            self.hdf5_file = h5py.File(filepath, 'w')
+            if channels == 1:
+                self.dataset = self.hdf5_file.create_dataset(
+                    'frames',
+                    shape=(num_frames, height, width),
+                    dtype=np.uint8,
+                    chunks=(1, height, width),
+                    compression='gzip'
+                )
+            else:
+                self.dataset = self.hdf5_file.create_dataset(
+                    'frames',
+                    shape=(num_frames, height, width, 3),
+                    dtype=np.uint8,
+                    chunks=(1, height, width, 3),
+                    compression='gzip'
+                )
+            print(f"Opened new HDF5: {filepath}, shape {self.dataset.shape}")
+        except Exception as e:
+            print(f"Exception creating HDF5: {e}")
             traceback.print_exc()
             self.show_error_message(f"Error creating HDF5 file: {e}")
             self.record_button.setEnabled(True)
 
-    def capture_next_frame(self):
-        """Capture the next frame in the time series."""
-        if self.stop_requested:
-            # If stop is requested, safely terminate the recording process
-            self.stop_recording()
+    def handle_serial_response(self):
+        """
+        Wird alle 10 ms aufgerufen, solange timelapse_running True ist.
+        Liest 3 Bytes: [ACK_ON | temp | hum]. Sobald ACK_ON erkannt wird,
+        captured das aktuelle Frame von Napari und speichert es (Mono oder RGB).
+        """
+        if not self.timelapse_running:
             return
 
-        if self.current_frame >= self.total_frames:
-            # Recording complete
-            self.hdf5_file.flush()
-            self.hdf5_file.close()
-            print("Recording complete.")
-            self.record_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
+        if self.serial_port.in_waiting < 3:
             return
 
-        # Turn on LED
-        if self.send_esp32_command(0x01):
-            print("LED turned ON.")
-            # Delay for 1 second to ensure LED is stable and bright
-            QTimer.singleShot(1000, self.capture_frame)
-        else:
-            print("Error: Failed to turn on the LED.")
-            self.schedule_next_frame()
-
-    def capture_frame(self):
-        """Capture the current frame from the live view."""
         try:
-            # Ensure LED is on before capturing the frame
-            if not self.led_is_on:
-                print("LED is off, skipping frame capture.")
-                self.schedule_next_frame()
+            chunk = self.serial_port.read(3)
+            if len(chunk) < 3:
+                return
+            ack_byte, temp_byte, hum_byte = chunk
+
+            if ack_byte != self.RESPONSE_ACK_ON:
+                # Unerwartetes Byte, ignorieren
+                print(f"Unexpected byte: 0x{ack_byte:02X}, ignored.")
                 return
 
-            live_view_layer = next(
-                (
-                    layer
-                    for layer in self.viewer.layers
-                    if isinstance(layer, Image)
-                ),
-                None,
-            )
-            if live_view_layer is None:
+            # Nun das Frame aus dem Napari-Layer abgreifen
+            live_layer = next((l for l in self.viewer.layers if isinstance(l, Image)), None)
+            if live_layer is None:
+                print(f"Skipping frame {self.current_frame+1}: no live view.")
+            else:
+                frame = live_layer.data.copy()
+                if frame.dtype != np.uint8:
+                    frame = frame.astype(np.uint8)
+
+                # Speicherung je nach Mono/RGB
+                if not self.is_rgb:
+                    # Monochrom erwartet (H,W)
+                    if frame.ndim == 2:
+                        self.dataset[self.current_frame, :, :] = frame
+                    elif frame.ndim == 3 and frame.shape[2] == 3:
+                        # Falls versehentlich 3-Kanal rein, nehme ersten Kanal
+                        gray = frame[:, :, 0]
+                        self.dataset[self.current_frame, :, :] = gray
+                    else:
+                        print(f"Unexpected frame shape for monochrome: {frame.shape}")
+                else:
+                    # RGB erwartet (H,W,3)
+                    if frame.ndim == 3 and frame.shape[2] == 3:
+                        self.dataset[self.current_frame, ...] = frame
+                    else:
+                        # Falls Mono rein, konvertiere zu RGB (dreimal mono-Kanal)
+                        if frame.ndim == 2:
+                            rgb = np.stack([frame]*3, axis=2)
+                            self.dataset[self.current_frame, ...] = rgb
+                        else:
+                            print(f"Unexpected frame shape for RGB: {frame.shape}")
+
+                # Optional: TIFF exportieren
+                if self.save_as_tiff_checkbox.isChecked():
+                    if not self.is_rgb:
+                        # Monochrom-TIFF
+                        img = frame if frame.ndim == 2 else frame[:, :, 0]
+                        fname = os.path.join(
+                            self.selected_directory,
+                            f"frame_{self.current_frame+1:04d}.tiff"
+                        )
+                        PILImage.fromarray(img).save(fname)
+                    else:
+                        # RGB-TIFF
+                        fname = os.path.join(
+                            self.selected_directory,
+                            f"frame_{self.current_frame+1:04d}.tiff"
+                        )
+                        PILImage.fromarray(frame).save(fname)
+
+                # Metadaten (Temperatur, Luftfeuchte) speichern
+                if self.save_metadata_checkbox.isChecked():
+                    grp = self.hdf5_file.require_group("metadata")
+                    stamp = time.time()
+                    grp.attrs[f"frame_{self.current_frame+1:04d}_timestamp"] = stamp
+                    grp.attrs[f"frame_{self.current_frame+1:04d}_temp"] = int(temp_byte)
+                    grp.attrs[f"frame_{self.current_frame+1:04d}_hum"]  = int(hum_byte)
+
                 print(
-                    f"Skipping frame {self.current_frame + 1} due to missing live view layer."
+                    f"Captured frame {self.current_frame+1}/{self.total_frames}, "
+                    f"Temp={int(temp_byte)}°C, Hum={int(hum_byte)}%"
                 )
-                self.schedule_next_frame()
+
+            self.current_frame += 1
+
+            # Prüfen, ob wir fertig sind oder Abbruch gewünscht
+            if self.current_frame >= self.total_frames or self.stop_requested:
+                self.serial_timer.stop()
+                self.timelapse_running = False
+                try:
+                    self.serial_port.write(bytes([self.CMD_STOP_TIMELAPSE]))
+                except Exception as e:
+                    print(f"Error sending STOP_TIMELAPSE: {e}")
+
+                if hasattr(self, 'hdf5_file') and self.hdf5_file:
+                    self.hdf5_file.flush()
+                    self.hdf5_file.close()
+
+                self.record_button.setEnabled(True)
+                self.stop_button.setEnabled(False)
+                print("Timelapse completed or aborted.")
                 return
 
-            # Capture the full frame data and make a copy
-            frame = (
-                live_view_layer.data.copy()
-            )  # Copy the data to ensure no live data is altered
-            print(f"Captured frame shape: {frame.shape}")
-
-            # Ensure the captured frame has the right dimensions
-            if frame.shape == (
-                self.resolution[0],
-                self.resolution[1],
-                self.color_channels,
-            ):
-                # The frame is already in the correct shape, so no reshaping is needed
-                print("Frame is in the correct shape.")
-            else:
-                raise ValueError(f"Frame has unexpected shape: {frame.shape}")
-
-            # Print frame data type
-            print(f"Frame data type: {frame.dtype}")
-
-            # Convert frame to np.uint8 if necessary
-            if frame.dtype != np.uint8:
-                print("Converting frame to np.uint8")
-                frame = frame.astype(np.uint8)
-
-            # Turn off LED
-            if self.send_esp32_command(0x00):
-                print("LED turned OFF.")
-            else:
-                print("Error: Failed to turn off the LED.")
-
-            # Save frame to HDF5
-            try:
-                print(f"Dataset shape: {self.dataset.shape}")
-                print(f"Current frame index: {self.current_frame}")
-                self.dataset[self.current_frame, ...] = frame
-                print(f"Frame {self.current_frame} written to HDF5 dataset.")
-            except (OSError, ValueError, IndexError) as e:
-                print(
-                    f"Error writing frame {self.current_frame} to HDF5 dataset: {e}"
-                )
-                traceback.print_exc()
-
-            # Save frame as TIFF if the checkbox is checked
-            if self.save_as_tiff_checkbox.isChecked():
-                tiff_filename = os.path.join(
-                    self.selected_directory,
-                    f"frame_{self.current_frame + 1:04d}.tiff",
-                )
-                PILImage.fromarray(frame).save(tiff_filename)
-                print(f"Saved frame as TIFF: {tiff_filename}")
-
-            print(f"Captured frame {self.current_frame + 1}")
-
-        except (OSError, ValueError, RuntimeError) as e:
-            print(f"Exception during frame capture: {e}")
+        except Exception:
             traceback.print_exc()
+            return
 
-        # Schedule next frame
-        self.current_frame += 1
-        QTimer.singleShot(int(self.interval * 1000), self.capture_next_frame)
-
-    def schedule_next_frame(self):
-        """Schedules the next frame capture based on the interval."""
-        QTimer.singleShot(int(self.interval * 1000), self.capture_next_frame)
+    def stop_recording(self):
+        """Wird aufgerufen, wenn der User auf ‘Stop Recording’ klickt."""
+        self.stop_requested = True
+        # Der Timer bemerkt es in handle_serial_response() und sendet STOP_TIMELAPSE.
 
     def validate_inputs(self):
-        """Validates the input fields and returns whether the inputs are valid."""
-        if not self.duration_input.text() or not self.interval_input.text():
-            self.show_error_message(
-                "Please enter valid duration and interval values."
-            )
+        """Validiert Duration, Interval, Exposure und das gespeicherte Verzeichnis."""
+        if not self.duration_input.text() or not self.interval_input.text() or not self.exposure_input.text():
+            self.show_error_message("Please enter duration, interval, and exposure.")
             return False
         try:
-            duration = float(self.duration_input.text()) * 60
-            interval = float(self.interval_input.text())
-            if duration <= 0 or interval <= 0:
-                self.show_error_message(
-                    "Duration and interval must be greater than zero."
-                )
-                return False
+            d = float(self.duration_input.text())
+            i = float(self.interval_input.text())
+            e = int(self.exposure_input.text())
+            if d <= 0 or i <= 0 or e <= 0:
+                raise ValueError
         except ValueError:
-            self.show_error_message(
-                "Please enter numeric values for duration and interval."
-            )
+            self.show_error_message("Duration and interval must be positive numbers; exposure must be positive integer.")
             return False
         if not self.selected_directory:
-            self.show_error_message(
-                "Please select a directory to save the files."
-            )
+            self.show_error_message("Select a save directory.")
             return False
         return True
 
     def show_error_message(self, message):
-        """Display error messages to the user."""
-        error_msg = QMessageBox(self)
-        error_msg.setIcon(QMessageBox.Critical)
-        error_msg.setWindowTitle("Error")
-        error_msg.setText(message)
-        error_msg.exec_()
+        """Zeigt einen Error-Dialog an."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Error")
+        msg.setText(message)
+        msg.exec_()
