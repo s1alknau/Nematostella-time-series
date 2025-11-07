@@ -92,19 +92,15 @@ class FrameCaptureService:
             # =================================================================
             pulse_start = time.time()
 
-            if led_config_changed or not self._led_is_on:
-                # LED configuration needs to change - turn OFF old LED first
-                if self._led_is_on and self._current_led_type is not None:
-                    logger.debug(f"[LED OFF] Turning off {self._current_led_type} LED...")
-                    if self._current_led_type == "dual":
-                        self.esp32.led_dual_off()
-                    else:
-                        self.esp32.led_off(self._current_led_type)
-                    self._led_is_on = False
-                    time.sleep(0.1)  # Small delay after turning off
-
-                # Now configure and turn ON new LED
-                logger.info(f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}")
+            # LED is OFF between frames, so we always need to turn it on
+            if not self._led_is_on:
+                # Turn ON LED (reuse existing LED type if possible)
+                if led_config_changed:
+                    logger.info(
+                        f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}"
+                    )
+                else:
+                    logger.debug(f"[LED ON] Turning on {target_led_config} LED (same as previous)")
 
                 if dual_mode:
                     # Dual mode: Turn on both LEDs
@@ -126,7 +122,7 @@ class FrameCaptureService:
                 self._current_led_type = target_led_config
                 self._led_is_on = True
 
-                # WARTE für LED Stabilization (full time needed after turning on)
+                # ALWAYS wait for LED Stabilization (same time regardless of LED type or config change)
                 stabilization_sec = self.stabilization_ms / 1000.0
                 logger.debug(
                     f"[LED STABILIZING] Waiting {stabilization_sec:.3f}s for LED to stabilize"
@@ -136,12 +132,9 @@ class FrameCaptureService:
                 stabilization_complete = time.time()
                 logger.debug(f"[LED STABLE] Stabilization complete at {stabilization_complete:.3f}")
             else:
-                # LED already ON with correct config - reuse it!
-                logger.debug(
-                    f"[LED REUSE] LED already on with correct config ({target_led_config}), NO stabilization wait needed"
-                )
+                # This should never happen - LED should be OFF between frames
+                logger.warning("[LED WARNING] LED was already ON - this should not happen!")
                 stabilization_complete = pulse_start
-                # No stabilization wait needed - LED is already stable!
 
             # =================================================================
             # SCHRITT 2: CAPTURE FRAME (LED is now ON and stable)
@@ -227,6 +220,25 @@ class FrameCaptureService:
             logger.debug(
                 f"[COMPLETE] Frame captured successfully in {metadata['capture_duration']:.3f}s"
             )
+
+            # =================================================================
+            # SCHRITT 5: Turn OFF LED after capture
+            # =================================================================
+            # LED should only be ON during capture, not between frames
+            if self._led_is_on:
+                try:
+                    if target_led_config == "dual":
+                        self.esp32.led_dual_off()
+                        logger.debug("[LED OFF] Both LEDs turned off after capture")
+                    else:
+                        self.esp32.led_off(led_type)
+                        logger.debug(f"[LED OFF] {led_type.upper()} LED turned off after capture")
+
+                    # Mark LED as off, but keep config type for next frame
+                    self._led_is_on = False
+
+                except Exception as e:
+                    logger.warning(f"[LED OFF] Failed to turn off LED: {e}")
 
             return frame, metadata
 
