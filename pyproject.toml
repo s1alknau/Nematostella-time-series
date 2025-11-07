@@ -82,8 +82,7 @@ all = [
 "Bug Tracker" = "https://github.com/s1alknau/Nematostella-time-series/issues"
 "Documentation" = "https://github.com/s1alknau/Nematostella-time-series#readme"
 "Source Code" = "https://github.com/s1alknau/Nematostella-time-series"
-"Source (Dual-IR Branch)" = "https://github.com/s1alknau/Nematostella-time-series/tree/Nematostella-time-series-IR"
-"Install Dual-IR Version" = "pip install git+https://github.com/s1alknau/Nematostella-time-series.git@Nematostella-time-series-IR"
+"Dual-IR Branch" = "https://github.com/s1alknau/Nematostella-time-series/tree/Nematostella-time-series-IR"
 
 
 [project.entry-points."napari.manifest"]
