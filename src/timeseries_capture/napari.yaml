@@ -1,12 +1,10 @@
-name: nematostella-time-series
-display_name: Nematostella Time Series Capture
-visibility: public
-categories: ["Acquisition"]
+name: napari-timelapse-capture
+display_name: Nematostella Timelapse Capture
 contributions:
   commands:
-    - id: nematostella-time-series.make_qwidget
-      python_name: timeseries_capture:NematostellaTimeSeriesCapture
-      title: Make Nematostella Time Series Capture  # Improving title clarity
+    - id: napari-timelapse-capture.make_widget
+      title: Create Timelapse Capture Widget
+      python_name: timeseries_capture.GUI:create_timelapse_widget
   widgets:
-    - command: nematostella-time-series.make_qwidget
-      display_name: Nematostella Time Series Capture  # Keeping consistent display name
+    - command: napari-timelapse-capture.make_widget
+      display_name: Nematostella Timelapse Recording
