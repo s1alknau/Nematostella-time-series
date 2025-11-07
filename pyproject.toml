@@ -78,10 +78,13 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/s1alknau/napari-timelapse-capture"
-"Bug Tracker" = "https://github.com/s1alknau/napari-timelapse-capture/issues"
-Documentation = "https://github.com/s1alknau/napari-timelapse-capture#readme"
-"Source Code" = "https://github.com/s1alknau/napari-timelapse-capture"
+"Homepage" = "https://github.com/s1alknau/Nematostella-time-series"
+"Bug Tracker" = "https://github.com/s1alknau/Nematostella-time-series/issues"
+"Documentation" = "https://github.com/s1alknau/Nematostella-time-series#readme"
+"Source Code" = "https://github.com/s1alknau/Nematostella-time-series"
+"Source (Dual-IR Branch)" = "https://github.com/s1alknau/Nematostella-time-series/tree/Nematostella-time-series-IR"
+"Install Dual-IR Version" = "pip install git+https://github.com/s1alknau/Nematostella-time-series.git@Nematostella-time-series-IR"
+
 
 [project.entry-points."napari.manifest"]
 napari-timelapse-capture = "timeseries_capture:napari.yaml"
