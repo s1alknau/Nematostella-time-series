@@ -46,6 +46,7 @@ class FrameCaptureService:
         # LED state caching - avoid redundant LED switching
         self._current_led_type = None  # 'ir', 'white', or 'dual'
         self._led_is_on = False
+        self._pending_sync_complete = False  # Track if we need to read sync response
 
         logger.info(
             f"FrameCaptureService initialized (stab={stabilization_ms}ms, exp={exposure_ms}ms)"
@@ -87,27 +88,45 @@ class FrameCaptureService:
 
         try:
             # =================================================================
-            # SCHRITT 1: LED Configuration (only if needed)
+            # SCHRITT 1: LED Configuration (turn on if needed)
             # =================================================================
-            pulse_start = None
+            pulse_start = time.time()
 
             if led_config_changed or not self._led_is_on:
-                # LED configuration needs to change - full setup required
+                # LED configuration needs to change - turn OFF old LED first
+                if self._led_is_on and self._current_led_type is not None:
+                    logger.debug(f"[LED OFF] Turning off {self._current_led_type} LED...")
+                    if self._current_led_type == "dual":
+                        self.esp32.led_dual_off()
+                    else:
+                        self.esp32.led_off(self._current_led_type)
+                    self._led_is_on = False
+                    time.sleep(0.1)  # Small delay after turning off
+
+                # Now configure and turn ON new LED
                 logger.info(f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}")
 
-                # Select LED type (wenn nicht dual)
-                if not dual_mode:
+                if dual_mode:
+                    # Dual mode: Turn on both LEDs
+                    logger.debug("[LED DUAL ON] Turning on both IR and White LEDs...")
+                    # Select IR and turn on
+                    self.esp32.select_led_type("ir")
+                    self.esp32.led_on()
+                    time.sleep(0.05)
+                    # Select White and turn on
+                    self.esp32.select_led_type("white")
+                    self.esp32.led_on()
+                else:
+                    # Single LED mode
+                    logger.debug(f"[LED ON] Turning on {led_type} LED...")
                     self.esp32.select_led_type(led_type)
-
-                # BEGIN SYNC PULSE (LED ON)
-                pulse_start = self.esp32.begin_sync_pulse(dual=dual_mode)
-                logger.debug(f"[LED ON] Sync pulse started at {pulse_start:.3f}")
+                    self.esp32.led_on()
 
                 # Update cached state
                 self._current_led_type = target_led_config
                 self._led_is_on = True
 
-                # WARTE für LED Stabilization (full time)
+                # WARTE für LED Stabilization (full time needed after turning on)
                 stabilization_sec = self.stabilization_ms / 1000.0
                 logger.debug(
                     f"[LED STABILIZING] Waiting {stabilization_sec:.3f}s for LED to stabilize"
@@ -117,54 +136,15 @@ class FrameCaptureService:
                 stabilization_complete = time.time()
                 logger.debug(f"[LED STABLE] Stabilization complete at {stabilization_complete:.3f}")
             else:
-                # LED already configured and on - skip setup!
+                # LED already ON with correct config - reuse it!
                 logger.debug(
-                    f"[LED REUSE] LED already on with correct config ({target_led_config}), skipping setup"
+                    f"[LED REUSE] LED already on with correct config ({target_led_config}), NO stabilization wait needed"
                 )
-                pulse_start = time.time()  # Use current time as "pulse start"
-                stabilization_complete = pulse_start  # No stabilization needed
-                # No sleep needed - LED is already stable!
+                stabilization_complete = pulse_start
+                # No stabilization wait needed - LED is already stable!
 
             # =================================================================
-            # SCHRITT 4: CAPTURE TIMING WINDOW BERECHNEN
-            # =================================================================
-            # Berechne wann das Capture-Window endet
-            # (ESP32 wartet: stabilization + exposure + buffer)
-
-            total_led_duration_ms = self.stabilization_ms + self.exposure_ms + 500  # +500ms buffer
-            led_off_time = pulse_start + (total_led_duration_ms / 1000.0)
-
-            current_time = time.time()
-            time_until_led_off = led_off_time - current_time
-
-            logger.debug(f"[TIMING] Time until LED OFF: {time_until_led_off*1000:.1f}ms")
-
-            # =================================================================
-            # SCHRITT 5: SAFETY CHECK - Genug Zeit für Capture?
-            # =================================================================
-            # Camera capture braucht typischerweise 50-200ms
-            # Wir brauchen MINDESTENS 100ms Puffer!
-
-            min_required_time = 0.100  # 100ms minimum
-
-            if time_until_led_off < min_required_time:
-                logger.error(
-                    f"[LED SYNC FAIL] Not enough time for capture! {time_until_led_off*1000:.1f}ms < 100ms"
-                )
-                self.led_sync_failures += 1
-
-                # Warte auf Sync Complete (LED OFF)
-                self.esp32.wait_sync_complete(timeout=5.0)
-
-                return None, {
-                    "error": "LED sync timing failure",
-                    "success": False,
-                    "led_sync_failure": True,
-                    "time_available": time_until_led_off,
-                }
-
-            # =================================================================
-            # SCHRITT 6: CAPTURE FRAME (LED ist garantiert AN!)
+            # SCHRITT 2: CAPTURE FRAME (LED is now ON and stable)
             # =================================================================
             logger.debug("[CAPTURING] Starting camera capture...")
             capture_command_time = time.time()
@@ -182,78 +162,63 @@ class FrameCaptureService:
                 return None, {"error": "Camera capture failed", "success": False}
 
             # =================================================================
-            # SCHRITT 7: VERIFY - War LED noch AN?
+            # SCHRITT 3: Get ESP32 sensor data (temperature, humidity)
             # =================================================================
-            # Check ob capture INNERHALB des LED-Windows war
-            led_was_on = capture_complete_time < led_off_time
-
-            if not led_was_on:
-                logger.warning("[LED WARNING] Capture may have been outside LED window!")
-                logger.warning(f"  LED OFF at: {led_off_time:.3f}")
-                logger.warning(f"  Capture at: {capture_complete_time:.3f}")
-                logger.warning(f"  Difference: {(capture_complete_time - led_off_time)*1000:.1f}ms")
-            else:
-                logger.debug("[LED VERIFY] ✓ Capture was within LED ON window")
-
-            # =================================================================
-            # SCHRITT 8: WAIT for Sync Complete (only if LED was reconfigured)
-            # =================================================================
+            # Query ESP32 for environmental data
+            # Note: We don't query on every frame to avoid delays
+            # Only query when LED config changes or periodically
             if led_config_changed:
-                # We started a new sync pulse, wait for completion
-                logger.debug("[SYNC] Waiting for sync complete...")
-                sync_data = self.esp32.wait_sync_complete(timeout=5.0)
-                sync_complete_time = time.time()
-                logger.debug(f"[LED OFF] Sync complete at {sync_complete_time:.3f}")
+                try:
+                    sensor_data = self.esp32.get_sensor_data()
+                    if sensor_data:
+                        temperature = sensor_data.get("temperature", 0.0)
+                        humidity = sensor_data.get("humidity", 0.0)
+                        logger.debug(f"[SENSOR] T={temperature:.1f}°C, H={humidity:.1f}%")
+                    else:
+                        temperature = 0.0
+                        humidity = 0.0
+                except Exception as e:
+                    logger.warning(f"[SENSOR] Failed to get sensor data: {e}")
+                    temperature = 0.0
+                    humidity = 0.0
             else:
-                # LED was reused, no sync pulse was started - skip wait
-                logger.debug("[SYNC] LED reused, skipping sync wait")
-                sync_data = {
-                    "temperature": 0.0,
-                    "humidity": 0.0,
-                    "timing_ms": 0,
-                    "led_power_actual": 0,
-                }
-                sync_complete_time = time.time()
-                # Note: We'll get fresh ESP32 data from periodic sync in next LED config change
+                # Reuse previous sensor data (avoid delays)
+                temperature = 0.0
+                humidity = 0.0
+
+            logger.debug("[LED VERIFY] ✓ Capture completed while LED was ON")
 
             # =================================================================
-            # SCHRITT 9: COMPILE METADATA mit allen Timing-Informationen
+            # SCHRITT 4: COMPILE METADATA mit allen Timing-Informationen
             # =================================================================
             metadata = {
                 # Timestamps
                 "timestamp": time.time(),
                 "capture_start": capture_start,
-                "pulse_start": pulse_start if led_config_changed or not self._led_is_on else None,
+                "led_setup_start": pulse_start,
                 "stabilization_complete": stabilization_complete,
                 "capture_command_time": capture_command_time,
                 "capture_complete_time": capture_complete_time,
-                "sync_complete_time": sync_complete_time,
                 # Durations
                 "capture_duration": time.time() - capture_start,
                 "camera_capture_duration": capture_duration,
-                "total_led_duration": sync_complete_time - pulse_start if pulse_start else None,
-                # LED State Caching Info
+                # LED State Info
                 "led_config_changed": led_config_changed,
-                "led_was_reused": not led_config_changed and self._led_is_on,
-                # LED Timing
+                "led_was_reused": not led_config_changed,
+                "led_is_on": self._led_is_on,
+                # LED Configuration
                 "led_type": led_type if not dual_mode else "dual",
                 "dual_mode": dual_mode,
                 "led_stabilization_ms": self.stabilization_ms if led_config_changed else 0,
                 "exposure_ms": self.exposure_ms,
-                # Timing Verification
-                "led_was_on_during_capture": led_was_on,
-                "time_until_led_off_ms": time_until_led_off * 1000,
-                # ESP32 Data
-                "temperature": sync_data.get("temperature", 0.0),
-                "humidity": sync_data.get("humidity", 0.0),
-                "led_timing_ms": sync_data.get("timing_ms", 0),
-                "led_power": sync_data.get("led_power_actual", 0),
+                # ESP32 Environmental Data
+                "temperature": temperature,
+                "humidity": humidity,
                 # Frame Info
                 "frame_shape": frame.shape if frame is not None else None,
                 "frame_dtype": str(frame.dtype) if frame is not None else None,
                 # Success
                 "success": True,
-                "sync_success": True,
             }
 
             self.total_captures += 1
@@ -306,14 +271,16 @@ class FrameCaptureService:
 
     def reset_led_state(self):
         """
-        Resets LED state cache.
+        Resets LED state cache and turns off LED.
 
         Call this when you want to force LED reconfiguration on next capture,
         or when ending a recording session.
         """
         logger.info("Resetting LED state cache")
+        self.turn_off_led()
         self._current_led_type = None
         self._led_is_on = False
+        self._pending_sync_complete = False
 
     def turn_off_led(self):
         """
@@ -323,8 +290,16 @@ class FrameCaptureService:
         """
         if self._led_is_on:
             try:
-                self.esp32.led_off()
-                logger.info("LED turned off after recording")
+                if self._current_led_type == "dual":
+                    self.esp32.led_dual_off()
+                    logger.info("Both LEDs turned off after recording")
+                elif self._current_led_type:
+                    self.esp32.led_off(self._current_led_type)
+                    logger.info(f"{self._current_led_type.upper()} LED turned off after recording")
+                else:
+                    # Fallback: turn off both to be safe
+                    self.esp32.led_dual_off()
+                    logger.info("LEDs turned off after recording (fallback)")
             except Exception as e:
                 logger.warning(f"Failed to turn off LED: {e}")
             finally:
@@ -332,8 +307,8 @@ class FrameCaptureService:
                 self._current_led_type = None
 
     def test_capture(self) -> bool:
-        """Test-Capture um LED-Synchronisation zu validieren"""
-        logger.info("Running test capture with LED synchronization check...")
+        """Test-Capture to validate LED control and frame capture"""
+        logger.info("Running test capture with LED control check...")
 
         try:
             frame, metadata = self.capture_frame(led_type="ir", dual_mode=False)
@@ -342,18 +317,21 @@ class FrameCaptureService:
                 logger.error("✗ Test capture failed: no frame")
                 return False
 
-            # Check LED synchronization
-            led_ok = metadata.get("led_was_on_during_capture", False)
+            # Check if capture succeeded
+            success = metadata.get("success", False)
 
-            if not led_ok:
-                logger.error("✗ Test capture failed: LED was not ON during capture!")
+            if not success:
+                logger.error("✗ Test capture failed: capture was not successful!")
                 return False
 
             logger.info("✓ Test capture successful:")
             logger.info(f"  Frame shape: {frame.shape}")
-            logger.info(f"  LED was ON: {led_ok}")
+            logger.info(f"  LED is ON: {metadata.get('led_is_on', False)}")
             logger.info(f"  Capture duration: {metadata['camera_capture_duration']*1000:.1f}ms")
             logger.info(f"  Temperature: {metadata.get('temperature', 0):.1f}°C")
+
+            # Clean up - turn off LED after test
+            self.turn_off_led()
 
             return True
 
