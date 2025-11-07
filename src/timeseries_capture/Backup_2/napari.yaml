@@ -1,0 +1,30 @@
+# name: nematostella-time-series  # ✅ This matches your folder structure
+# display_name: Nematostella Time-Series Capture
+# contributions:
+#   commands:
+#     - id: nematostella-time-series.create_timelapse_widget
+#       python_name: timeseries_capture._widget:create_timelapse_widget
+#       title: Create Nematostella Timelapse Widget
+#   widgets:
+#     - command: nematostella-time-series.create_timelapse_widget
+#       display_name: Nematostella Time-Series Capture
+# name: nematostella-time-series
+# display_name: Nematostella Time-Series Capture
+# contributions:
+#   commands:
+#     - id: nematostella-time-series.create_timelapse_widget
+#       python_name: timeseries_capture._widget:create_timelapse_widget
+#       title: Create Nematostella Timelapse Widget
+#   widgets:
+#     - command: nematostella-time-series.create_timelapse_widget
+#       display_name: Nematostella Time-Series Capture
+name: napari-timelapse-capture  # Change this line
+display_name: Nematostella Time-Series Capture
+contributions:
+  commands:
+    - id: napari-timelapse-capture.create_timelapse_widget  # Change this line
+      python_name: timeseries_capture._widget:create_timelapse_widget
+      title: Create Nematostella Timelapse Widget
+  widgets:
+    - command: napari-timelapse-capture.create_timelapse_widget  # Change this line
+      display_name: Nematostella Time-Series Capture
