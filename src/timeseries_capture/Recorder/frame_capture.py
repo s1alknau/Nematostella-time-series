@@ -9,7 +9,7 @@ KRITISCH: Frames MÜSSEN bei eingeschalteter LED captured werden!
 
 import logging
 import time
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -67,7 +67,7 @@ class FrameCaptureService:
 
     def capture_frame(
         self, led_type: str = "ir", dual_mode: bool = False
-    ) -> Tuple[Optional[np.ndarray], dict]:
+    ) -> tuple[Optional[np.ndarray], dict]:
         """
         Captured Frame mit GARANTIERTER LED-Synchronisation.
 
@@ -238,7 +238,7 @@ class FrameCaptureService:
 
     def capture_with_retry(
         self, led_type: str = "ir", dual_mode: bool = False, max_retries: int = 3
-    ) -> Tuple[Optional[np.ndarray], dict]:
+    ) -> tuple[Optional[np.ndarray], dict]:
         """
         Captured Frame mit Retry-Logik.
 
@@ -271,13 +271,13 @@ class FrameCaptureService:
 
     def reset_led_state(self):
         """
-        Resets LED state cache and turns off LED.
+        Resets LED state cache without physically turning off the LED.
 
-        Call this when you want to force LED reconfiguration on next capture,
-        or when ending a recording session.
+        Call this at the start of recording to force LED reconfiguration on first capture.
+        This only resets the cache variables - it does NOT physically turn off the LED.
         """
-        logger.info("Resetting LED state cache")
-        self.turn_off_led()
+        logger.info("Resetting LED state cache (LED remains physically unchanged)")
+        # Only reset cache variables - don't physically turn off LED
         self._current_led_type = None
         self._led_is_on = False
         self._pending_sync_complete = False
