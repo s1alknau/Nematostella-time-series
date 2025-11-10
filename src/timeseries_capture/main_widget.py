@@ -510,6 +510,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         """Turn LED off"""
                         return self.esp32_gui_controller.led_off()
 
+                    # Get calibration settings from GUI
+                    use_full_frame = self.led_panel.get_use_full_frame()
+
                     # Create calibration service
                     calibrator = CalibrationService(
                         capture_callback=capture_frame,
@@ -519,6 +522,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         target_intensity=200.0,  # Target mean intensity
                         max_iterations=10,
                         tolerance_percent=5.0,
+                        use_full_frame=use_full_frame,  # Use checkbox setting
+                        roi_fraction=0.75,  # 75% x 75% center ROI when not using full frame
                     )
 
                     # Run calibration based on mode

@@ -50,6 +50,8 @@ class CalibrationService:
         target_intensity: float = 200.0,
         max_iterations: int = 10,
         tolerance_percent: float = 5.0,
+        use_full_frame: bool = False,
+        roi_fraction: float = 0.75,
     ):
         """
         Args:
@@ -60,6 +62,8 @@ class CalibrationService:
             target_intensity: Target mean intensity value
             max_iterations: Maximum calibration iterations
             tolerance_percent: Acceptable error percentage from target
+            use_full_frame: If True, measure intensity over entire frame. If False, use center ROI
+            roi_fraction: Fraction of frame to use for ROI (e.g., 0.75 = 75% x 75% center region)
         """
         self.capture_callback = capture_callback
         self.set_led_power_callback = set_led_power_callback
@@ -68,9 +72,16 @@ class CalibrationService:
         self.target_intensity = target_intensity
         self.max_iterations = max_iterations
         self.tolerance_percent = tolerance_percent
+        self.use_full_frame = use_full_frame
+        self.roi_fraction = roi_fraction
 
+        roi_desc = (
+            "full frame"
+            if use_full_frame
+            else f"center ROI ({roi_fraction*100:.0f}% x {roi_fraction*100:.0f}%)"
+        )
         logger.info(
-            f"CalibrationService initialized (target={target_intensity}, tolerance={tolerance_percent}%)"
+            f"CalibrationService initialized (target={target_intensity}, tolerance={tolerance_percent}%, region={roi_desc})"
         )
 
     def calibrate_ir(self, initial_power: int = 50) -> CalibrationResult:
@@ -342,17 +353,30 @@ class CalibrationService:
                 return None
 
             # Calculate mean intensity
-            # Use center ROI to avoid edge artifacts
-            h, w = frame.shape[:2]
-            roi_y1 = h // 4
-            roi_y2 = (3 * h) // 4
-            roi_x1 = w // 4
-            roi_x2 = (3 * w) // 4
+            if self.use_full_frame:
+                # Use entire frame
+                region = frame
+                region_desc = f"full frame ({frame.shape})"
+            else:
+                # Use center ROI to avoid edge artifacts
+                h, w = frame.shape[:2]
 
-            roi = frame[roi_y1:roi_y2, roi_x1:roi_x2]
-            intensity = float(np.mean(roi))
+                # Calculate ROI boundaries based on roi_fraction
+                # E.g., 0.75 means 75% x 75% center region
+                margin_h = int(h * (1 - self.roi_fraction) / 2)
+                margin_w = int(w * (1 - self.roi_fraction) / 2)
 
-            logger.debug(f"Measured intensity: {intensity:.1f} (ROI: {roi.shape})")
+                roi_y1 = margin_h
+                roi_y2 = h - margin_h
+                roi_x1 = margin_w
+                roi_x2 = w - margin_w
+
+                region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
+                region_desc = f"ROI ({region.shape}, {self.roi_fraction*100:.0f}% center)"
+
+            intensity = float(np.mean(region))
+
+            logger.debug(f"Measured intensity: {intensity:.1f} ({region_desc})")
 
             return intensity
 
