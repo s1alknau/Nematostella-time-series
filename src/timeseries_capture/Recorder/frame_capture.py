@@ -48,6 +48,12 @@ class FrameCaptureService:
         self._led_is_on = False
         self._pending_sync_complete = False  # Track if we need to read sync response
 
+        # Sensor data caching - query periodically to avoid delays
+        self._last_temperature = 0.0
+        self._last_humidity = 0.0
+        self._sensor_query_interval = 5  # Query every N frames
+        self._frames_since_sensor_query = 0
+
         logger.info(
             f"FrameCaptureService initialized (stab={stabilization_ms}ms, exp={exposure_ms}ms)"
         )
@@ -157,27 +163,34 @@ class FrameCaptureService:
             # =================================================================
             # SCHRITT 3: Get ESP32 sensor data (temperature, humidity)
             # =================================================================
-            # Query ESP32 for environmental data
-            # Note: We don't query on every frame to avoid delays
-            # Only query when LED config changes or periodically
-            if led_config_changed:
+            # Query ESP32 for environmental data periodically
+            # Query on: LED config change OR every N frames
+            should_query_sensors = led_config_changed or (self._frames_since_sensor_query >= self._sensor_query_interval)
+
+            if should_query_sensors:
                 try:
                     sensor_data = self.esp32.get_sensor_data()
                     if sensor_data:
-                        temperature = sensor_data.get("temperature", 0.0)
-                        humidity = sensor_data.get("humidity", 0.0)
-                        logger.debug(f"[SENSOR] T={temperature:.1f}°C, H={humidity:.1f}%")
+                        self._last_temperature = sensor_data.get("temperature", 0.0)
+                        self._last_humidity = sensor_data.get("humidity", 0.0)
+                        logger.debug(f"[SENSOR] T={self._last_temperature:.1f}°C, H={self._last_humidity:.1f}%")
                     else:
-                        temperature = 0.0
-                        humidity = 0.0
+                        # Sensor read failed, keep previous values
+                        logger.debug("[SENSOR] No data returned, keeping previous values")
                 except Exception as e:
                     logger.warning(f"[SENSOR] Failed to get sensor data: {e}")
-                    temperature = 0.0
-                    humidity = 0.0
+                    # Keep previous values on error
+
+                # Reset counter
+                self._frames_since_sensor_query = 0
             else:
-                # Reuse previous sensor data (avoid delays)
-                temperature = 0.0
-                humidity = 0.0
+                # Use cached sensor data
+                self._frames_since_sensor_query += 1
+                logger.debug(f"[SENSOR] Using cached values (next query in {self._sensor_query_interval - self._frames_since_sensor_query} frames)")
+
+            # Use current sensor values (either fresh or cached)
+            temperature = self._last_temperature
+            humidity = self._last_humidity
 
             logger.debug("[LED VERIFY] ✓ Capture completed while LED was ON")
 
