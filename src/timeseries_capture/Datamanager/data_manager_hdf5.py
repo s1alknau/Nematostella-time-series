@@ -77,16 +77,13 @@ class ChunkedTimeseriesWriter:
         # Essential fields (MINIMAL mode)
         minimal_fields = {
             "frame_index": np.int64,
-            "timestamps": np.float64,
             "recording_elapsed_sec": np.float64,
             "actual_intervals": np.float64,
             "expected_intervals": np.float64,
             "temperature_celsius": np.float32,
             "humidity_percent": np.float32,
-            "led_type": np.int8,
             "led_type_str": str_vlen,
             "led_power": np.int16,
-            "phase": np.int8,
             "phase_str": str_vlen,
             "cycle_number": np.int32,
             "frame_mean_intensity": np.float32,
@@ -96,11 +93,8 @@ class ChunkedTimeseriesWriter:
         # Standard additional fields (STANDARD mode)
         # Streamlined: Keep only useful fields, remove redundant/debug data
         standard_fields = {
-            # Timing quality (keep drift tracking as requested)
-            "timing_error_sec": np.float64,  # Frame timing error
-            "cumulative_drift_sec": np.float64,  # Accumulated drift (requested)
-            # Phase tracking (keep transition as requested)
-            "phase_transition": np.int8,  # Phase change indicator (requested)
+            # Phase tracking
+            "phase_transition": np.int8,  # Phase change indicator
             # Quality indicators
             "capture_method": str_vlen,  # How frame was captured
         }
@@ -184,30 +178,6 @@ class ChunkedTimeseriesWriter:
             ds.resize((new_cap,))
         self.current_capacity = new_cap
 
-    @staticmethod
-    def _map_led_type(s: str) -> int:
-        """Map LED type string to enum"""
-        if not s:
-            return -1
-        s = s.lower()
-        if s in ("ir", "infrared"):
-            return 0
-        if s in ("white", "whitelight"):
-            return 1
-        return -1
-
-    @staticmethod
-    def _map_phase(s: str, enabled: bool) -> int:
-        """Map phase string to enum"""
-        if not enabled:
-            return 2  # continuous
-        s = (s or "").lower()
-        if s == "dark":
-            return 0
-        if s == "light":
-            return 1
-        return 2
-
     def append(
         self, frame_index: int, frame_metadata: dict, esp32_timing: dict, python_timing: dict
     ):
@@ -240,12 +210,12 @@ class ChunkedTimeseriesWriter:
             set_value("frame_index", int(frame_index))
 
             # ============================================================
-            # ABSOLUTE TIMESTAMPS
+            # ABSOLUTE TIMESTAMPS - Removed timestamps field (use recording_elapsed_sec)
             # ============================================================
+            # Calculate timestamp for COMPREHENSIVE mode only
             timestamp_abs = float(
                 pt.get("capture_timestamp_absolute") or fm.get("timestamp") or time.time()
             )
-            set_value("timestamps", timestamp_abs)
 
             if self.mode == TelemetryMode.COMPREHENSIVE:
                 set_value(
@@ -284,18 +254,9 @@ class ChunkedTimeseriesWriter:
             set_value("expected_intervals", expected_interval)
 
             # ============================================================
-            # TIMING ERRORS
+            # TIMING ERRORS - Removed timing_error_sec and cumulative_drift_sec
             # ============================================================
-            timing_error = float(pt.get("timing_error_sec", np.nan))
-            cumulative_drift = float(pt.get("cumulative_drift_sec", 0.0))
-
-            if self.mode >= TelemetryMode.STANDARD:
-                set_value("timing_error_sec", timing_error)
-                set_value("cumulative_drift_sec", cumulative_drift)
-
-            if self.mode == TelemetryMode.COMPREHENSIVE:
-                set_value("frame_drift", float(timing_error))
-                set_value("cumulative_drift", float(cumulative_drift))
+            # These fields have been removed as requested
 
             # ============================================================
             # OPERATION METRICS (removed - not needed)
@@ -334,11 +295,9 @@ class ChunkedTimeseriesWriter:
             # ============================================================
             led_power = int(et.get("led_power_actual") or fm.get("led_power", -1))
             led_type_str = str(et.get("led_type_used") or fm.get("led_type", ""))
-            led_type_enum = self._map_led_type(led_type_str)
 
             set_value("led_power", led_power)
-            set_value("led_type", led_type_enum)
-            set_value("led_type_str", led_type_str)
+            set_value("led_type_str", led_type_str)  # Keep only string version, removed enum
 
             # Removed: led_mode (can infer from led_type: dual/ir/white)
 
@@ -353,12 +312,9 @@ class ChunkedTimeseriesWriter:
             # ============================================================
             # PHASE INFORMATION
             # ============================================================
-            phase_enabled = bool(fm.get("phase_enabled", False))
             phase_str = str(fm.get("phase") or fm.get("current_phase", "continuous"))
-            phase_enum = self._map_phase(phase_str, phase_enabled)
 
-            set_value("phase", phase_enum)
-            set_value("phase_str", phase_str)
+            set_value("phase_str", phase_str)  # Keep only string version, removed enum
             set_value("cycle_number", int(fm.get("cycle_number", 0)))
 
             if self.mode >= TelemetryMode.STANDARD:
