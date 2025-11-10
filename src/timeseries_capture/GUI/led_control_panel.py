@@ -5,6 +5,7 @@ LED Control Panel - UI für LED-Steuerung und Kalibrierung
 from qtpy.QtCore import Qt
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -161,6 +162,20 @@ class LEDControlPanel(QWidget):
         calib_info.setStyleSheet("color: #7f8c8d; font-size: 11px;")
         calib_layout.addWidget(calib_info)
 
+        # Calibration Options
+        calib_options_layout = QHBoxLayout()
+
+        self.use_full_frame_checkbox = QCheckBox("Use full frame for calibration")
+        self.use_full_frame_checkbox.setToolTip(
+            "If checked, measures intensity over entire frame.\n"
+            "If unchecked, uses center 75% x 75% ROI (avoids edge artifacts)."
+        )
+        self.use_full_frame_checkbox.setStyleSheet("font-size: 11px;")
+        calib_options_layout.addWidget(self.use_full_frame_checkbox)
+        calib_options_layout.addStretch()
+
+        calib_layout.addLayout(calib_options_layout)
+
         # Calibration Buttons
         calib_button_layout = QHBoxLayout()
 
@@ -270,3 +285,7 @@ class LEDControlPanel(QWidget):
             self.ir_power_slider.setValue(powers["ir"])
         if "white" in powers:
             self.white_power_slider.setValue(powers["white"])
+
+    def get_use_full_frame(self) -> bool:
+        """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
+        return self.use_full_frame_checkbox.isChecked()
