@@ -863,6 +863,22 @@ class DataManager:
                 self.flush_file()
 
                 logger.info(f"Recording finalized successfully ({self.frame_count} frames)")
+
+                # Close HDF5 file to allow external access
+                logger.info("Closing HDF5 file to allow external access...")
+
+                # Flush and close timeseries writer
+                if self._ts_writer:
+                    self._ts_writer.flush()
+                    self._ts_writer = None
+
+                # Close HDF5 file
+                if self.hdf5_file:
+                    self.hdf5_file.flush()
+                    self.hdf5_file.close()
+                    self.hdf5_file = None
+                    logger.info("HDF5 file closed - ready for external analysis")
+
                 return True
 
         except Exception as e:
