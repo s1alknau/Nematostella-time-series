@@ -16,7 +16,7 @@ import threading
 import time
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import h5py
 import numpy as np
@@ -97,6 +97,8 @@ class ChunkedTimeseriesWriter:
             "phase_transition": np.int8,  # Phase change indicator
             # Quality indicators
             "capture_method": str_vlen,  # How frame was captured
+            # Timing drift tracking
+            "cumulative_drift_sec": np.float32,  # Accumulated timing drift
         }
 
         # Removed redundant/debug fields:
@@ -124,7 +126,7 @@ class ChunkedTimeseriesWriter:
             "capture_timestamps": np.float64,
             "capture_elapsed_sec": np.float64,
             "frame_drift": np.float32,
-            "cumulative_drift": np.float32,
+            # Note: cumulative_drift_sec is inherited from standard_fields
             "capture_overhead_sec": np.float32,
             "capture_delay_sec": np.float32,
             "stabilization_ms": np.float32,
@@ -254,9 +256,11 @@ class ChunkedTimeseriesWriter:
             set_value("expected_intervals", expected_interval)
 
             # ============================================================
-            # TIMING ERRORS - Removed timing_error_sec and cumulative_drift_sec
+            # TIMING DRIFT (STANDARD and COMPREHENSIVE modes)
             # ============================================================
-            # These fields have been removed as requested
+            if self.mode in [TelemetryMode.STANDARD, TelemetryMode.COMPREHENSIVE]:
+                cumulative_drift = float(pt.get("cumulative_drift_sec", 0.0))
+                set_value("cumulative_drift_sec", cumulative_drift)
 
             # ============================================================
             # OPERATION METRICS (removed - not needed)
@@ -447,7 +451,7 @@ class DataManager:
         self.cumulative_drift = 0.0
 
         # Metadata
-        self.recording_metadata: Dict[str, Any] = {}
+        self.recording_metadata: dict[str, Any] = {}
 
         logger.info(
             f"DataManager initialized (HDF5, mode={telemetry_mode.name}, chunk={chunk_size})"
@@ -903,7 +907,7 @@ class DataManager:
         """Ensure file is closed"""
         try:
             self.close_file()
-        except:
+        except Exception:
             pass
 
 
