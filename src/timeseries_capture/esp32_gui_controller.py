@@ -220,9 +220,9 @@ class ESP32GUIController(QObject):
             # Build hardware info dict
             hw_info = {
                 "firmware": "ESP32 v2.2",  # Updated version
-                "temperature": sensor_data["temperature"] if sensor_data else 0.0,
-                "humidity": sensor_data["humidity"] if sensor_data else 0.0,
-                "uptime": stats.get("time_since_last_command", 0),
+                "temperature": sensor_data["temperature"] if sensor_data else None,
+                "humidity": sensor_data["humidity"] if sensor_data else None,
+                "uptime": stats.get("uptime_seconds", 0),  # Fixed: use actual uptime
             }
 
             # Emit to GUI

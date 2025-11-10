@@ -291,19 +291,28 @@ class ESP32ConnectionPanel(QWidget):
 
         if "temperature" in hw_info:
             temp = hw_info["temperature"]
-            self.temp_label.setText(f"{temp:.1f} °C")
+            if temp is not None:
+                self.temp_label.setText(f"{temp:.1f} °C")
+            else:
+                self.temp_label.setText("N/A (sensor error)")
 
         if "humidity" in hw_info:
             humidity = hw_info["humidity"]
-            self.humidity_label.setText(f"{humidity:.1f} %")
+            if humidity is not None:
+                self.humidity_label.setText(f"{humidity:.1f} %")
+            else:
+                self.humidity_label.setText("N/A (sensor error)")
 
         if "uptime" in hw_info:
             uptime = hw_info["uptime"]
-            # Format uptime nicely
-            hours = int(uptime // 3600)
-            minutes = int((uptime % 3600) // 60)
-            seconds = int(uptime % 60)
-            self.uptime_label.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+            if uptime is not None and uptime > 0:
+                # Format uptime nicely
+                hours = int(uptime // 3600)
+                minutes = int((uptime % 3600) // 60)
+                seconds = int(uptime % 60)
+                self.uptime_label.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+            else:
+                self.uptime_label.setText("N/A")
 
     def set_connection_in_progress(self, in_progress: bool):
         """

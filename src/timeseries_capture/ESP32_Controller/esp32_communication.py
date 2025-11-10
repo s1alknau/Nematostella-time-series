@@ -47,6 +47,7 @@ class ESP32Communication:
         self._consecutive_failures = 0
         self._max_failures_before_reconnect = 3
         self._last_successful_command = 0.0
+        self._connection_start_time = 0.0  # Track connection uptime
 
     def find_esp32_port(self) -> Optional[str]:
         """
@@ -205,6 +206,7 @@ class ESP32Communication:
                         self.port = target_port
                         self.connected = True
                         self._consecutive_failures = 0
+                        self._connection_start_time = time.time()  # Track connection start time
 
                         logger.info(f"✅ Successfully connected to ESP32 on {target_port}")
                         logger.info(f"   Config: DTR={config['dtr']}, RTS={config['rts']}")
@@ -547,5 +549,10 @@ class ESP32Communication:
                 time.time() - self._last_successful_command
                 if self._last_successful_command > 0
                 else -1
+            ),
+            "uptime_seconds": (
+                time.time() - self._connection_start_time
+                if self._connection_start_time > 0
+                else 0
             ),
         }
