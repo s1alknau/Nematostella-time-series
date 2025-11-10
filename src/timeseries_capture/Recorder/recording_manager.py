@@ -413,10 +413,38 @@ class RecordingManager(QObject):
                 self.error_occurred.emit("Frame capture failed")
                 return
 
+            # ================================================================
+            # ENRICH METADATA with missing timeseries fields
+            # ================================================================
             # Add phase info to metadata
             if phase_info:
                 metadata["phase"] = phase_info.phase.value
                 metadata["cycle_number"] = phase_info.cycle_number
+                metadata["phase_enabled"] = True
+            else:
+                metadata["phase"] = "continuous"
+                metadata["cycle_number"] = 0
+                metadata["phase_enabled"] = False
+
+            # Add LED power info (from config)
+            config = self.state.get_config()
+            if config:
+                if led_type == "ir" or dual_mode:
+                    metadata["led_power"] = config.ir_led_power
+                elif led_type == "white":
+                    metadata["led_power"] = config.white_led_power
+                else:
+                    metadata["led_power"] = -1
+            else:
+                metadata["led_power"] = -1
+
+            # Add capture method
+            if "error" in metadata:
+                metadata["capture_method"] = "failed"
+            elif metadata.get("success", False):
+                metadata["capture_method"] = "normal"
+            else:
+                metadata["capture_method"] = "unknown"
 
             # Save frame
             frame_number = self.state.current_frame + 1
