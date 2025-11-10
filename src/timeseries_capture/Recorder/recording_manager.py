@@ -252,9 +252,24 @@ class RecordingManager(QObject):
                     print("⚠️  LED power configuration incomplete - dual mode may not work!\n")
                     logger.error("⚠️  LED power configuration incomplete - dual mode may not work!")
             else:
-                # Single LED mode - set the IR LED power (default)
-                logger.info(f"Setting single LED mode: IR={config.ir_led_power}%")
-                self.frame_capture.esp32.set_led_power(config.ir_led_power, "ir")
+                # Phase mode (or continuous) - set BOTH LED powers
+                # Even if we're not using dual mode, we need both powers configured
+                # because we switch between IR and White LEDs during phases
+                logger.info(f"Setting LED powers for phase mode:")
+                logger.info(f"   IR LED power: {config.ir_led_power}%")
+                logger.info(f"   White LED power: {config.white_led_power}%")
+
+                # Set IR LED power
+                success_ir = self.frame_capture.esp32.set_led_power(config.ir_led_power, "ir")
+                time.sleep(0.1)  # Small delay between commands
+
+                # Set White LED power (CRITICAL - was missing!)
+                success_white = self.frame_capture.esp32.set_led_power(config.white_led_power, "white")
+
+                if success_ir and success_white:
+                    logger.info("✅ Both LED powers configured")
+                else:
+                    logger.warning(f"⚠️ LED power configuration incomplete (IR: {success_ir}, White: {success_white})")
 
             logger.info("=" * 60)
 
