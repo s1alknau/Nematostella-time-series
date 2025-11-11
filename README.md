@@ -489,37 +489,46 @@ intensity = np.mean(roi)
 
 ```
 recording.h5
-├── metadata/                    # Recording metadata
-│   ├── experiment_name          # Name of experiment
-│   ├── start_time              # ISO 8601 timestamp
-│   ├── duration_min            # Total duration
-│   ├── interval_sec            # Frame interval
-│   ├── phase_enabled           # Boolean
-│   └── ...
 │
-├── frames/                      # Image stack
-│   └── frames                  # (N, H, W) dataset
+├── [File Attributes]            # Recording metadata (stored as HDF5 attributes)
+│   ├── created                  # Unix timestamp
+│   ├── created_human            # Human-readable timestamp
+│   ├── experiment_name          # Name of experiment
+│   ├── file_version             # File format version
+│   ├── software                 # Software name
+│   ├── telemetry_mode           # MINIMAL/STANDARD/COMPREHENSIVE
+│   ├── duration_min             # Total duration
+│   ├── interval_sec             # Frame interval
+│   ├── phase_enabled            # Boolean
+│   ├── ir_led_power             # IR LED power %
+│   ├── white_led_power          # White LED power %
+│   └── ...                      # Additional recording parameters
+│
+├── images/                      # Image stack group
+│   └── frames                   # (N, H, W) dataset
 │       ├── dtype: uint16
 │       ├── shape: (frames, height, width)
 │       └── chunks: (1, H, W)
 │
-└── timeseries/                 # Timeseries data
-    ├── frame_index             # Frame numbers [0, 1, 2, ...]
-    ├── recording_elapsed_sec   # Time since start
-    ├── actual_intervals        # Actual frame intervals
-    ├── expected_intervals      # Target interval (constant)
-    ├── cumulative_drift_sec    # ⭐ Accumulated timing drift
-    ├── temperature_celsius     # °C
-    ├── humidity_percent        # % RH
-    ├── led_type_str           # "ir", "white", "dual"
-    ├── led_power              # LED power %
-    ├── phase_str              # "light", "dark", "continuous"
-    ├── cycle_number           # Phase cycle number
-    ├── frame_mean_intensity   # Mean pixel value
-    ├── sync_success           # LED sync successful (bool)
-    ├── phase_transition       # Phase change indicator (bool)
-    └── capture_method         # "sync", "direct", etc.
+└── timeseries/                  # Timeseries data group
+    ├── frame_index              # Frame numbers [0, 1, 2, ...]
+    ├── recording_elapsed_sec    # Time since start
+    ├── actual_intervals         # Actual frame intervals
+    ├── expected_intervals       # Target interval (constant)
+    ├── cumulative_drift_sec     # ⭐ Accumulated timing drift
+    ├── temperature_celsius      # °C
+    ├── humidity_percent         # % RH
+    ├── led_type_str            # "ir", "white", "dual"
+    ├── led_power               # LED power %
+    ├── phase_str               # "light", "dark", "continuous"
+    ├── cycle_number            # Phase cycle number
+    ├── frame_mean_intensity    # Mean pixel value
+    ├── sync_success            # LED sync successful (bool)
+    ├── phase_transition        # Phase change indicator (bool)
+    └── capture_method          # "sync", "direct", etc.
 ```
+
+**Note**: Metadata is stored as HDF5 **file-level attributes**, not as a separate group. This is more efficient and follows HDF5 best practices.
 
 ### Telemetry Modes
 
