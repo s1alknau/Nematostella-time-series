@@ -63,6 +63,8 @@ ESP32 Nematostella Controller - Python Compatible v2.2
 Default timing: 400ms stab + 20ms exp = 420ms total
 ```
 
+**Note:** The plugin will override exposure time with your camera settings (typically 5ms).
+
 Press `Ctrl+C` to exit monitor.
 
 **Done!** Your ESP32 is now ready.
@@ -133,6 +135,8 @@ Download from [arduino.cc/en/software](https://www.arduino.cc/en/software)
 ESP32 Nematostella Controller - Python Compatible v2.2
 Default timing: 400ms stab + 20ms exp = 420ms total
 ```
+
+**Note:** This default timing is overridden by the Python plugin at recording start (typically uses 5ms exposure based on camera settings).
 
 **If you see this, the firmware is working correctly!**
 
