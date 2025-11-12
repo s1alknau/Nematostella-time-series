@@ -568,9 +568,9 @@ Timeline:
 │
 ├─ t=1000ms:  Camera Exposure Starts
 │
-├─ t=1000-1100ms: Camera Exposure (e.g., 100ms)
+├─ t=1000-1005ms: Camera Exposure (typically 5ms)
 │
-├─ t=1100ms:  sync_pulse_complete() → ESP32 turns LED OFF
+├─ t=1005ms:  sync_pulse_complete() → ESP32 turns LED OFF
 │
 └─ Frame captured with fully stabilized LED
 ```

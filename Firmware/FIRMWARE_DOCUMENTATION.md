@@ -56,8 +56,10 @@ This firmware enables the ESP32 microcontroller to synchronize LED illumination 
 | Parameter | Default | Range | Description |
 |-----------|---------|-------|-------------|
 | LED Stabilization | 400 ms | 10-10000 ms | Time for LED to stabilize before exposure |
-| Exposure Time | 20 ms | 0-30000 ms | Camera exposure duration |
-| **Total LED On Time** | **420 ms** | - | Stabilization + Exposure |
+| Exposure Time | 5 ms | 0-30000 ms | Camera exposure duration (set by plugin) |
+| **Total LED On Time** | **405 ms** | - | Stabilization + Exposure |
+
+**Note:** The Python plugin automatically sets exposure time based on camera settings. The firmware default (20ms) is overridden at recording start.
 
 ### Power Settings
 
@@ -268,11 +270,11 @@ Perform synchronized LED-camera capture with currently selected LED.
 **Timing Sequence:**
 1. Turn on LED
 2. Wait for LED_STABILIZATION_MS (default 400ms)
-3. Camera exposure for EXPOSURE_MS (default 20ms)
+3. Camera exposure for EXPOSURE_MS (typically 5ms, set by plugin)
 4. Turn off LED
 5. Send response with sensor data
 
-**Total Duration:** Stabilization + Exposure (default 420ms)
+**Total Duration:** Stabilization + Exposure (typically 405ms with 5ms exposure)
 
 ---
 
@@ -462,7 +464,7 @@ Time →
 ├─ Stabilization Period ────────┤  ← 400ms (default)
 │   (LED warming up)             │
 │                                │
-├─ Exposure Period ─────────────┤  ← 20ms (default)
+├─ Exposure Period ─────────────┤  ← 5ms (typical, set by plugin)
 │   (Camera capturing)           │
 │                                │
 ├─ [LED OFF] ────────────────────┤  ← LED turns off
@@ -471,7 +473,7 @@ Time →
 │                                │
 ├─ Send Response (15 bytes) ────┤  ← 0x1B + data
 │
-└─ Total Duration: ~420ms
+└─ Total Duration: ~405ms
 ```
 
 **Key Points:**
@@ -527,6 +529,7 @@ After flashing, open Serial Monitor (115200 baud). You should see:
 ```
 ESP32 Nematostella Controller - Python Compatible v2.2
 Default timing: 400ms stab + 20ms exp = 420ms total
+(Note: Plugin will override with actual camera exposure, typically 5ms)
 ```
 
 **Test Commands:**
@@ -605,9 +608,10 @@ Expect: 0xAA (ACK)
 - Fixed CMD_LED_OFF to send 0xAA for Python compatibility
 - Standardized all ACK responses to use 0xAA
 - Improved serial buffer handling (automatic clearing every 30s)
-- Updated default timing: 400ms stabilization + 20ms exposure
+- Default timing: 400ms stabilization + 20ms exposure (overridden by plugin)
 - Removed deprecated 7-byte sync response format
 - Clarified LED on-time calculation
+- Plugin automatically sets exposure based on camera (typically 5ms)
 
 ### Version 2.1
 - Added dual LED capture mode (CMD_SYNC_CAPTURE_DUAL)
