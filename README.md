@@ -26,6 +26,10 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 
 - [Installation](#installation)
 - [Hardware Requirements](#hardware-requirements)
+  - [Required Components](#required-components)
+  - [Hardware Setup & Assembly](#hardware-setup--assembly)
+  - [Device Photos](#device-photos)
+  - [Wiring & Connection Details](#wiring--connection-details)
 - [Quick Start](#quick-start)
 - [Architecture Overview](#architecture-overview)
 - [Timing Logic & Drift Compensation](#timing-logic--drift-compensation)
@@ -88,16 +92,257 @@ Core dependencies:
    - Compatible with Micro-Manager device adapters
    - Recommended: Cameras with hardware triggering support
 
-### Connection Diagram
+---
+
+### Hardware Setup & Assembly
+
+#### Step 1: ESP32 Firmware Installation
+
+1. **Download Firmware**
+   - Firmware located in: `Firmware/LED_Nematostella/`
+   - Required version: v2.2 or higher
+   - See [FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for details
+
+2. **Flash Firmware to ESP32**
+   ```bash
+   # Using PlatformIO
+   cd Firmware/LED_Nematostella
+   pio run --target upload
+
+   # Or using Arduino IDE
+   # Open src/main.cpp and upload to ESP32 board
+   ```
+
+3. **Verify Firmware**
+   - Open Serial Monitor (115200 baud)
+   - You should see: `ESP32 LED Controller v2.2 Ready`
+   - Type `STATUS` to verify all systems operational
+
+#### Step 2: LED System Assembly
+
+**IR LED Circuit:**
+```
+ESP32 GPIO 25 → LED Driver (PWM Input) → IR LED (850nm) → GND
+                      ↑
+                   Power Supply (12V recommended)
+```
+
+**White LED Circuit:**
+```
+ESP32 GPIO 26 → LED Driver (PWM Input) → White LED → GND
+                      ↑
+                   Power Supply (12V recommended)
+```
+
+**Recommended LED Drivers:**
+- PWM-compatible constant current drivers
+- Input: 5V PWM signal from ESP32
+- Output: Adjustable current (typically 350-700mA for high-power LEDs)
+
+**Safety Notes:**
+- ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
+- Use appropriate current limiting to prevent LED damage
+- Ensure proper heat sinking for high-power LEDs
+
+#### Step 3: DHT22 Sensor Connection
 
 ```
-ESP32 Pinout:
-├── GPIO 25: IR LED PWM Control
-├── GPIO 26: White LED PWM Control
-├── GPIO 4:  DHT22 Data Pin
-├── GND:     Common Ground
-└── USB:     Serial Communication (115200 baud)
+DHT22 Sensor Pinout:
+Pin 1 (VCC)  → ESP32 3.3V
+Pin 2 (Data) → ESP32 GPIO 4 (+ 10kΩ pull-up resistor to 3.3V)
+Pin 3 (NC)   → Not connected
+Pin 4 (GND)  → ESP32 GND
 ```
+
+**Pull-up Resistor:**
+- Required: 10kΩ resistor between Data pin and VCC
+- Ensures reliable sensor communication
+
+#### Step 4: Camera Integration
+
+**Supported Camera Types:**
+1. **Micro-Manager Compatible Cameras** (recommended)
+   - See [camera_adapters.py](src/timeseries_capture/camera_adapters.py)
+   - Examples: Hamamatsu, Andor, FLIR, Basler
+
+2. **HIK Vision Cameras**
+   - Custom adapter available in `Json+cam_manager/`
+   - See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
+
+**Camera Positioning:**
+- Position camera to view sample chamber
+- Ensure LEDs illuminate sample area uniformly
+- Use IR-pass filter for IR-only imaging (optional)
+
+#### Step 5: Complete System Assembly
+
+1. **Mount Components:**
+   - ESP32 in accessible location for USB connection
+   - LEDs positioned for optimal sample illumination
+   - DHT22 sensor near sample chamber for accurate readings
+   - Camera mounted with stable positioning
+
+2. **Connect Power:**
+   - ESP32: USB power (5V, typically from computer)
+   - LED drivers: External 12V power supply
+   - Camera: Per manufacturer specifications
+
+3. **Cable Management:**
+   - Keep signal cables (PWM, DHT22) away from power cables
+   - Use shielded cables for long runs
+   - Secure all connections to prevent accidental disconnection
+
+4. **Initial Testing:**
+   ```bash
+   # Test ESP32 connection
+   python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic
+
+   # Verify LED control
+   # In napari plugin: LED Control tab → Test IR/White LEDs
+
+   # Check sensor readings
+   # In napari plugin: Status tab → View temperature/humidity
+   ```
+
+---
+
+### Device Photos
+
+**Add your setup photos here to help others replicate the hardware configuration.**
+
+#### Complete System
+
+![Complete Nematostella Timelapse System](docs/images/system_complete.jpg)
+*Full system showing ESP32, LED array, camera, and sample chamber*
+
+#### ESP32 Controller Assembly
+
+![ESP32 with DHT22 and LED connections](docs/images/esp32_assembly.jpg)
+*ESP32 DevKit with DHT22 sensor and LED driver connections*
+
+#### LED Illumination Setup
+
+![IR and White LED positioning](docs/images/led_setup.jpg)
+*Dual-LED array showing IR (850nm) and White LED positioning around sample chamber*
+
+#### Sample Chamber Detail
+
+![Sample chamber with Nematostella](docs/images/sample_chamber.jpg)
+*Sample chamber showing Nematostella positioning and illumination*
+
+#### Wiring Overview
+
+![Complete wiring diagram](docs/images/wiring_overview.jpg)
+*Overview of all connections: ESP32, LEDs, sensor, and camera*
+
+**Note:** *Photo placeholders above - replace with actual images of your setup. Recommended image directory: `docs/images/`*
+
+**Photo Guidelines:**
+- Use high-resolution images (1920x1080 or higher)
+- Include labels or annotations for key components
+- Show multiple angles for complex assemblies
+- Include close-ups of critical connections (DHT22, LED drivers)
+- Consider adding a scale reference (e.g., ruler) in photos
+
+---
+
+### Wiring & Connection Details
+
+#### Complete Pinout Reference
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    ESP32 DevKit Pinout                       ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  3.3V  ─────────────────────┬─────────────┐                 ║
+║                             │             │                 ║
+║                         DHT22 VCC    10kΩ Pull-up           ║
+║                                            │                 ║
+║  GPIO 4 ────────────────────┴──────────────┤                ║
+║                                            │                 ║
+║                                       DHT22 Data             ║
+║                                                              ║
+║  GPIO 25 ─────────────────── IR LED Driver (PWM Input)      ║
+║                                      │                       ║
+║                                      └──→ IR LED (850nm)    ║
+║                                                              ║
+║  GPIO 26 ─────────────────── White LED Driver (PWM Input)   ║
+║                                      │                       ║
+║                                      └──→ White LED         ║
+║                                                              ║
+║  GND ────────────────────────┬───────┬─────────┬────────    ║
+║                              │       │         │            ║
+║                          DHT22    IR LED   White LED        ║
+║                           GND      GND       GND            ║
+║                                                              ║
+║  USB ────────────────────── Computer (Serial 115200 baud)   ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+#### Power Requirements
+
+| Component | Voltage | Current | Notes |
+|-----------|---------|---------|-------|
+| ESP32 | 5V USB | ~500mA | Powered via USB from computer |
+| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin |
+| IR LED | 12V | 350-700mA | Requires external power supply |
+| White LED | 12V | 350-700mA | Requires external power supply |
+| **Total** | - | **~1.5A** | External 12V PSU for LEDs |
+
+**Recommended Power Supply:**
+- 12V DC, 2A minimum
+- Regulated output
+- Separate from computer/ESP32 power to avoid noise
+
+#### Signal Specifications
+
+**PWM Signals (GPIO 25, 26):**
+- Logic Level: 3.3V
+- Frequency: 1 kHz (configurable in firmware)
+- Duty Cycle: 0-100% (controlled by plugin)
+- Rise/Fall Time: <1µs
+
+**DHT22 Communication:**
+- Protocol: Single-wire digital (proprietary)
+- Pull-up: 10kΩ to 3.3V (required)
+- Sampling Rate: ~0.5 Hz (one reading per 2 seconds max)
+- Data Format: 40-bit (16-bit humidity, 16-bit temp, 8-bit checksum)
+
+**Serial Communication:**
+- Protocol: UART over USB
+- Baud Rate: 115200
+- Data Bits: 8
+- Parity: None
+- Stop Bits: 1
+- Flow Control: None
+
+#### Troubleshooting Hardware Issues
+
+**ESP32 Not Detected:**
+- Check USB cable (must be data cable, not charge-only)
+- Install CH340/CP2102 USB drivers (depending on ESP32 variant)
+- Try different USB port
+- Run diagnostic: `python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic`
+
+**LEDs Not Responding:**
+- Verify LED driver power supply connected
+- Check PWM signal with oscilloscope (should see 0-3.3V square wave)
+- Test LED drivers independently
+- Verify GPIO pin assignments match firmware
+
+**DHT22 Returns 0.0 Values:**
+- Check 10kΩ pull-up resistor is installed
+- Verify 3.3V power to sensor
+- Ensure data pin connected to GPIO 4
+- Try different DHT22 sensor (failure rate ~5%)
+
+**LED Intensities Don't Match:**
+- Run LED calibration (see [Calibration System](#calibration-system))
+- Check LED aging (IR LEDs degrade faster)
+- Verify LED driver current settings
+- Ensure uniform illumination of sample
 
 ---
 
