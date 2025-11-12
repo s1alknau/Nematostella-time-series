@@ -1,336 +1,414 @@
-# 🚀 Quick Start - ESP32 Firmware Update
+# ESP32 Firmware Quick Start Guide
 
-## 📋 Was du brauchst
+Fast-track guide to flashing the Nematostella timelapse firmware to your ESP32.
 
-- ✅ ESP32 Dev Board
-- ✅ USB-Kabel
-- ✅ Arduino IDE (oder PlatformIO)
-- ✅ Die neue Firmware-Datei
+**Firmware Version:** 2.2
+**Estimated Time:** 10-15 minutes
 
 ---
 
-## ⚡ SCHNELLANLEITUNG (5 Minuten)
+## What You Need
 
-### Schritt 1: Firmware herunterladen ⬇️
+- ✅ ESP32 Dev Board (ESP32-DevKitC or compatible)
+- ✅ USB cable (data-capable, not charge-only)
+- ✅ Computer with Windows/Mac/Linux
+- ✅ **PlatformIO** (recommended) or **Arduino IDE**
 
-[**ESP32_Firmware_Python_Compatible.ino**](computer:///mnt/user-data/outputs/ESP32_Firmware_Python_Compatible.ino) herunterladen
+---
 
-### Schritt 2: In Arduino IDE öffnen 📂
+## Method 1: PlatformIO (Recommended)
 
-1. Arduino IDE starten
-2. File → Open → `ESP32_Firmware_Python_Compatible.ino`
+### Why PlatformIO?
+- Automated dependency management
+- Faster builds
+- Better error messages
+- Works from command line or VS Code
 
-### Schritt 3: ESP32 Board auswählen 🔧
+### Step 1: Install PlatformIO
 
-1. **Tools → Board → ESP32 Arduino → ESP32 Dev Module**
-2. **Tools → Port → COM[X]** (dein ESP32 Port auswählen)
+**Option A: VS Code Extension**
+1. Install [Visual Studio Code](https://code.visualstudio.com/)
+2. Open VS Code
+3. Extensions → Search "PlatformIO IDE"
+4. Click Install
+5. Restart VS Code
 
-### Schritt 4: DHT Library installieren 📚
-
-**Falls noch nicht installiert:**
-
-1. Tools → Manage Libraries
-2. Suche: "DHT sensor library"
-3. Install: "DHT sensor library by Adafruit" (v1.4.4+)
-4. Install auch: "Adafruit Unified Sensor"
-
-### Schritt 5: Hochladen 🚀
-
-1. **Klick auf Upload-Button** (→ Pfeil)
-2. Warte bis "Done uploading" erscheint
-3. **Reset-Button am ESP32 drücken**
-
-### Schritt 6: Testen ✅
-
-**In Python:**
-```python
-from timeseries_capture.ESP32_Controller import ESP32Controller
-
-esp32 = ESP32Controller()
-if esp32.connect():
-    print("✅ SUCCESS! ESP32 works!")
-
-    # LED Test
-    esp32.select_led_type('ir')
-    esp32.led_on()
-    print("LED should be ON now!")
-
-    esp32.led_off()
-    esp32.disconnect()
-else:
-    print("❌ Connection failed")
+**Option B: Command Line**
+```bash
+pip install platformio
 ```
 
-**Oder in deinem Napari Widget:**
-- Starte ImSwitch/Napari
-- Öffne dein Timelapse Widget
-- Tab "🔌 ESP32 Connection"
-- Klick "Connect"
-- Sollte jetzt funktionieren! ✅
+### Step 2: Navigate to Firmware Directory
+
+```bash
+cd Firmware/LED_Nematostella
+```
+
+### Step 3: Build and Upload
+
+```bash
+# Build the firmware
+pio run
+
+# Upload to ESP32 (auto-detects port)
+pio run --target upload
+
+# Monitor serial output to verify
+pio device monitor
+```
+
+**Expected Output:**
+```
+ESP32 Nematostella Controller - Python Compatible v2.2
+Default timing: 400ms stab + 20ms exp = 420ms total
+```
+
+Press `Ctrl+C` to exit monitor.
+
+**Done!** Your ESP32 is now ready.
 
 ---
 
-## 🔍 Detaillierte Anleitung
+## Method 2: Arduino IDE
 
-### A. Arduino IDE Setup (einmalig)
+### Step 1: Install Arduino IDE
 
-Falls du noch keine ESP32-Unterstützung hast:
+Download from [arduino.cc/en/software](https://www.arduino.cc/en/software)
 
-1. **File → Preferences**
-2. **Additional Board Manager URLs:**
+### Step 2: Add ESP32 Board Support
+
+1. Open Arduino IDE
+2. **File → Preferences**
+3. In "Additional Board Manager URLs" add:
    ```
    https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
    ```
-3. **Tools → Board → Boards Manager**
-4. Suche: "esp32"
-5. Install: "esp32 by Espressif Systems"
+4. Click OK
+5. **Tools → Board → Boards Manager**
+6. Search: "esp32"
+7. Install: "esp32 by Espressif Systems" (version 2.0.0+)
 
-### B. Firmware Upload (ausführlich)
+### Step 3: Install DHT Library
 
-1. **Port finden:**
+1. **Tools → Manage Libraries** (or Sketch → Include Library → Manage Libraries)
+2. Search: "DHT sensor library"
+3. Install: "DHT sensor library by Adafruit" (v1.4.4+)
+4. When prompted, also install: "Adafruit Unified Sensor"
+
+### Step 4: Open Firmware
+
+1. **File → Open**
+2. Navigate to: `Firmware/LED_Nematostella/src/main.cpp`
+3. Click Open
+
+### Step 5: Configure Board Settings
+
+1. **Tools → Board → ESP32 Arduino → ESP32 Dev Module**
+2. **Tools → Port → [Select your ESP32 port]**
    - Windows: COM3, COM4, etc.
-   - Mac/Linux: /dev/ttyUSB0, /dev/cu.usbserial-*
+   - Mac: /dev/cu.usbserial-*
+   - Linux: /dev/ttyUSB0, /dev/ttyACM0
 
-2. **Upload Settings:**
-   - Board: ESP32 Dev Module
+3. **Additional Settings:**
    - Upload Speed: 921600
    - Flash Frequency: 80MHz
    - Flash Mode: QIO
-   - Flash Size: 4MB
-   - Partition Scheme: Default 4MB
-   - Core Debug Level: None
+   - Flash Size: 4MB (32Mb)
+   - Partition Scheme: Default 4MB with spiffs
 
-3. **Upload starten:**
-   - Klick Upload
-   - ESP32 geht automatisch in Flash-Modus
-   - Warte bis "Leaving... Hard resetting"
+### Step 6: Upload Firmware
 
-4. **Nach Upload:**
-   - Reset-Button am ESP32 drücken
-   - LED sollte kurz aufblinken
-   - ESP32 ist bereit!
+1. Click **Upload** button (→ arrow icon)
+2. Wait for "Done uploading" message
+3. Press **Reset button** on ESP32 board
 
-### C. Verbindung testen
-
-#### Test 1: Serial Monitor
+### Step 7: Verify Installation
 
 1. **Tools → Serial Monitor**
-2. **Baud Rate: 115200**
-3. **Aktiviere Debug in Firmware:** `const bool DEBUG_ENABLED = true;`
-4. **Reset ESP32**
-5. **Sollte sehen:**
+2. Set baud rate to: **115200**
+3. Press Reset button on ESP32
+
+**You should see:**
+```
+ESP32 Nematostella Controller - Python Compatible v2.2
+Default timing: 400ms stab + 20ms exp = 420ms total
+```
+
+**If you see this, the firmware is working correctly!**
+
+---
+
+## Hardware Connections
+
+After flashing firmware, connect your hardware:
+
+### Pin Assignments
+
+| Component | ESP32 Pin | Notes |
+|-----------|-----------|-------|
+| IR LED (PWM) | GPIO 4 | Connect to LED driver PWM input |
+| White LED (PWM) | GPIO 15 | Connect to LED driver PWM input |
+| DHT22 Data | GPIO 14 | Requires 10kΩ pull-up to 3.3V |
+| DHT22 VCC | 3.3V | ESP32 3.3V pin |
+| DHT22 GND | GND | ESP32 GND pin |
+
+### Important Notes
+
+- ⚠️ **GPIO 4 = IR LED, GPIO 15 = White LED, GPIO 14 = DHT22**
+- ⚠️ DHT22 **requires** 10kΩ pull-up resistor on data line
+- ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
+- ⚠️ LED drivers need separate 12V power supply
+
+### Wiring Diagram
+
+```
+ESP32                    LED Drivers           LEDs
+┌─────────┐             ┌──────────┐
+│         │             │          │
+│ GPIO 4  ├────────────►│ IR PWM   ├──────►  IR LED (850nm)
+│         │             │          │
+│ GPIO 15 ├────────────►│ White PWM├──────►  White LED
+│         │             │          │
+│         │             └──────────┘
+│ 3.3V    ├──┬──────────────────────────────►  DHT22 VCC
+│         │  │
+│ GPIO 14 ├──┼──[10kΩ]──┬────────────────►  DHT22 Data
+│         │  └───────────┘
+│ GND     ├────────────────────────────────►  DHT22 GND
+│         │
+└─────────┘
+```
+
+---
+
+## Testing the Firmware
+
+### Method 1: Using Serial Monitor
+
+1. Open Serial Monitor (115200 baud)
+2. Type commands as hex values:
+
    ```
-   ESP32 Nematostella Controller - Python Compatible v2.1
-   Default timing: 400ms stab + 20ms exp
+   Send: 02          (STATUS command)
+   Expect: 10 + 4 bytes (temp/humidity data)
+
+   Send: 20          (SELECT IR LED)
+   Expect: 30        (IR selected)
+
+   Send: 01          (LED ON)
+   Expect: AA        (ACK)
+
+   Send: 00          (LED OFF)
+   Expect: AA        (ACK)
    ```
 
-#### Test 2: Python Schnelltest
+**Note:** Most serial monitors can't send raw hex easily. Use Python method instead.
+
+### Method 2: Using Python
+
+Create a test script `test_esp32.py`:
 
 ```python
 import serial
 import time
 
-# Dein COM-Port
-ser = serial.Serial('COM3', 115200, timeout=1)
-time.sleep(2)
+# Adjust port to your system
+PORT = 'COM3'  # Windows
+# PORT = '/dev/ttyUSB0'  # Linux
+# PORT = '/dev/cu.usbserial-XXXX'  # Mac
 
-# LED ON Command (0x01)
-ser.write(bytes([0x01]))
-time.sleep(0.1)
+ser = serial.Serial(PORT, 115200, timeout=2)
+time.sleep(2)  # Wait for ESP32 to initialize
 
-# Read response (should be 0xAA)
-response = ser.read(1)
-print(f"Response: {response.hex()}")  # Should print: "aa"
+print("Testing ESP32 Firmware v2.2")
+print("-" * 40)
 
-if response == b'\xaa':
-    print("✅ ESP32 firmware works!")
+# Test 1: Status
+print("Test 1: Get Status")
+ser.write(b'\x02')
+response = ser.read(5)
+if len(response) == 5:
+    status = response[0]
+    temp = int.from_bytes(response[1:3], 'big') / 100.0
+    humidity = int.from_bytes(response[3:5], 'big') / 100.0
+    print(f"✅ Status: 0x{status:02X}")
+    print(f"   Temperature: {temp:.2f}°C")
+    print(f"   Humidity: {humidity:.2f}%")
 else:
-    print(f"❌ Unexpected response: {response.hex()}")
+    print(f"❌ Expected 5 bytes, got {len(response)}")
 
+# Test 2: Select IR LED
+print("\nTest 2: Select IR LED")
+ser.write(b'\x20')
+response = ser.read(1)
+if response == b'\x30':
+    print("✅ IR LED selected (response: 0x30)")
+else:
+    print(f"❌ Expected 0x30, got {response.hex()}")
+
+# Test 3: LED ON
+print("\nTest 3: Turn LED ON")
+ser.write(b'\x01')
+response = ser.read(1)
+if response == b'\xAA':
+    print("✅ LED ON (response: 0xAA)")
+    print("   Check if IR LED is illuminated (use IR viewer!)")
+else:
+    print(f"❌ Expected 0xAA, got {response.hex()}")
+
+time.sleep(1)
+
+# Test 4: LED OFF
+print("\nTest 4: Turn LED OFF")
+ser.write(b'\x00')
+response = ser.read(1)
+if response == b'\xAA':
+    print("✅ LED OFF (response: 0xAA)")
+else:
+    print(f"❌ Expected 0xAA, got {response.hex()}")
+
+print("\n" + "=" * 40)
+print("Firmware test complete!")
 ser.close()
 ```
 
-#### Test 3: Vollständiger Python Test
-
-```python
-from timeseries_capture.ESP32_Controller import ESP32Controller
-
-print("Testing ESP32 connection...")
-
-# Connect
-esp32 = ESP32Controller(port=None)  # Auto-detect
-if not esp32.connect():
-    print("❌ Failed to connect")
-    exit(1)
-
-print(f"✅ Connected on {esp32.comm.port}")
-
-# Test 1: LED Select
-print("\nTest 1: Select IR LED")
-if esp32.select_led_type('ir'):
-    print("✅ IR LED selected")
-else:
-    print("❌ Select failed")
-
-# Test 2: LED ON
-print("\nTest 2: LED ON")
-if esp32.led_on():
-    print("✅ LED ON successful")
-    time.sleep(1)
-else:
-    print("❌ LED ON failed")
-
-# Test 3: LED OFF
-print("\nTest 3: LED OFF")
-if esp32.led_off():
-    print("✅ LED OFF successful")
-else:
-    print("❌ LED OFF failed")
-
-# Test 4: Set Power
-print("\nTest 4: Set LED Power to 50%")
-if esp32.set_led_power(50, 'ir'):
-    print("✅ Power set to 50%")
-else:
-    print("❌ Set power failed")
-
-# Test 5: LED Status
-print("\nTest 5: Get LED Status")
-status = esp32.get_led_status()
-if status:
-    print(f"✅ Status: IR={status.ir_state}, White={status.white_state}")
-    print(f"   Power: IR={status.ir_power}%, White={status.white_power}%")
-else:
-    print("❌ Get status failed")
-
-# Test 6: Set Timing
-print("\nTest 6: Set Timing (400ms + 20ms)")
-if esp32.set_timing(400, 20):
-    print("✅ Timing set")
-else:
-    print("❌ Set timing failed")
-
-# Cleanup
-esp32.disconnect()
-print("\n✅ All tests completed!")
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Problem: "Port not found" / "Serial port busy"
-
-**Lösung:**
+Run the test:
 ```bash
-# Windows
-- Device Manager → Ports → Suche ESP32
-- Schließe Arduino Serial Monitor
-- Schließe andere Programme die den Port nutzen
-
-# Mac/Linux
-ls -l /dev/tty*
-# Suche nach USB-Geräten
+python test_esp32.py
 ```
 
-### Problem: "Upload failed" / "Timed out"
+**Expected Output:**
+```
+Testing ESP32 Firmware v2.2
+----------------------------------------
+Test 1: Get Status
+✅ Status: 0x10
+   Temperature: 23.50°C
+   Humidity: 45.20%
 
-**Lösung:**
-1. **Hold BOOT button** am ESP32
-2. Klick **Upload** in Arduino
-3. Wenn "Connecting..." erscheint, **release BOOT**
-4. Warte bis Upload fertig
+Test 2: Select IR LED
+✅ IR LED selected (response: 0x30)
 
-### Problem: "Response 0xAA not found" (nach Upload)
+Test 3: Turn LED ON
+✅ LED ON (response: 0xAA)
+   Check if IR LED is illuminated (use IR viewer!)
 
-**Lösung:**
-1. **ESP32 Reset** drücken
-2. Python-Cache löschen:
-   ```bash
-   FOR /d /r . %d IN (__pycache__) DO @IF EXIST "%d" rd /s /q "%d"
+Test 4: Turn LED OFF
+✅ LED OFF (response: 0xAA)
+
+========================================
+Firmware test complete!
+```
+
+---
+
+## Troubleshooting
+
+### Problem: Port Not Found
+
+**Windows:**
+- Install CH340 or CP2102 USB driver (depending on your ESP32 variant)
+- Check Device Manager → Ports (COM & LPT)
+- Try different USB port
+- Try different USB cable (must be data cable!)
+
+**Mac:**
+- Install CH340 driver: [github.com/adrianmihalko/ch340g-ch34g-ch34x-mac-os-x-driver](https://github.com/adrianmihalko/ch340g-ch34g-ch34x-mac-os-x-driver)
+- Check: `ls /dev/cu.*`
+
+**Linux:**
+- Add user to dialout group: `sudo usermod -a -G dialout $USER`
+- Logout and login again
+- Check: `ls /dev/ttyUSB*`
+
+### Problem: Upload Failed
+
+**Solutions:**
+- Hold **BOOT button** on ESP32 while uploading
+- Press **RESET button** after upload
+- Lower upload speed to 115200 (Tools → Upload Speed)
+- Check USB cable is data-capable
+- Try different USB port
+
+### Problem: Compilation Errors
+
+**Missing DHT library:**
+```
+fatal error: DHT.h: No such file or directory
+```
+**Solution:** Install "DHT sensor library by Adafruit" via Library Manager
+
+**ESP32 board not found:**
+```
+Error: Board ... not available
+```
+**Solution:** Install ESP32 board support (see Step 2)
+
+### Problem: No Serial Output
+
+**Solutions:**
+- Check baud rate is 115200
+- Press RESET button on ESP32
+- Check Serial Monitor is connected to correct port
+- Check USB cable supports data (not charge-only)
+
+### Problem: DHT22 Shows 0.0 / NaN
+
+**Solutions:**
+- Verify 10kΩ pull-up resistor installed on GPIO 14
+- Check DHT22 power (3.3V) connection
+- Ensure DHT22 data pin connected to GPIO 14 (**not GPIO 4!**)
+- Wait 2 seconds after power-on for sensor warm-up
+- Try different DHT22 sensor
+
+---
+
+## Next Steps
+
+After successfully flashing and testing:
+
+1. **Connect Python Plugin:**
+   ```python
+   from timeseries_capture.ESP32_Controller import ESP32Controller
+
+   esp32 = ESP32Controller()
+   if esp32.connect():
+       print("✅ ESP32 connected!")
    ```
-3. Python neu starten
-4. Nochmal testen
 
-### Problem: LEDs funktionieren nicht
+2. **Use with napari Plugin:**
+   - Launch napari
+   - Plugins → Nematostella Timelapse Recording
+   - ESP32 Connection tab → Connect
+   - Should auto-detect and connect
 
-**Hardware Check:**
-```
-ESP32 Pin 4  → IR LED (via MOSFET/Treiber)
-ESP32 Pin 15 → White LED (via MOSFET/Treiber)
-ESP32 Pin 14 → DHT22 Sensor
-ESP32 GND    → Common Ground
-```
+3. **Calibrate LEDs:**
+   - See main [README.md](../README.md#calibration-system)
+   - LED Calibration tab in napari plugin
 
-### Problem: Firmware kompiliert nicht
-
-**Fehlende Library:**
-```
-Error: DHT.h: No such file or directory
-```
-
-**Lösung:**
-1. Tools → Manage Libraries
-2. Install: "DHT sensor library by Adafruit"
-3. Install: "Adafruit Unified Sensor"
+4. **Start Recording:**
+   - Configure recording parameters
+   - Set phase settings (optional)
+   - Click Start Recording
 
 ---
 
-## 📊 Nach erfolgreichem Flash
+## Additional Resources
 
-### Was jetzt funktionieren sollte:
-
-✅ ESP32 Verbindung in Python
-✅ ESP32 Verbindung in Napari Widget
-✅ LED ON/OFF Befehle
-✅ LED Power Control (0-100%)
-✅ LED Type Selection (IR/White)
-✅ Timing Configuration
-✅ Sync Capture (Single/Dual)
-✅ LED Status Abfrage
-✅ Sensor Daten (Temperatur/Humidity)
-
-### Was noch zu tun ist:
-
-⚠️ Recording-Funktionalität in Python implementieren
-⚠️ Calibration implementieren
+- **Full Firmware Documentation:** [FIRMWARE_DOCUMENTATION.md](FIRMWARE_DOCUMENTATION.md)
+- **Main Plugin Documentation:** [../README.md](../README.md)
+- **Hardware Setup Guide:** [../README.md#hardware-setup--assembly](../README.md#hardware-setup--assembly)
+- **Troubleshooting:** [../README.md#troubleshooting](../README.md#troubleshooting)
 
 ---
 
-## 🎉 Erfolg!
+## Support
 
-Nach dem Flashen solltest du:
-
-1. **In Python** - Alle LED-Befehle funktionieren
-2. **In Napari** - ESP32 Connection Panel funktioniert
-3. **Keine Errors** - "Response 0xAA not found" ist weg!
-
-**Die Firmware ist jetzt 100% kompatibel mit deinem Python-Code!** 🚀
-
----
-
-## 📚 Weiterführende Docs
-
-- [Vollständige Firmware-Dokumentation](computer:///mnt/user-data/outputs/FIRMWARE_DOCUMENTATION.md)
-- [Befehlsübersicht & Protocol](computer:///mnt/user-data/outputs/FIRMWARE_DOCUMENTATION.md#vollständige-befehlsübersicht)
-
----
-
-## 🆘 Immer noch Probleme?
-
-1. **Serial Monitor Check:**
-   - 115200 baud
-   - Reset ESP32
-   - Siehst du "ESP32 Nematostella Controller"?
-
-2. **Python Test:**
-   - Führe den Schnelltest oben aus
-   - Kopiere die Fehlermeldung
-   - Schick sie mir!
-
-3. **Hardware Check:**
-   - USB-Kabel OK?
-   - ESP32 LED blinkt beim Upload?
-   - Richtiger COM-Port?
-
-**Bei weiteren Fragen einfach melden!** 💪
+If you encounter issues:
+- Check [FIRMWARE_DOCUMENTATION.md](FIRMWARE_DOCUMENTATION.md) troubleshooting section
+- Open an issue on GitHub: https://github.com/s1alknau/Nematostella-time-series/issues
+- Include:
+  - Error messages (full text)
+  - ESP32 board model
+  - Operating system
+  - Arduino IDE / PlatformIO version

@@ -122,14 +122,14 @@ Core dependencies:
 
 **IR LED Circuit:**
 ```
-ESP32 GPIO 25 → LED Driver (PWM Input) → IR LED (850nm) → GND
-                      ↑
-                   Power Supply (12V recommended)
+ESP32 GPIO 4 → LED Driver (PWM Input) → IR LED (850nm) → GND
+                     ↑
+                  Power Supply (12V recommended)
 ```
 
 **White LED Circuit:**
 ```
-ESP32 GPIO 26 → LED Driver (PWM Input) → White LED → GND
+ESP32 GPIO 15 → LED Driver (PWM Input) → White LED → GND
                       ↑
                    Power Supply (12V recommended)
 ```
@@ -149,7 +149,7 @@ ESP32 GPIO 26 → LED Driver (PWM Input) → White LED → GND
 ```
 DHT22 Sensor Pinout:
 Pin 1 (VCC)  → ESP32 3.3V
-Pin 2 (Data) → ESP32 GPIO 4 (+ 10kΩ pull-up resistor to 3.3V)
+Pin 2 (Data) → ESP32 GPIO 14 (+ 10kΩ pull-up resistor to 3.3V)
 Pin 3 (NC)   → Not connected
 Pin 4 (GND)  → ESP32 GND
 ```
@@ -259,15 +259,15 @@ Pin 4 (GND)  → ESP32 GND
 ║                             │             │                 ║
 ║                         DHT22 VCC    10kΩ Pull-up           ║
 ║                                            │                 ║
-║  GPIO 4 ────────────────────┴──────────────┤                ║
+║  GPIO 14 ───────────────────┴──────────────┤                ║
 ║                                            │                 ║
 ║                                       DHT22 Data             ║
 ║                                                              ║
-║  GPIO 25 ─────────────────── IR LED Driver (PWM Input)      ║
+║  GPIO 4  ─────────────────── IR LED Driver (PWM Input)      ║
 ║                                      │                       ║
 ║                                      └──→ IR LED (850nm)    ║
 ║                                                              ║
-║  GPIO 26 ─────────────────── White LED Driver (PWM Input)   ║
+║  GPIO 15 ─────────────────── White LED Driver (PWM Input)   ║
 ║                                      │                       ║
 ║                                      └──→ White LED         ║
 ║                                                              ║
