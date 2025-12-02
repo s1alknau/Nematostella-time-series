@@ -12,7 +12,7 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 ## Features
 
 - **Hardware-Synchronized LED Control**: Precise synchronization between camera exposure and LED illumination via ESP32 microcontroller
-- **Dual-LED Support**: Independent control of IR (850nm) and White (broad-spectrum) LEDs for multi-modal imaging
+- **Dual-LED Support**: Independent control of IR (850nm) exchangeable LEDs and White (broad-spectrum) LEDs for creating light stimulation and oblique lighting
 - **Phase-Based Recording**: Automated light/dark cycles for circadian rhythm studies
 - **Drift-Compensated Timing**: Frame timing measured from absolute recording start, preventing cumulative drift
 - **Environmental Monitoring**: Real-time temperature and humidity tracking via DHT22 sensor
@@ -80,8 +80,8 @@ Core dependencies:
    - Firmware version: v2.2 or higher
 
 2. **LED System**
-   - **IR LED**: 850nm wavelength (e.g., TSAL6400)
-   - **White LED**: Broad-spectrum (e.g., high-CRI 5000K)
+   - **IR LED**: 850nm wavelength (e.g., LED Streifen 2538 120 LED/m IR 850nm)
+   - **White LED**: Broad-spectrum (e.g., 24 V COB 320 L/m iNextStation)
    - **MOSFET Drivers**: BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
    - **Power Supply**: 12V DC for LED strips/arrays
 
@@ -96,8 +96,8 @@ Core dependencies:
    - Common ground required between all components
 
 5. **Camera**
-   - Compatible with Micro-Manager device adapters
-   - Recommended: Cameras with hardware triggering support
+   - Hik Robotics MV-CS-013 60GN Near Infrared
+   - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
 
 ---
 
@@ -120,7 +120,7 @@ Core dependencies:
    # Open src/main.cpp and upload to ESP32 board
    ```
 
-3. **Verify Firmware**
+3. **Verify Firmware** (optional)
    - Open Serial Monitor (115200 baud)
    - You should see: `ESP32 LED Controller v2.2 Ready`
    - Type `STATUS` to verify all systems operational
