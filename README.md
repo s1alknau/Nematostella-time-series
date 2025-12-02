@@ -80,17 +80,19 @@ Core dependencies:
    - Firmware version: v2.2 or higher
 
 2. **LED System**
-   - **IR LED**: 850nm wavelength (e.g., TSAL6400)
-   - **White LED**: Broad-spectrum (e.g., high-CRI 5000K)
+   - **IR LED**: 850nm wavelength (e.g., LED Streifen 2538 120 LED/m IR 850nm)
+   - **White LED**: Broad-spectrum (e.g., 24 V COB 320 L/m iNextStation)
    - LED drivers with PWM control (0-100%)
 
 3. **DHT22 Sensor**
    - Temperature range: -40°C to 80°C (±0.5°C accuracy)
    - Humidity range: 0-100% RH (±2-5% accuracy)
-
+4. **Mosfet**
+   - BOJACK IRLZ34N MOSFET 30 A 55 V IRLZ34NPBF
 4. **Camera**
-   - Compatible with Micro-Manager device adapters
-   - Recommended: Cameras with hardware triggering support
+   - Hik Robotics MV-CS-013 60GN Near Infrared
+   https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
+   
 
 ---
 
@@ -113,7 +115,7 @@ Core dependencies:
    # Open src/main.cpp and upload to ESP32 board
    ```
 
-3. **Verify Firmware**
+3. **Verify Firmware** (optional)
    - Open Serial Monitor (115200 baud)
    - You should see: `ESP32 LED Controller v2.2 Ready`
    - Type `STATUS` to verify all systems operational
