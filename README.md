@@ -82,13 +82,20 @@ Core dependencies:
 2. **LED System**
    - **IR LED**: 850nm wavelength (e.g., TSAL6400)
    - **White LED**: Broad-spectrum (e.g., high-CRI 5000K)
-   - LED drivers with PWM control (0-100%)
+   - **MOSFET Drivers**: BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
+   - **Power Supply**: 12V DC for LED strips/arrays
 
 3. **DHT22 Sensor**
    - Temperature range: -40°C to 80°C (±0.5°C accuracy)
    - Humidity range: 0-100% RH (±2-5% accuracy)
+   - Requires 10kΩ pull-up resistor
 
-4. **Camera**
+4. **Connectors & Wiring**
+   - **WAGO 221-413** COMPACT Lever Connectors (3-conductor)
+   - Wire: 18-22 AWG for signal, 16-18 AWG for power
+   - Common ground required between all components
+
+5. **Camera**
    - Compatible with Micro-Manager device adapters
    - Recommended: Cameras with hardware triggering support
 
@@ -118,31 +125,65 @@ Core dependencies:
    - You should see: `ESP32 LED Controller v2.2 Ready`
    - Type `STATUS` to verify all systems operational
 
-#### Step 2: LED System Assembly
+#### Step 2: LED System Assembly with IRLZ34N MOSFETs
+
+**MOSFET Specifications:**
+- Model: BOJACK IRLZ34N (IRLZ34NPBF)
+- Type: N-Channel Logic-Level MOSFET
+- Maximum Ratings: 30A, 55V
+- Gate Threshold: 1-2V (logic-level, works with 3.3V from ESP32)
+- Package: TO-220
 
 **IR LED Circuit:**
 ```
-ESP32 GPIO 4 → LED Driver (PWM Input) → IR LED (850nm) → GND
-                     ↑
-                  Power Supply (12V recommended)
+                    ┌─────────────┐
+ESP32 GPIO 4 ──────►│ Gate        │
+(3.3V PWM)          │  IRLZ34N    │
+                    │  MOSFET     │
+                    │             │
+12V PSU (+) ────────┤ Drain       │
+                    │             │
+                    │ Source      ├─────► IR LED Strip (+)
+                    └─────────────┘
+                                        IR LED Strip (-) ──► GND
+
+Note: Add current-limiting resistor if using individual LEDs
 ```
 
 **White LED Circuit:**
 ```
-ESP32 GPIO 15 → LED Driver (PWM Input) → White LED → GND
-                      ↑
-                   Power Supply (12V recommended)
+                    ┌─────────────┐
+ESP32 GPIO 15 ─────►│ Gate        │
+(3.3V PWM)          │  IRLZ34N    │
+                    │  MOSFET     │
+                    │             │
+12V PSU (+) ────────┤ Drain       │
+                    │             │
+                    │ Source      ├─────► White LED Strip (+)
+                    └─────────────┘
+                                        White LED Strip (-) ──► GND
+
+Note: Add current-limiting resistor if using individual LEDs
 ```
 
-**Recommended LED Drivers:**
-- PWM-compatible constant current drivers
-- Input: 5V PWM signal from ESP32
-- Output: Adjustable current (typically 350-700mA for high-power LEDs)
+**MOSFET Connection Details:**
+1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor (optional, for protection)
+2. **Drain Pin** → 12V Power Supply (+)
+3. **Source Pin** → LED Anode (+)
+4. **LED Cathode (-)** → GND (common ground with ESP32 and PSU)
+
+**Important:**
+- IRLZ34N is **logic-level** compatible (works with 3.3V gate voltage)
+- No additional driver circuit needed between ESP32 and MOSFET
+- PWM frequency: 15kHz (set in firmware)
+- Can handle high-power LED strips (up to 30A theoretical, typically use 1-3A)
 
 **Safety Notes:**
 - ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
-- Use appropriate current limiting to prevent LED damage
-- Ensure proper heat sinking for high-power LEDs
+- Use heatsink on MOSFET if driving >2A continuous
+- Add flyback diode (1N4007) across LED if using inductive loads
+- Ensure common ground between ESP32, PSU, and MOSFETs
+- Use appropriate gauge wire for current loads
 
 #### Step 3: DHT22 Sensor Connection
 
@@ -263,13 +304,13 @@ Pin 4 (GND)  → ESP32 GND
 ║                                            │                 ║
 ║                                       DHT22 Data             ║
 ║                                                              ║
-║  GPIO 4  ─────────────────── IR LED Driver (PWM Input)      ║
+║  GPIO 4  ─────────────────── IRLZ34N Gate (IR MOSFET)       ║
 ║                                      │                       ║
-║                                      └──→ IR LED (850nm)    ║
+║                                      └──→ IR LED Strip      ║
 ║                                                              ║
-║  GPIO 15 ─────────────────── White LED Driver (PWM Input)   ║
+║  GPIO 15 ─────────────────── IRLZ34N Gate (White MOSFET)    ║
 ║                                      │                       ║
-║                                      └──→ White LED         ║
+║                                      └──→ White LED Strip   ║
 ║                                                              ║
 ║  GND ────────────────────────┬───────┬─────────┬────────    ║
 ║                              │       │         │            ║
@@ -287,14 +328,21 @@ Pin 4 (GND)  → ESP32 GND
 |-----------|---------|---------|-------|
 | ESP32 | 5V USB | ~500mA | Powered via USB from computer |
 | DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin |
-| IR LED | 12V | 350-700mA | Requires external power supply |
-| White LED | 12V | 350-700mA | Requires external power supply |
-| **Total** | - | **~1.5A** | External 12V PSU for LEDs |
+| IRLZ34N MOSFETs | 3.3V (gate) | <1mA | Logic-level, driven by ESP32 GPIO |
+| IR LED Strip | 12V | 1-3A | Via IRLZ34N MOSFET, external PSU |
+| White LED Strip | 12V | 1-3A | Via IRLZ34N MOSFET, external PSU |
+| **Total** | - | **~6A max** | 12V PSU (5A minimum recommended) |
 
 **Recommended Power Supply:**
-- 12V DC, 2A minimum
+- 12V DC, 5A minimum (10A for high-power setups)
 - Regulated output
 - Separate from computer/ESP32 power to avoid noise
+
+**Connectors:**
+- WAGO 221-413 COMPACT Lever Connectors (3-conductor)
+- Used for safe wire connections (ESP32-MOSFET-LED-PSU)
+- Tool-free connection, reusable
+- Rated for 32A, 4mm² wire
 
 #### Signal Specifications
 
