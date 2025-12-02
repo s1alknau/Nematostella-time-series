@@ -116,9 +116,10 @@ class CalibrationService:
         self, ir_initial_power: int = 50, white_initial_power: int = 30
     ) -> CalibrationResult:
         """
-        Calibrate both LEDs to match target intensity.
+        Calibrate both LEDs SIMULTANEOUSLY to match target intensity.
 
-        First calibrates IR LED, then calibrates White LED to match.
+        IMPORTANT: This method calibrates IR and White LEDs together with both on at the same time.
+        This ensures the combined intensity matches the target when using dual LED mode.
 
         Args:
             ir_initial_power: Starting IR LED power
@@ -127,57 +128,188 @@ class CalibrationService:
         Returns:
             CalibrationResult with both LED powers
         """
-        logger.info("Starting Dual LED calibration")
+        logger.info("Starting Dual LED calibration (SIMULTANEOUS mode)")
+        logger.info(f"Target intensity: {self.target_intensity}")
+        logger.info(f"Initial powers: IR={ir_initial_power}%, White={white_initial_power}%")
 
-        # Step 1: Calibrate IR LED
-        logger.info("Step 1: Calibrating IR LED...")
-        ir_result = self.calibrate_ir(ir_initial_power)
+        current_ir_power = ir_initial_power
+        current_white_power = white_initial_power
+        best_ir_power = ir_initial_power
+        best_white_power = white_initial_power
+        best_intensity = 0.0
+        best_error = float("inf")
 
-        if not ir_result.success:
+        # Binary search boundaries for both LEDs
+        min_ir = 1
+        max_ir = 100
+        min_white = 1
+        max_white = 100
+
+        # Turn on BOTH LEDs before calibration
+        logger.info("Turning on BOTH IR and White LEDs for simultaneous calibration")
+
+        # Select IR and turn on
+        if not self.led_on_callback("ir"):
+            logger.error("Failed to turn on IR LED")
             return CalibrationResult(
                 success=False,
                 led_type="dual",
-                ir_power=ir_result.ir_power,
-                white_power=white_initial_power,
-                measured_intensity=ir_result.measured_intensity,
+                ir_power=0,
+                white_power=0,
+                measured_intensity=0.0,
                 target_intensity=self.target_intensity,
-                error_percent=ir_result.error_percent,
-                iterations=ir_result.iterations,
-                message=f"Dual calibration failed: IR calibration unsuccessful - {ir_result.message}",
+                error_percent=100.0,
+                iterations=0,
+                message="Failed to turn on IR LED",
             )
 
-        # Step 2: Calibrate White LED to match IR
-        logger.info(
-            f"Step 2: Calibrating White LED to match IR intensity ({ir_result.measured_intensity:.1f})..."
-        )
-        white_result = self.calibrate_white(white_initial_power)
+        time.sleep(0.1)
 
-        if not white_result.success:
+        # Select White and turn on
+        if not self.led_on_callback("white"):
+            logger.error("Failed to turn on White LED")
+            self.led_off_callback()  # Turn off IR
             return CalibrationResult(
                 success=False,
                 led_type="dual",
-                ir_power=ir_result.ir_power,
-                white_power=white_result.white_power,
-                measured_intensity=white_result.measured_intensity,
+                ir_power=0,
+                white_power=0,
+                measured_intensity=0.0,
                 target_intensity=self.target_intensity,
-                error_percent=white_result.error_percent,
-                iterations=ir_result.iterations + white_result.iterations,
-                message=f"Dual calibration failed: White calibration unsuccessful - {white_result.message}",
+                error_percent=100.0,
+                iterations=0,
+                message="Failed to turn on White LED",
             )
 
-        # Success!
-        return CalibrationResult(
-            success=True,
-            led_type="dual",
-            ir_power=ir_result.ir_power,
-            white_power=white_result.white_power,
-            measured_intensity=(ir_result.measured_intensity + white_result.measured_intensity)
-            / 2.0,
-            target_intensity=self.target_intensity,
-            error_percent=(ir_result.error_percent + white_result.error_percent) / 2.0,
-            iterations=ir_result.iterations + white_result.iterations,
-            message=f"Dual calibration successful! IR={ir_result.ir_power}%, White={white_result.white_power}%",
-        )
+        try:
+            for iteration in range(self.max_iterations):
+                logger.info(
+                    f"Iteration {iteration + 1}/{self.max_iterations}: Testing DUAL LED at IR={current_ir_power}%, White={current_white_power}%"
+                )
+
+                # Set BOTH LED powers
+                success_ir = self.set_led_power_callback(current_ir_power, "ir")
+                time.sleep(0.1)
+                success_white = self.set_led_power_callback(current_white_power, "white")
+
+                if not (success_ir and success_white):
+                    logger.error(
+                        f"Failed to set LED powers (IR: {success_ir}, White: {success_white})"
+                    )
+                    return CalibrationResult(
+                        success=False,
+                        led_type="dual",
+                        ir_power=current_ir_power,
+                        white_power=current_white_power,
+                        measured_intensity=best_intensity,
+                        target_intensity=self.target_intensity,
+                        error_percent=best_error,
+                        iterations=iteration + 1,
+                        message=f"Failed to set LED powers (iteration {iteration + 1})",
+                    )
+
+                # Wait for LEDs to stabilize
+                time.sleep(0.5)
+
+                # Capture and measure frame with BOTH LEDs on
+                measured_intensity = self._measure_intensity()
+
+                if measured_intensity is None:
+                    logger.error(f"Failed to capture frame at iteration {iteration + 1}")
+                    return CalibrationResult(
+                        success=False,
+                        led_type="dual",
+                        ir_power=current_ir_power,
+                        white_power=current_white_power,
+                        measured_intensity=best_intensity,
+                        target_intensity=self.target_intensity,
+                        error_percent=best_error,
+                        iterations=iteration + 1,
+                        message=f"Failed to capture frame (iteration {iteration + 1})",
+                    )
+
+                # Calculate error
+                error_percent = (
+                    abs(measured_intensity - self.target_intensity) / self.target_intensity * 100.0
+                )
+
+                logger.info(
+                    f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
+                )
+
+                # Update best result
+                if error_percent < best_error:
+                    best_ir_power = current_ir_power
+                    best_white_power = current_white_power
+                    best_intensity = measured_intensity
+                    best_error = error_percent
+
+                # Check if within tolerance
+                if error_percent <= self.tolerance_percent:
+                    logger.info(
+                        f"✅ Dual calibration successful! IR={best_ir_power}%, White={best_white_power}%, Intensity={best_intensity:.1f}, Error={error_percent:.1f}%"
+                    )
+                    return CalibrationResult(
+                        success=True,
+                        led_type="dual",
+                        ir_power=best_ir_power,
+                        white_power=best_white_power,
+                        measured_intensity=best_intensity,
+                        target_intensity=self.target_intensity,
+                        error_percent=error_percent,
+                        iterations=iteration + 1,
+                        message=f"Dual calibration successful at IR={best_ir_power}%, White={best_white_power}%",
+                    )
+
+                # Binary search adjustment - adjust both LEDs proportionally
+                if measured_intensity < self.target_intensity:
+                    # Too dim, increase both powers proportionally
+                    min_ir = current_ir_power
+                    min_white = current_white_power
+                    current_ir_power = (current_ir_power + max_ir) // 2
+                    current_white_power = (current_white_power + max_white) // 2
+                else:
+                    # Too bright, decrease both powers proportionally
+                    max_ir = current_ir_power
+                    max_white = current_white_power
+                    current_ir_power = (min_ir + current_ir_power) // 2
+                    current_white_power = (min_white + current_white_power) // 2
+
+                # Prevent getting stuck
+                if current_ir_power == best_ir_power and current_white_power == best_white_power:
+                    logger.info(
+                        f"⚠️ Calibration converged at IR={best_ir_power}%, White={best_white_power}% (error: {best_error:.1f}%)"
+                    )
+                    break
+
+            # Max iterations reached or converged
+            if best_error <= self.tolerance_percent:
+                success = True
+                message = (
+                    f"Dual calibration successful at IR={best_ir_power}%, White={best_white_power}%"
+                )
+            else:
+                success = False
+                message = f"Dual calibration did not converge (best error: {best_error:.1f}%)"
+
+            logger.info(f"Calibration finished: {message}")
+
+            return CalibrationResult(
+                success=success,
+                led_type="dual",
+                ir_power=best_ir_power,
+                white_power=best_white_power,
+                measured_intensity=best_intensity,
+                target_intensity=self.target_intensity,
+                error_percent=best_error,
+                iterations=self.max_iterations,
+                message=message,
+            )
+
+        finally:
+            # Always turn off BOTH LEDs after calibration
+            logger.info("Turning off BOTH LEDs after dual calibration")
+            self.led_off_callback()
 
     def _calibrate_single_led(self, led_type: str, initial_power: int) -> CalibrationResult:
         """
