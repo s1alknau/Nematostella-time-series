@@ -150,37 +150,42 @@ After flashing firmware, connect your hardware:
 
 | Component | ESP32 Pin | Notes |
 |-----------|-----------|-------|
-| IR LED (PWM) | GPIO 4 | Connect to LED driver PWM input |
-| White LED (PWM) | GPIO 15 | Connect to LED driver PWM input |
-| DHT22 Data | GPIO 14 | Requires 10kΩ pull-up to 3.3V |
+| IR LED (PWM) | GPIO 4 | Connect to MOSFET gate (IRLZ34N) |
+| White LED (PWM) | GPIO 15 | Connect to MOSFET gate (IRLZ34N) |
+| DHT22 Data | GPIO 14 | Direct connection (sensor board has integrated pull-up) |
 | DHT22 VCC | 3.3V | ESP32 3.3V pin |
 | DHT22 GND | GND | ESP32 GND pin |
 
 ### Important Notes
 
 - ⚠️ **GPIO 4 = IR LED, GPIO 15 = White LED, GPIO 14 = DHT22**
-- ⚠️ DHT22 **requires** 10kΩ pull-up resistor on data line
+- ⚠️ DHT22 sensor board has **integrated pull-up resistor** - no external resistor needed
 - ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
-- ⚠️ LED drivers need separate 12V power supply
+- ⚠️ MOSFETs (IRLZ34N) control LED strips via 12V power supply
+- ⚠️ **Common ground required** between ESP32 (USB power) and 12V PSU
 
 ### Wiring Diagram
 
 ```
-ESP32                    LED Drivers           LEDs
-┌─────────┐             ┌──────────┐
-│         │             │          │
-│ GPIO 4  ├────────────►│ IR PWM   ├──────►  IR LED (850nm)
-│         │             │          │
-│ GPIO 15 ├────────────►│ White PWM├──────►  White LED
-│         │             │          │
-│         │             └──────────┘
-│ 3.3V    ├──┬──────────────────────────────►  DHT22 VCC
-│         │  │
-│ GPIO 14 ├──┼──[10kΩ]──┬────────────────►  DHT22 Data
-│         │  └───────────┘
-│ GND     ├────────────────────────────────►  DHT22 GND
-│         │
-└─────────┘
+Power Supplies:          ESP32 Controller         MOSFETs & LEDs
+┌──────────┐            ┌─────────┐
+│ USB PSU  │  USB       │         │  GPIO 4      IRLZ34N    ┌─────────┐
+│  (5V)    ├───────────►│ ESP32   ├─────────────► Gate     │ IR LED  │
+└────┬─────┘            │         │              Drain◄────┤ Strip   │
+     │                  │ GPIO 15 ├────────┐     Source────► (+)     │
+     │                  │         │        │                └────┬────┘
+┌────┴─────┐            │ GPIO 14 ◄──┐    │     IRLZ34N         │
+│ 12V PSU  │            │         │  │    └────► Gate     ┌─────▼────┐
+│  (5A)    │  12V+      │  3.3V   ├──┼──►DHT22  Drain◄────┤ White LED│
+└────┬─────┘      │     │         │  │    VCC   Source────► Strip (+)│
+     │            │     │  GND    │  │                     └────┬─────┘
+     │            │     └────┬────┘  └──►DHT22 Data            │
+     │            │          │           DHT22 GND             │
+     │            │          │                                 │
+     └────────────┴──────────┴─────────────────────────────────┘
+                        COMMON GROUND (via WAGO connector)
+
+Note: DHT22 sensor board includes integrated pull-up resistor
 ```
 
 ---

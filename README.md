@@ -88,14 +88,19 @@ Core dependencies:
 3. **DHT22 Sensor**
    - Temperature range: -40°C to 80°C (±0.5°C accuracy)
    - Humidity range: 0-100% RH (±2-5% accuracy)
-   - Requires 10kΩ pull-up resistor
+   - DHT22 sensor board with integrated pull-up resistor (no external resistor needed)
 
-4. **Connectors & Wiring**
-   - **WAGO 221-413** COMPACT Lever Connectors (3-conductor)
+4. **Power Supplies**
+   - **ESP32 Power**: 5V via USB (from computer or USB power adapter)
+   - **LED Power**: 12V DC, 5A minimum (separate power supply for LED strips)
+   - Common ground connection required between both power supplies
+
+5. **Connectors & Wiring**
+   - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor)
    - Wire: 18-22 AWG for signal, 16-18 AWG for power
-   - Common ground required between all components
+   - Tool-free connection, reusable
 
-5. **Camera**
+6. **Camera**
    - Hik Robotics MV-CS-013 60GN Near Infrared
    - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
 
@@ -188,16 +193,16 @@ Note: Add current-limiting resistor if using individual LEDs
 #### Step 3: DHT22 Sensor Connection
 
 ```
-DHT22 Sensor Pinout:
+DHT22 Sensor Board Pinout:
 Pin 1 (VCC)  → ESP32 3.3V
-Pin 2 (Data) → ESP32 GPIO 14 (+ 10kΩ pull-up resistor to 3.3V)
-Pin 3 (NC)   → Not connected
-Pin 4 (GND)  → ESP32 GND
+Pin 2 (Data) → ESP32 GPIO 14
+Pin 3 (GND)  → ESP32 GND
 ```
 
-**Pull-up Resistor:**
-- Required: 10kΩ resistor between Data pin and VCC
-- Ensures reliable sensor communication
+**Important Notes:**
+- DHT22 sensor board has **integrated pull-up resistor** - no external resistor needed
+- Direct 3-wire connection to ESP32
+- Use short wires (<30cm) for reliable communication
 
 #### Step 4: Camera Integration
 
@@ -215,25 +220,149 @@ Pin 4 (GND)  → ESP32 GND
 - Ensure LEDs illuminate sample area uniformly
 - Use IR-pass filter for IR-only imaging (optional)
 
-#### Step 5: Complete System Assembly
+#### Step 5: Complete System Wiring with WAGO Connectors
+
+**System Overview:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     COMPLETE SYSTEM WIRING                          │
+└─────────────────────────────────────────────────────────────────────┘
+
+Power Supplies:
+┌──────────────┐                           ┌──────────────┐
+│   USB PSU    │                           │   12V PSU    │
+│   (5V ESP32) │                           │   (5A LEDs)  │
+└──────┬───────┘                           └──────┬───────┘
+       │                                          │
+       │ USB                                      │ 12V+
+       ▼                                          ▼
+   ┌────────┐                              ┌──────────┐
+   │ ESP32  │                              │ WAGO #1  │ (Common Ground)
+   │        │                              │  [GND]   │
+   │ GPIO 4 ├─────────┐                    └────┬─────┘
+   │ GPIO 15├────┐    │                         │
+   │ GPIO 14├──┐ │    │                    ┌────┴────┐
+   │  3.3V  │  │ │    │                    │         │
+   │  GND───┼──┼─┼────┼────────────────────┤         │
+   └────────┘  │ │    │                    │         │
+               │ │    │                    ▼         ▼
+            DHT22     │              IR LED (-)  White LED (-)
+             │ │      │
+             │ │      │         WAGO #2 (IR LED Circuit)
+             │ │      │         ┌──────────┐
+             │ │      └────────►│ Gate─ESP │ GPIO 4
+             │ │                │ Drain─12V│ from 12V PSU
+             │ │                │ Source─  │──► IR LED (+)
+             │ │                └──────────┘
+             │ │                  IRLZ34N
+             │ │
+             │ │                WAGO #3 (White LED Circuit)
+             │ │                ┌──────────┐
+             │ └───────────────►│ Gate─ESP │ GPIO 15
+             │                  │ Drain─12V│ from 12V PSU
+             │                  │ Source─  │──► White LED (+)
+             │                  └──────────┘
+             │                    IRLZ34N
+             │
+             └──► DHT22 Data to GPIO 14
+                  DHT22 VCC to 3.3V
+                  DHT22 GND to GND (WAGO #1)
+```
+
+**WAGO Connector Usage:**
+
+**WAGO #1 - Common Ground Hub**
+```
+┌─────────────────────────┐
+│   WAGO 221-413 #1       │
+│   (Common Ground)       │
+├─────────────────────────┤
+│ [1] ESP32 GND           │
+│ [2] 12V PSU GND (-)     │
+│ [3] LED Strips GND (-)  │
+└─────────────────────────┘
+```
+This connector joins all ground connections: ESP32 (USB power), 12V PSU, IR LED strip (-), White LED strip (-), DHT22 GND.
+
+**WAGO #2 - IR LED MOSFET Circuit**
+```
+┌─────────────────────────┐
+│   WAGO 221-413 #2       │
+│   (IR LED MOSFET)       │
+├─────────────────────────┤
+│ [1] ESP32 GPIO 4        │
+│ [2] MOSFET Gate         │
+│ [3] (optional: resistor)│
+└─────────────────────────┘
+
+MOSFET connections:
+- Gate → WAGO #2
+- Drain → 12V PSU (+)
+- Source → IR LED Strip (+)
+```
+
+**WAGO #3 - White LED MOSFET Circuit**
+```
+┌─────────────────────────┐
+│   WAGO 221-413 #3       │
+│   (White LED MOSFET)    │
+├─────────────────────────┤
+│ [1] ESP32 GPIO 15       │
+│ [2] MOSFET Gate         │
+│ [3] (optional: resistor)│
+└─────────────────────────┘
+
+MOSFET connections:
+- Gate → WAGO #3
+- Drain → 12V PSU (+)
+- Source → White LED Strip (+)
+```
+
+**Assembly Steps:**
 
 1. **Mount Components:**
    - ESP32 in accessible location for USB connection
+   - 2x IRLZ34N MOSFETs (can use heatsinks if needed)
    - LEDs positioned for optimal sample illumination
    - DHT22 sensor near sample chamber for accurate readings
    - Camera mounted with stable positioning
 
-2. **Connect Power:**
-   - ESP32: USB power (5V, typically from computer)
-   - LED drivers: External 12V power supply
-   - Camera: Per manufacturer specifications
+2. **Connect WAGO #1 (Common Ground):**
+   - Connect ESP32 GND pin to WAGO #1 port [1]
+   - Connect 12V PSU GND (-) to WAGO #1 port [2]
+   - Leave port [3] for LED strip ground connections
 
-3. **Cable Management:**
+3. **Connect IR LED Circuit (WAGO #2 + MOSFET):**
+   - Connect ESP32 GPIO 4 to WAGO #2 port [1]
+   - Connect IRLZ34N MOSFET Gate pin to WAGO #2 port [2]
+   - Connect MOSFET Drain to 12V PSU (+)
+   - Connect MOSFET Source to IR LED strip (+)
+   - Connect IR LED strip (-) to WAGO #1 port [3]
+
+4. **Connect White LED Circuit (WAGO #3 + MOSFET):**
+   - Connect ESP32 GPIO 15 to WAGO #3 port [1]
+   - Connect IRLZ34N MOSFET Gate pin to WAGO #3 port [2]
+   - Connect MOSFET Drain to 12V PSU (+)
+   - Connect MOSFET Source to White LED strip (+)
+   - Connect White LED strip (-) to WAGO #1 port [3] (same as IR)
+
+5. **Connect DHT22 Sensor:**
+   - DHT22 VCC → ESP32 3.3V (direct connection)
+   - DHT22 Data → ESP32 GPIO 14 (direct connection)
+   - DHT22 GND → WAGO #1 port [1] (or any ESP32 GND pin)
+
+6. **Connect Power Supplies:**
+   - ESP32: USB cable to computer or 5V USB adapter
+   - 12V PSU: Connect mains power (ensure correct voltage!)
+   - **Critical:** Verify common ground (WAGO #1) is connected before powering on
+
+7. **Cable Management:**
    - Keep signal cables (PWM, DHT22) away from power cables
    - Use shielded cables for long runs
    - Secure all connections to prevent accidental disconnection
+   - Use cable ties to organize wiring
 
-4. **Initial Testing:**
+8. **Initial Testing:**
    ```bash
    # Test ESP32 connection
    python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic
