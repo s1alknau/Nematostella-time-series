@@ -555,24 +555,196 @@ total_frames = 120 / 5 = 24 frames  # No +1!
 
 ## LED Synchronization
 
-### Sync Pulse Protocol
+### Overview
 
-The plugin uses a **hardware sync pulse** protocol to ensure LEDs are fully stabilized before camera exposure:
+The plugin uses **hardware-synchronized LED control** to ensure precise timing between LED illumination and camera exposure. The ESP32 microcontroller manages LED power and timing, while the Python plugin coordinates frame capture.
+
+### Timing Architecture
 
 ```
-Timeline:
-│
-├─ t=0ms:     sync_pulse_begin()  → ESP32 turns LED ON
-│
-├─ t=0-1000ms: LED Stabilization (1000ms)
-│
-├─ t=1000ms:  Camera Exposure Starts
-│
-├─ t=1000-1005ms: Camera Exposure (typically 5ms)
-│
-├─ t=1005ms:  sync_pulse_complete() → ESP32 turns LED OFF
-│
-└─ Frame captured with fully stabilized LED
+┌─────────────────────────────────────────────────────────────────┐
+│                    COMPLETE FRAME CYCLE                         │
+└─────────────────────────────────────────────────────────────────┘
+
+Python Plugin                ESP32 Firmware              Camera
+─────────────                ──────────────              ──────
+
+    │                             │                         │
+    │ 1. SET_TIMING               │                         │
+    ├────────────────────────────>│                         │
+    │    (400ms stab, 5ms exp)    │                         │
+    │                             │                         │
+    │ 2. SYNC_CAPTURE (0x0C)      │                         │
+    ├────────────────────────────>│                         │
+    │                             │ LED ON                  │
+    │                             ├─────────►               │
+    │                             │ (GPIO 4 or 15)          │
+    │                             │                         │
+    │                             │ [400ms stabilization]   │
+    │                             │ ░░░░░░░░░░░░░░░░░░░░░  │
+    │                             │                         │
+    │ 3. Camera Trigger           │                         │
+    ├─────────────────────────────┼────────────────────────>│
+    │                             │                         │ Exposure
+    │                             │                         │ [5ms]
+    │                             │                         │ ████
+    │                             │                         │
+    │                             │ LED OFF                 │
+    │                             ├─────────►               │
+    │                             │                         │
+    │                             │ Read DHT22              │
+    │                             │ ──────►                 │
+    │                             │                         │
+    │ 4. Response (15 bytes)      │                         │
+    │<────────────────────────────┤                         │
+    │   (temp, humidity, timing)  │                         │
+    │                             │                         │
+    │ 5. Snap Frame               │                         │
+    ├─────────────────────────────┼────────────────────────>│
+    │                             │                         │
+    │ 6. Frame Data               │                         │
+    │<────────────────────────────┼─────────────────────────┤
+    │                             │                         │
+    │ 7. Save to HDF5             │                         │
+    │ (with metadata)             │                         │
+    │                             │                         │
+    ▼                             ▼                         ▼
+
+Total Duration: ~405ms (400ms stab + 5ms exposure)
+```
+
+### Detailed Timing Breakdown
+
+```
+Frame Capture Timeline (Single Frame)
+═══════════════════════════════════════════════════════════════
+
+Time (ms)    Event                          Component
+─────────    ─────────────────────────────  ──────────────────
+    0        Python: Send SYNC_CAPTURE      Plugin
+    0        ESP32: Receive command         ESP32
+    0        ESP32: LED ON (GPIO 4/15)      ESP32 → LED Driver
+             ┌────────────────────────────────────────┐
+             │   LED STABILIZATION PERIOD             │
+             │   (400ms - LED reaches stable output)  │
+             │   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
+             └────────────────────────────────────────┘
+  400        ESP32: LED stabilized          ESP32
+  400        Camera: Exposure starts        Camera
+             ┌────────────────┐
+             │   EXPOSURE     │
+             │   (5ms)        │
+             │   ████████     │
+             └────────────────┘
+  405        Camera: Exposure complete      Camera
+  405        ESP32: LED OFF                 ESP32
+  405        ESP32: Read DHT22              ESP32 → DHT22
+  410        ESP32: Send response (15B)     ESP32 → Python
+  410        Python: Receive response       Plugin
+  410        Python: Snap frame             Plugin → Camera
+  415        Python: Receive frame data     Camera → Plugin
+  415        Python: Save to HDF5           Plugin → Disk
+  420        Frame cycle complete           ✓
+
+Total: ~420ms (405ms sync + 10ms capture + 5ms save)
+```
+
+### Phase-Based Timing (Light/Dark Cycles)
+
+```
+Phase Recording Timeline (60s Light + 60s Dark @ 5s interval)
+═══════════════════════════════════════════════════════════════════
+
+Phase    Time Range    Frames    LED State    Mean Intensity
+─────    ──────────    ───────   ─────────    ──────────────
+LIGHT    0-60s         12        WHITE ON     ~240
+                                 ┌──────┐
+                                 │██████│ 5s intervals
+                                 └──────┘
+
+DARK     60-120s       12        IR ON        ~195
+                                 ┌──────┐
+                                 │░░░░░░│ 5s intervals
+                                 └──────┘
+
+Transition at t=60s:
+    59.5s  ─┐ WHITE LED ON
+    59.9s   │ Frame capture
+    60.0s  ─┴ WHITE LED OFF
+           ─┐ Phase transition
+    60.0s   │ ESP32: Select IR LED (0x20)
+    60.0s  ─┴ IR LED selected
+    60.5s  ─┐ IR LED ON
+    60.9s   │ Frame capture
+    61.0s  ─┴ IR LED OFF
+```
+
+### Drift Compensation Mechanism
+
+The plugin uses **absolute time tracking** to prevent cumulative timing drift:
+
+```
+Standard Interval Scheduling (WRONG - causes drift):
+═══════════════════════════════════════════════════
+
+Iteration 1: sleep(5.0) → actual: 5.42s (overhead: 0.42s)
+Iteration 2: sleep(5.0) → actual: 5.41s (overhead: 0.41s)
+Iteration 3: sleep(5.0) → actual: 5.43s (overhead: 0.43s)
+...
+After 100 frames: drift = 42s! ❌
+
+
+Drift-Compensated Scheduling (CORRECT):
+═══════════════════════════════════════════════════
+
+recording_start_time = time.time()
+target_interval = 5.0
+
+Frame 1:
+  target_time = start + (1 × 5.0) = 5.0s
+  actual_time = 5.42s
+  drift = +0.42s
+  next_sleep = 5.0 - 0.42 = 4.58s ✓
+
+Frame 2:
+  target_time = start + (2 × 5.0) = 10.0s
+  actual_time = 10.41s (5.42 + 4.99)
+  drift = +0.41s  (accumulated from frame 1)
+  next_sleep = 5.0 - 0.41 = 4.59s ✓
+
+Frame 100:
+  target_time = start + (100 × 5.0) = 500.0s
+  actual_time = 500.2s
+  drift = +0.2s (NOT 42s!) ✓
+
+Result: Drift stays < 1s over entire recording ✓
+```
+
+Implementation in [recording_manager.py](src/timeseries_capture/Recorder/recording_manager.py:366-385):
+
+```python
+recording_start_time = time.time()
+target_interval_sec = 5.0
+
+for frame_index in range(total_frames):
+    # Calculate when this frame SHOULD be captured
+    target_capture_time = recording_start_time + (frame_index * target_interval_sec)
+
+    # Calculate how long to sleep
+    now = time.time()
+    sleep_duration = target_capture_time - now
+
+    if sleep_duration > 0:
+        time.sleep(sleep_duration)
+
+    # Capture frame (takes ~420ms)
+    frame_data = self.capture_frame()
+
+    # Calculate actual timing metrics
+    actual_time = time.time()
+    elapsed = actual_time - recording_start_time
+    expected = frame_index * target_interval_sec
+    cumulative_drift = elapsed - expected  # Saved to HDF5!
 ```
 
 ### Sync Pulse Implementation
