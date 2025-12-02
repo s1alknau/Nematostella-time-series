@@ -80,10 +80,10 @@ Core dependencies:
    - Firmware version: v2.2 or higher
 
 2. **LED System**
-   - **IR LED**: 850nm wavelength (e.g., LED Streifen 2538 120 LED/m IR 850nm)
-   - **White LED**: Broad-spectrum (e.g., 24 V COB 320 L/m iNextStation)
-   - **MOSFET Drivers**: BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
-   - **Power Supply**: 12V DC for LED strips/arrays
+   - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm)
+   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation)
+   - **MOSFET Drivers**: 2x BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
+   - **Important**: IR and White LEDs use different voltages (12V vs 24V)
 
 3. **DHT22 Sensor**
    - Temperature range: -40°C to 80°C (±0.5°C accuracy)
@@ -91,9 +91,10 @@ Core dependencies:
    - DHT22 sensor board with integrated pull-up resistor (no external resistor needed)
 
 4. **Power Supplies**
-   - **ESP32 Power**: 5V via USB (from computer or USB power adapter)
-   - **LED Power**: 12V DC, 5A minimum (separate power supply for LED strips)
-   - Common ground connection required between both power supplies
+   - **ESP32 Power**: 5V via USB (from computer)
+   - **IR LED Power**: 12V DC, 2-5A power supply
+   - **White LED Power**: 24V DC, 2-5A power supply
+   - **Critical**: Common ground connection required between USB ground and both PSU grounds
 
 5. **Connectors & Wiring**
    - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor)
@@ -225,57 +226,66 @@ Pin 3 (GND)  → ESP32 GND
 **System Overview:**
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     COMPLETE SYSTEM WIRING                          │
+│          COMPLETE SYSTEM WIRING (2 PSUs + USB Power)               │
 └─────────────────────────────────────────────────────────────────────┘
 
-Power Supplies:                                  WAGO Connectors:
-┌──────────────┐          ┌──────────────┐
-│   USB PSU    │          │   12V PSU    │      ╔═══════════╗
-│   (5V ESP32) │          │   (5A LEDs)  │      ║  WAGO #1  ║
-└──────┬───────┘          └──────┬───────┘      ║ (Common   ║
-       │                         │               ║  Ground)  ║
-       │ USB                     │ 12V+          ╠═══════════╣
-       │                    ┌────┴────┐          ║[1] ESP GND║
-       ▼                    │         │          ║[2] USB GND║
-   ┌────────┐               ▼         ▼          ║[3] 12V GND║
-   │ ESP32  │          ┌─────────┬─────────┐     ╚═══════════╝
-   │        │          │ WAGO #2 │ WAGO #3 │
-   │ GPIO 4 ├──────┐   │(IR 12V+)│(W 12V+) │     IR LED Circuit:
-   │ GPIO15 ├────┐ │   └────┬────┴────┬────┘     ┌──────────┐
-   │ GPIO14 ◄─┐  │ │        │         │          │ WAGO #2  │
-   │  3.3V──┬─┼──┼─┘     [1][2][3] [1][2][3]     ├──────────┤
-   │  GND─┬─┼─┼──┘         │  │  │   │  │  │     │[1] 12V+  │
-   │  GND─┼─┼─┘            │  │  │   │  │  │     │[2] M-Drn │
-   └──┬───┼─┘              │  │  │   │  │  │     │[3] LED+  │
-      │   └──DHT22         │  │  │   │  │  │     └──────────┘
-      │       VCC──────────┘  │  │   │  │  │          │
-      │       Data            │  │   │  │  │     MOSFET IR
-      │       GND             │  │   │  │  │     Gate◄─GPIO4
-      │                       │  │   │  │  │     Drain─[2]
-      │                   12V+│  │   │  │  │     Source─[3]
-      │                       │  │   │  │  │          │
-      ▼                       ▼  ▼   ▼  ▼  ▼          ▼
-   ┌─────────────────────────────────────────┐   IR LED
-   │        WAGO #1 (Common Ground Hub)      │   Anode (+)
-   │  [1]ESP  [2]USB PSU  [3]12V PSU         │      │
-   │   GND      GND(-)      GND(-)            │   Cathode(-)
-   └──────────────────┬──────────────────────┘      │
-                      │                             │
-                      └─────────────────────────────┘
-                      (All grounds connected here)
-
-White LED Circuit (identical to IR, but uses WAGO #3 and GPIO 15)
+Power Sources:
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  USB Cable   │     │   12V PSU    │     │   24V PSU    │
+│   (ESP32)    │     │  (IR LED)    │     │ (White LED)  │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       │ USB                │ 12V+               │ 24V+
+       │                    │                    │
+       ▼                    ▼                    ▼
+   ┌────────┐          ┌─────────┐         ┌─────────┐
+   │ ESP32  │          │ WAGO #2 │         │ WAGO #3 │
+   │        │          │(IR 12V+)│         │(W 24V+) │
+   │ GPIO 4 ├──────┐   └────┬────┘         └────┬────┘
+   │ GPIO15 ├────┐ │     [1][2][3]           [1][2][3]
+   │ GPIO14 ◄─┐  │ │      │  │  │             │  │  │
+   │  3.3V──┬─┼──┼─┘      │  │  │             │  │  │
+   │  GND─┬─┼─┼──┘     12V+│  │  │         24V+│  │  │
+   │  GND─┼─┼─┘            │  │  │             │  │  │
+   └──┬───┼─┘              │  │  │             │  │  │
+      │   └──DHT22         │  │  │             │  │  │
+      │       VCC          │  │  │             │  │  │
+      │       Data    ┌────┘  │  └──┐     ┌────┘  │  └──┐
+      │       GND     │        │     │     │       │     │
+      │           IR MOSFET    │     │  White MOSFET│     │
+      │           Gate◄─GPIO4  │     │  Gate◄─GPIO15│     │
+      │           Drain────────┘     │  Drain───────┘     │
+      │           Source─┐           │  Source─┐          │
+      │                  │           │         │          │
+      │                  └─►IR LED(+)│         └─►White LED(+)
+      │                      12V     │             24V
+      │                              │
+      ▼                              ▼
+   ┌────────────────────────────────────────────────────┐
+   │           WAGO #1 (Common Ground Hub)              │
+   │  [1] ESP32 GND    [2] USB PSU GND    [3] 12V PSU GND│
+   │                                                     │
+   │  Additional wires connected:                       │
+   │  - 24V PSU GND (-)                                 │
+   │  - IR MOSFET Source                                │
+   │  - White MOSFET Source                             │
+   │  - IR LED Cathode (-)                              │
+   │  - White LED Cathode (-)                           │
+   └────────────────────────────────────────────────────┘
 ```
 
 **Key Points:**
+- **Power Sources**: USB (ESP32), 12V PSU (IR LED), 24V PSU (White LED)
 - DHT22 GND → ESP32 second GND pin (direct, NOT via WAGO #1)
-- WAGO #1 joins: ESP32 one GND pin, USB PSU GND, 12V PSU GND
-- WAGO #2: [1]=12V+, [2]=IR MOSFET Drain, [3]=IR LED+
-- WAGO #3: [1]=12V+, [2]=White MOSFET Drain, [3]=White LED+
+- **WAGO #1 (Critical)**: Common ground hub connecting all power sources
+  - [1] ESP32 GND pin
+  - [2] USB ground (from computer)
+  - [3] 12V PSU GND (-)
+  - Plus: 24V PSU GND (-), both MOSFET Sources, both LED cathodes (-)
+- **WAGO #2**: [1]=12V+, [2]=IR MOSFET Drain, [3]=IR LED+ (12V)
+- **WAGO #3**: [1]=24V+, [2]=White MOSFET Drain, [3]=White LED+ (24V)
 - GPIO 4 → IR MOSFET Gate (direct wire)
 - GPIO 15 → White MOSFET Gate (direct wire)
-- Both MOSFET Sources → WAGO #1 (common ground)
-- Both LED cathodes (-) → WAGO #1 (common ground)
 
 **WAGO Connector Usage:**
 
@@ -286,17 +296,18 @@ White LED Circuit (identical to IR, but uses WAGO #3 and GPIO 15)
 │   (Common Ground)                   │
 ├─────────────────────────────────────┤
 │ [1] ESP32 GND pin                   │
-│ [2] USB PSU GND (-)                 │
-│ [3] 12V PSU GND (-)                 │
+│ [2] USB PSU GND (-) 5V              │
+│ [3] 12V PSU GND (-) IR LED          │
 │                                     │
 │ Connected via additional wires:     │
+│ - 24V PSU GND (-) White LED         │
 │ - IR MOSFET Source                  │
 │ - White MOSFET Source               │
-│ - IR LED Strip (-)                  │
-│ - White LED Strip (-)               │
+│ - IR LED Strip (-) 12V              │
+│ - White LED Strip (-) 24V           │
 └─────────────────────────────────────┘
 ```
-**Critical:** This connector creates the common ground between both power supplies and all components.
+**Critical:** This connector creates the common ground between **all power sources** (USB 5V, 12V PSU, 24V PSU) and all components. Without this common ground, the MOSFETs cannot switch properly.
 
 **WAGO #2 - IR LED 12V Power Distribution**
 ```
@@ -313,25 +324,27 @@ IR IRLZ34N MOSFET wiring:
 - Gate  → ESP32 GPIO 4 (direct wire, no WAGO)
 - Drain → WAGO #2 port [2]
 - Source → Common Ground (WAGO #1)
-- 12V+ flows: PSU → WAGO #2 [1] → MOSFET Drain [2] → (when gate high) → MOSFET Source → LED+ [3]
+- 12V+ flows: 12V PSU → WAGO #2 [1] → MOSFET Drain [2] → (when gate high) → MOSFET Source → IR LED+ [3]
+
+**Note:** Optional 24V IR LED strips are also available, but this implementation uses 12V IR LEDs.
 ```
 
-**WAGO #3 - White LED 12V Power Distribution**
+**WAGO #3 - White LED 24V Power Distribution**
 ```
 ┌─────────────────────────────────────┐
 │   WAGO 221-413 #3                   │
-│   (White LED Circuit 12V+)          │
+│   (White LED Circuit 24V+)          │
 ├─────────────────────────────────────┤
-│ [1] 12V PSU (+)                     │
+│ [1] 24V PSU (+)                     │
 │ [2] White MOSFET Drain              │
-│ [3] White LED Strip (+)             │
+│ [3] White LED Strip (+) 24V         │
 └─────────────────────────────────────┘
 
 White IRLZ34N MOSFET wiring:
 - Gate  → ESP32 GPIO 15 (direct wire, no WAGO)
 - Drain → WAGO #3 port [2]
 - Source → Common Ground (WAGO #1)
-- 12V+ flows: PSU → WAGO #3 [1] → MOSFET Drain [2] → (when gate high) → MOSFET Source → LED+ [3]
+- 24V+ flows: 24V PSU → WAGO #3 [1] → MOSFET Drain [2] → (when gate high) → MOSFET Source → White LED+ [3]
 ```
 
 **Assembly Steps:**
@@ -344,26 +357,27 @@ White IRLZ34N MOSFET wiring:
    - Camera mounted with stable positioning
 
 2. **Connect WAGO #1 (Common Ground Hub):**
-   - Port [1]: ESP32 GND pin
-   - Port [2]: USB PSU GND (-)
+   - Port [1]: ESP32 GND pin (one of two GND pins)
+   - Port [2]: USB cable ground (from computer)
    - Port [3]: 12V PSU GND (-)
    - Additional wires to WAGO #1 (all grounds go here):
+     - 24V PSU GND (-)
      - IR MOSFET Source pin
      - White MOSFET Source pin
-     - IR LED Strip (-) cathode
-     - White LED Strip (-) cathode
+     - IR LED Strip (-) cathode (12V)
+     - White LED Strip (-) cathode (24V)
 
 3. **Connect IR LED Circuit (WAGO #2 + MOSFET):**
    - Port [1]: 12V PSU (+) positive
    - Port [2]: IR MOSFET Drain pin
-   - Port [3]: IR LED Strip (+) anode
+   - Port [3]: IR LED Strip (+) anode (12V)
    - Gate wire: ESP32 GPIO 4 → IR MOSFET Gate (direct connection, no WAGO)
    - Source wire: IR MOSFET Source → WAGO #1 (common ground)
 
 4. **Connect White LED Circuit (WAGO #3 + MOSFET):**
-   - Port [1]: 12V PSU (+) positive (same PSU as IR)
+   - Port [1]: 24V PSU (+) positive
    - Port [2]: White MOSFET Drain pin
-   - Port [3]: White LED Strip (+) anode
+   - Port [3]: White LED Strip (+) anode (24V)
    - Gate wire: ESP32 GPIO 15 → White MOSFET Gate (direct connection, no WAGO)
    - Source wire: White MOSFET Source → WAGO #1 (common ground)
 
@@ -372,9 +386,10 @@ White IRLZ34N MOSFET wiring:
    - DHT22 Data → ESP32 GPIO 14 (direct connection)
    - DHT22 GND → ESP32 second GND pin (direct connection, NOT via WAGO)
 
-6. **Connect Power Supplies:**
-   - ESP32: USB cable to computer or 5V USB adapter
+6. **Connect Power Sources:**
+   - ESP32: USB cable to computer
    - 12V PSU: Connect mains power (ensure correct voltage!)
+   - 24V PSU: Connect mains power (ensure correct voltage!)
    - **Critical:** Verify common ground (WAGO #1) is connected before powering on
 
 7. **Cable Management:**
