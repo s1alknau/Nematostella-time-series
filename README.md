@@ -12,7 +12,7 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 ## Features
 
 - **Hardware-Synchronized LED Control**: Precise synchronization between camera exposure and LED illumination via ESP32 microcontroller
-- **Dual-LED Support**: Independent control of IR (850nm) and White (broad-spectrum) LEDs for multi-modal imaging
+- **Dual-LED Support**: Independent control of IR (850nm) exchangeable LEDs and White (broad-spectrum) LEDs for creating light stimulation and oblique lighting
 - **Phase-Based Recording**: Automated light/dark cycles for circadian rhythm studies
 - **Drift-Compensated Timing**: Frame timing measured from absolute recording start, preventing cumulative drift
 - **Environmental Monitoring**: Real-time temperature and humidity tracking via DHT22 sensor
