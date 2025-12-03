@@ -403,19 +403,13 @@ class RecordingManager(QObject):
             if phase_info:
                 self._set_phase_led_powers(phase_info, led_type, dual_mode)
 
-            # Capture frame
-            print(
-                f"📸 Capturing frame {self.state.current_frame + 1}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
-            )
-            logger.info(
+            # Capture frame (reduced logging to minimize I/O overhead)
+            logger.debug(
                 f"Capturing frame {self.state.current_frame + 1}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
             )
             if phase_info:
-                print(
-                    f"   Phase: {phase_info.phase.value}, Cycle: {phase_info.cycle_number}/{phase_info.total_cycles}"
-                )
-                logger.info(
-                    f"  Phase: {phase_info.phase.value}, Cycle: {phase_info.cycle_number}/{phase_info.total_cycles}"
+                logger.debug(
+                    f"Phase: {phase_info.phase.value}, Cycle: {phase_info.cycle_number}/{phase_info.total_cycles}"
                 )
 
             frame, metadata = self.frame_capture.capture_with_retry(
@@ -501,7 +495,11 @@ class RecordingManager(QObject):
                     # Emit signal
                     self.frame_captured.emit(self.state.current_frame, self.state.total_frames)
 
-                    logger.info(f"Frame {frame_number} saved successfully")
+                    # Periodic progress logging (every 10 frames to reduce I/O overhead)
+                    if frame_number % 10 == 0 or frame_number == 1:
+                        logger.info(f"Progress: Frame {frame_number}/{self.state.total_frames} saved")
+                    else:
+                        logger.debug(f"Frame {frame_number} saved successfully")
                 else:
                     logger.error(f"Failed to save frame {frame_number}")
 

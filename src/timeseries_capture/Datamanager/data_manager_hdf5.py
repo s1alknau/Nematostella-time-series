@@ -420,15 +420,17 @@ class DataManager:
     """
 
     def __init__(
-        self, telemetry_mode: TelemetryMode = TelemetryMode.STANDARD, chunk_size: int = 10
+        self, telemetry_mode: TelemetryMode = TelemetryMode.STANDARD, chunk_size: int = 10, flush_interval: int = 10
     ):
         """
         Args:
             telemetry_mode: Level of telemetry detail
             chunk_size: Chunk size for timeseries datasets
+            flush_interval: Flush HDF5 buffers every N frames (default: 10)
         """
         self.telemetry_mode = telemetry_mode
         self.chunk_size = chunk_size
+        self.flush_interval = flush_interval
 
         # HDF5 file
         self.hdf5_file: Optional[h5py.File] = None
@@ -440,6 +442,7 @@ class DataManager:
 
         # Counters
         self.frame_count = 0
+        self._frames_since_flush = 0
 
         # Phase tracking (for transition detection)
         self._current_phase = None
@@ -454,7 +457,7 @@ class DataManager:
         self.recording_metadata: dict[str, Any] = {}
 
         logger.info(
-            f"DataManager initialized (HDF5, mode={telemetry_mode.name}, chunk={chunk_size})"
+            f"DataManager initialized (HDF5, mode={telemetry_mode.name}, chunk={chunk_size}, flush_every={flush_interval} frames)"
         )
 
     def create_recording_file(
@@ -631,6 +634,14 @@ class DataManager:
                 # Update counters
                 self.frame_count += 1
                 self.last_frame_time = current_time
+                self._frames_since_flush += 1
+
+                # Periodic flush to reduce timing spikes
+                if self._frames_since_flush >= self.flush_interval:
+                    self._ts_writer.flush()
+                    self.hdf5_file.flush()
+                    self._frames_since_flush = 0
+                    logger.debug(f"HDF5 buffers flushed at frame {frame_number}")
 
                 logger.debug(f"Frame {frame_number} saved (index={frame_index})")
 
