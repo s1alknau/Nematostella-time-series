@@ -66,6 +66,12 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.recording_controller: Optional[RecordingController] = None
         self.camera_adapter = None
 
+        # Calibration results storage (for per-phase LED power)
+        # These are set by calibration and used when starting phase recordings
+        self._calibrated_dark_phase_ir_power: Optional[int] = None
+        self._calibrated_light_phase_ir_power: Optional[int] = None
+        self._calibrated_light_phase_white_power: Optional[int] = None
+
         # Setup UI first
         self._setup_ui()
 
@@ -312,9 +318,19 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             full_config = {
                 **recording_config,
                 **phase_config,
+                # Legacy single LED powers (for backward compatibility and continuous mode)
                 "ir_led_power": led_powers["ir"],
                 "white_led_power": led_powers["white"],
             }
+
+            # Add per-phase LED powers if calibrated (for phase recordings)
+            # These override legacy values when phase_enabled=True
+            if self._calibrated_dark_phase_ir_power is not None:
+                full_config["dark_phase_ir_power"] = self._calibrated_dark_phase_ir_power
+            if self._calibrated_light_phase_ir_power is not None:
+                full_config["light_phase_ir_power"] = self._calibrated_light_phase_ir_power
+            if self._calibrated_light_phase_white_power is not None:
+                full_config["light_phase_white_power"] = self._calibrated_light_phase_white_power
 
             # Validate output directory
             output_dir = Path(full_config["output_dir"])
@@ -558,6 +574,29 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         self.led_panel.set_led_powers(
                             {"ir": result.ir_power, "white": result.white_power}
                         )
+
+                        # Store calibration results for per-phase recording
+                        # These will be used when phase recording is enabled
+                        if mode == "ir":
+                            # IR calibration → used for dark phase (IR only)
+                            self._calibrated_dark_phase_ir_power = result.ir_power
+                            self.log_panel.add_log(
+                                f"💾 Saved for DARK phase: IR = {result.ir_power}%", "INFO"
+                            )
+                        elif mode == "white":
+                            # White calibration → used for light phase (white only or dual)
+                            self._calibrated_light_phase_white_power = result.white_power
+                            self.log_panel.add_log(
+                                f"💾 Saved for LIGHT phase: White = {result.white_power}%", "INFO"
+                            )
+                        elif mode == "dual":
+                            # Dual calibration → used for light phase (dual LED mode)
+                            self._calibrated_light_phase_ir_power = result.ir_power
+                            self._calibrated_light_phase_white_power = result.white_power
+                            self.log_panel.add_log(
+                                f"💾 Saved for LIGHT phase (dual): IR = {result.ir_power}%, White = {result.white_power}%",
+                                "INFO",
+                            )
                     else:
                         self.log_panel.add_log(f"❌ {mode.upper()} calibration failed", "ERROR")
                         self.led_panel.add_calibration_result(

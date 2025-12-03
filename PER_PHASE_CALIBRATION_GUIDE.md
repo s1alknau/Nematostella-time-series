@@ -95,37 +95,39 @@ white_led_power = Y
    - Store actual powers used in metadata
 3. **Backward compatibility** maintained for continuous mode
 
-### ⚠️ TODO (Manual):
-The GUI needs to be updated to save calibration results to the correct fields:
+### ✅ GUI Integration Completed
 
-**Current Behavior:**
-- IR calibration → saves to `ir_led_power`
-- White calibration → saves to `white_led_power`
-- Dual calibration → saves to `ir_led_power` and `white_led_power`
+The GUI has been updated to automatically save calibration results to the correct per-phase fields:
 
-**Required Behavior:**
-- IR calibration → saves to **`dark_phase_ir_power`** (for phase recording)
-- White calibration → saves to **`light_phase_white_power`** (for phase recording)
-- Dual calibration → saves to **`light_phase_ir_power`** AND **`light_phase_white_power`**
+**Current Behavior (After Update):**
+- **IR calibration** → saves to `_calibrated_dark_phase_ir_power` (used for dark phase)
+- **White calibration** → saves to `_calibrated_light_phase_white_power` (used for light phase)
+- **Dual calibration** → saves to `_calibrated_light_phase_ir_power` AND `_calibrated_light_phase_white_power` (used for light phase dual mode)
 
-**Workaround (Until GUI Updated):**
-Manually set the per-phase power values in your recording config:
+**How It Works:**
 
-```python
-config = RecordingConfig(
-    duration_min=120,
-    interval_sec=5,
-    experiment_name="test",
-    output_dir="/path/to/output",
-    phase_enabled=True,
-    dual_light_phase=True,
+1. **Run Calibrations** in the LED Control Panel:
+   - IR Calibration → Sets dark phase IR power
+   - Dual Calibration → Sets light phase IR + White powers
 
-    # Set these manually based on your calibration results:
-    dark_phase_ir_power=60,       # From IR calibration
-    light_phase_ir_power=40,      # From Dual calibration
-    light_phase_white_power=30,   # From Dual calibration
-)
-```
+2. **Calibration Results Stored** in memory:
+   - GUI shows: "💾 Saved for DARK phase: IR = X%"
+   - GUI shows: "💾 Saved for LIGHT phase (dual): IR = Y%, White = Z%"
+
+3. **Start Recording**:
+   - GUI automatically includes calibrated per-phase powers in the config
+   - Recording uses calibrated values for each phase
+
+4. **Values Saved in HDF5**:
+   - Each frame's metadata includes the actual LED power used
+   - `led_power`, `ir_led_power`, `white_led_power` fields reflect per-phase values
+
+**No Manual Configuration Needed!**
+
+The calibration workflow is now fully automated. Just:
+1. Run calibrations
+2. Start recording
+3. Per-phase powers are applied automatically
 
 ---
 
