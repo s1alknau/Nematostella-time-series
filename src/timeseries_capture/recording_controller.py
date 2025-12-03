@@ -288,6 +288,17 @@ class RecordingController(QObject):
 
         return self.recording_manager.get_status()
 
+    def get_state(self):
+        """
+        Gibt RecordingState-Objekt zurück.
+
+        Returns:
+            RecordingState object or None
+        """
+        if not self.recording_manager:
+            return None
+        return self.recording_manager.state
+
     def is_recording(self) -> bool:
         """Gibt zurück ob gerade recording läuft"""
         if not self.recording_manager:
