@@ -50,8 +50,15 @@ class RecordingConfig:
     camera_trigger_latency_ms: int = 20
 
     # LED Power Config (0-100%)
+    # LEGACY: Single power values (for backward compatibility and continuous mode)
     ir_led_power: int = 100
     white_led_power: int = 50
+
+    # PER-PHASE LED Powers (for phase recordings with intensity matching)
+    # These override the legacy values when phase_enabled=True
+    dark_phase_ir_power: int = 100      # IR power for dark phase (IR only)
+    light_phase_ir_power: int = 100     # IR power for light phase (dual mode)
+    light_phase_white_power: int = 50   # White power for light phase (white or dual mode)
 
 
 @dataclass

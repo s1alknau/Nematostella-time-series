@@ -209,53 +209,27 @@ class RecordingManager(QObject):
             logger.info(f"Start with light: {config.start_with_light}")
             logger.info("=" * 60)
 
-            if config.phase_enabled and config.dual_light_phase:
-                print("🔆 Initializing DUAL LED mode for light phases")
-                print(f"   IR LED power: {config.ir_led_power}%")
-                print(f"   White LED power: {config.white_led_power}%\n")
+            if config.phase_enabled:
+                # PHASE RECORDING: Use per-phase LED powers for intensity matching
+                print("🔆 Initializing PER-PHASE LED powers")
+                print(f"   Dark phase IR power: {config.dark_phase_ir_power}%")
+                print(f"   Light phase IR power: {config.light_phase_ir_power}%")
+                print(f"   Light phase White power: {config.light_phase_white_power}%\n")
 
-                logger.info("🔆 Initializing DUAL LED mode for light phases")
-                logger.info(f"   IR LED power: {config.ir_led_power}%")
-                logger.info(f"   White LED power: {config.white_led_power}%")
+                logger.info("🔆 Initializing PER-PHASE LED powers")
+                logger.info(f"   Dark phase IR power: {config.dark_phase_ir_power}%")
+                logger.info(f"   Light phase IR power: {config.light_phase_ir_power}%")
+                logger.info(f"   Light phase White power: {config.light_phase_white_power}%")
 
-                # Set IR LED power
-                print("Setting IR LED power...")
-                logger.info("Setting IR LED power...")
-                success_ir = self.frame_capture.esp32.set_led_power(config.ir_led_power, "ir")
-                if success_ir:
-                    print(f"✅ IR LED power set to {config.ir_led_power}%")
-                    logger.info(f"✅ IR LED power set to {config.ir_led_power}%")
-                else:
-                    print("❌ Failed to set IR LED power!")
-                    logger.error("❌ Failed to set IR LED power!")
+                # NOTE: LED powers will be set dynamically per frame based on current phase
+                # This is handled in _capture_single_frame() by calling _set_phase_led_powers()
+                print("✅ Per-phase LED power configuration ready")
+                print("   Powers will be set dynamically based on current phase\n")
+                logger.info("✅ Per-phase LED power configuration ready")
 
-                # Small delay between commands
-                time.sleep(0.1)
-
-                # Set White LED power (CRITICAL - this was missing!)
-                print("Setting White LED power...")
-                logger.info("Setting White LED power...")
-                success_white = self.frame_capture.esp32.set_led_power(
-                    config.white_led_power, "white"
-                )
-                if success_white:
-                    print(f"✅ White LED power set to {config.white_led_power}%")
-                    logger.info(f"✅ White LED power set to {config.white_led_power}%")
-                else:
-                    print("❌ Failed to set White LED power!")
-                    logger.error("❌ Failed to set White LED power!")
-
-                if success_ir and success_white:
-                    print("✅ Both LED powers configured for dual mode\n")
-                    logger.info("✅ Both LED powers configured for dual mode")
-                else:
-                    print("⚠️  LED power configuration incomplete - dual mode may not work!\n")
-                    logger.error("⚠️  LED power configuration incomplete - dual mode may not work!")
             else:
-                # Phase mode (or continuous) - set BOTH LED powers
-                # Even if we're not using dual mode, we need both powers configured
-                # because we switch between IR and White LEDs during phases
-                logger.info(f"Setting LED powers for phase mode:")
+                # CONTINUOUS RECORDING: Use legacy single LED powers
+                logger.info(f"Setting LED powers for continuous mode:")
                 logger.info(f"   IR LED power: {config.ir_led_power}%")
                 logger.info(f"   White LED power: {config.white_led_power}%")
 
@@ -263,11 +237,11 @@ class RecordingManager(QObject):
                 success_ir = self.frame_capture.esp32.set_led_power(config.ir_led_power, "ir")
                 time.sleep(0.1)  # Small delay between commands
 
-                # Set White LED power (CRITICAL - was missing!)
+                # Set White LED power
                 success_white = self.frame_capture.esp32.set_led_power(config.white_led_power, "white")
 
                 if success_ir and success_white:
-                    logger.info("✅ Both LED powers configured")
+                    logger.info("✅ Both LED powers configured for continuous mode")
                 else:
                     logger.warning(f"⚠️ LED power configuration incomplete (IR: {success_ir}, White: {success_white})")
 
@@ -341,6 +315,11 @@ class RecordingManager(QObject):
         """
         Haupt-Recording-Loop.
         Läuft in separatem Thread.
+
+        CRITICAL TIMING FIX:
+        - Sleep for FULL duration (not in 0.1s chunks) to prevent timing drift
+        - Check every 0.5s for pause/stop to remain responsive
+        - This prevents overhead accumulation over long recordings
         """
         logger.info("Recording loop started")
 
@@ -353,9 +332,28 @@ class RecordingManager(QObject):
 
                 # Check timing - warte bis nächstes Frame
                 time_until_next = self.state.get_time_until_next_frame()
-                if time_until_next > 0:
-                    time.sleep(min(time_until_next, 0.1))
-                    continue
+
+                if time_until_next > 0.01:  # Small threshold to prevent busy-waiting
+                    # CRITICAL FIX: Sleep in larger chunks (0.5s) to prevent timing drift
+                    # This allows responsive pause/stop while maintaining accurate timing
+                    while time_until_next > 0.5:
+                        # Check if stop/pause requested during wait
+                        if self._stop_requested or self.state.is_paused():
+                            break
+
+                        # Sleep for 0.5s chunk
+                        time.sleep(0.5)
+
+                        # Recalculate remaining time
+                        time_until_next = self.state.get_time_until_next_frame()
+
+                    # Sleep remaining time (if still needed and not stopped/paused)
+                    if time_until_next > 0 and not self._stop_requested and not self.state.is_paused():
+                        time.sleep(time_until_next)
+
+                    # Re-check after sleep (might have been paused/stopped during sleep)
+                    if self._stop_requested or self.state.is_paused():
+                        continue
 
                 # Capture frame
                 self._capture_single_frame()
@@ -363,9 +361,6 @@ class RecordingManager(QObject):
                 # Update progress
                 progress = self.state.get_progress_percent()
                 self.progress_updated.emit(progress)
-
-                # Small sleep to prevent busy-waiting
-                time.sleep(0.01)
 
             # Finalize
             self._finalize_recording()
@@ -404,6 +399,10 @@ class RecordingManager(QObject):
                     # Emit phase change signal
                     self.phase_changed.emit(phase_info.phase.value, phase_info.cycle_number)
 
+            # Set phase-specific LED powers (if phase recording enabled)
+            if phase_info:
+                self._set_phase_led_powers(phase_info, led_type, dual_mode)
+
             # Capture frame
             print(
                 f"📸 Capturing frame {self.state.current_frame + 1}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
@@ -441,17 +440,43 @@ class RecordingManager(QObject):
                 metadata["cycle_number"] = 0
                 metadata["phase_enabled"] = False
 
-            # Add LED power info (from config)
+            # Add LED power info (actual powers used for this frame)
             config = self.state.get_config()
-            if config:
+            if config and phase_info and config.phase_enabled:
+                # Phase recording: Use per-phase powers
+                from .recording_state import PhaseType
+                if phase_info.phase == PhaseType.DARK:
+                    metadata["led_power"] = config.dark_phase_ir_power
+                    metadata["ir_led_power"] = config.dark_phase_ir_power
+                    metadata["white_led_power"] = 0
+                else:
+                    # Light phase
+                    if dual_mode:
+                        metadata["led_power"] = config.light_phase_ir_power  # Store IR power in legacy field
+                        metadata["ir_led_power"] = config.light_phase_ir_power
+                        metadata["white_led_power"] = config.light_phase_white_power
+                    else:
+                        metadata["led_power"] = config.light_phase_white_power
+                        metadata["ir_led_power"] = 0
+                        metadata["white_led_power"] = config.light_phase_white_power
+            elif config:
+                # Continuous recording: Use legacy single powers
                 if led_type == "ir" or dual_mode:
                     metadata["led_power"] = config.ir_led_power
+                    metadata["ir_led_power"] = config.ir_led_power
+                    metadata["white_led_power"] = config.white_led_power if dual_mode else 0
                 elif led_type == "white":
                     metadata["led_power"] = config.white_led_power
+                    metadata["ir_led_power"] = 0
+                    metadata["white_led_power"] = config.white_led_power
                 else:
                     metadata["led_power"] = -1
+                    metadata["ir_led_power"] = -1
+                    metadata["white_led_power"] = -1
             else:
                 metadata["led_power"] = -1
+                metadata["ir_led_power"] = -1
+                metadata["white_led_power"] = -1
 
             # Add capture method
             if "error" in metadata:
@@ -529,6 +554,49 @@ class RecordingManager(QObject):
 
         except Exception as e:
             logger.error(f"Error finalizing recording: {e}")
+
+    def _set_phase_led_powers(self, phase_info, led_type: str, dual_mode: bool):
+        """
+        Sets LED powers based on current phase for intensity matching.
+
+        This method is called before each frame capture during phase recording
+        to ensure correct LED powers for the current phase.
+
+        Args:
+            phase_info: Current phase information
+            led_type: LED type for this frame ('ir', 'white', or 'dual')
+            dual_mode: Whether dual LED mode is active
+        """
+        config = self.state.get_config()
+        if not config or not config.phase_enabled:
+            return
+
+        from .recording_state import PhaseType
+
+        # Determine which LED powers to set based on current phase
+        if phase_info.phase == PhaseType.DARK:
+            # Dark phase: Use dark_phase_ir_power for IR LED
+            ir_power = config.dark_phase_ir_power
+            white_power = 0  # White LED not used in dark phase
+
+            logger.debug(f"[PHASE POWER] Dark phase: Setting IR={ir_power}%")
+            self.frame_capture.esp32.set_led_power(ir_power, "ir")
+
+        else:
+            # Light phase: Use light_phase powers
+            ir_power = config.light_phase_ir_power
+            white_power = config.light_phase_white_power
+
+            if dual_mode:
+                # Dual LED mode: Set both powers
+                logger.debug(f"[PHASE POWER] Light phase (dual): Setting IR={ir_power}%, White={white_power}%")
+                self.frame_capture.esp32.set_led_power(ir_power, "ir")
+                time.sleep(0.01)  # Small delay between commands
+                self.frame_capture.esp32.set_led_power(white_power, "white")
+            else:
+                # White-only light phase
+                logger.debug(f"[PHASE POWER] Light phase (white): Setting White={white_power}%")
+                self.frame_capture.esp32.set_led_power(white_power, "white")
 
     # ========================================================================
     # STATUS & INFO

@@ -1025,17 +1025,34 @@ LED calibration ensures **consistent intensity** across:
 ### Calibration Types
 
 **1. IR-Only Calibration**
-- Adjusts IR LED power to reach target intensity
-- Used for IR-only recordings
+- Adjusts IR LED power to reach target intensity (200)
+- Used for: **IR-only recordings** OR **phase recordings with IR-only dark phase**
 
 **2. White-Only Calibration**
-- Adjusts White LED power to reach target intensity
-- Used for White-only recordings
+- Adjusts White LED power to reach target intensity (200)
+- Used for: **White-only recordings** OR **phase recordings with White-only light phase**
 
-**3. Dual Calibration** ⚠️
-- Calibrates IR and White LEDs separately
-- **Note**: When both LEDs are used together, intensities add up
-- **Recommendation**: Use separate IR/White calibrations for phase recordings
+**3. Dual LED Calibration** ⚠️
+- Calibrates **both LEDs simultaneously** to reach target intensity (200) when both are ON together
+- Turns on both IR and White LEDs, then adjusts their powers proportionally
+- Used for: **Continuous dual LED recordings** OR **phase recordings with dual LED light phase**
+
+### CRITICAL: Calibration Workflow for Phase Recordings
+
+Choose the correct calibration method based on your recording phases:
+
+| Recording Configuration | Calibration Method | Why |
+|------------------------|-------------------|-----|
+| **Continuous IR only** | `calibrate_ir()` | Single LED calibration |
+| **Continuous White only** | `calibrate_white()` | Single LED calibration |
+| **Continuous Dual LED** | `calibrate_dual()` | Both LEDs together |
+| **Phases: IR + White (separate)** | `calibrate_ir()` + `calibrate_white()` | Calibrate each LED individually |
+| **Phases: IR + Dual LED** | `calibrate_ir()` + `calibrate_dual()` | Calibrate IR alone, then both together |
+| **Phases: White + Dual LED** | `calibrate_white()` + `calibrate_dual()` | Calibrate White alone, then both together |
+
+**Common Mistake:**
+- ❌ Using `calibrate_dual()` for phase recording with separate IR/White phases
+- ✅ Use `calibrate_ir()` and `calibrate_white()` separately instead
 
 ### Calibration Algorithm
 

@@ -101,8 +101,9 @@ class FrameCaptureService:
             # LED is OFF between frames, so we always need to turn it on
             if not self._led_is_on:
                 # Turn ON LED (reuse existing LED type if possible)
+                # OPTIMIZATION: Use logger.debug for LED config change to reduce I/O overhead
                 if led_config_changed:
-                    logger.info(
+                    logger.debug(
                         f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}"
                     )
                 else:
@@ -114,7 +115,9 @@ class FrameCaptureService:
                     # Select IR and turn on
                     self.esp32.select_led_type("ir")
                     self.esp32.led_on()
-                    time.sleep(0.05)
+                    # OPTIMIZATION: Reduce delay from 50ms to 10ms for faster phase transitions
+                    # ESP32 serial commands complete in <10ms, minimal delay needed
+                    time.sleep(0.01)
                     # Select White and turn on
                     self.esp32.select_led_type("white")
                     self.esp32.led_on()
@@ -164,8 +167,9 @@ class FrameCaptureService:
             # SCHRITT 3: Get ESP32 sensor data (temperature, humidity)
             # =================================================================
             # Query ESP32 for environmental data periodically
-            # Query on: LED config change OR every N frames
-            should_query_sensors = led_config_changed or (self._frames_since_sensor_query >= self._sensor_query_interval)
+            # OPTIMIZATION: Don't query on LED config change to reduce phase transition overhead
+            # Only query every N frames to minimize delays
+            should_query_sensors = (self._frames_since_sensor_query >= self._sensor_query_interval)
 
             if should_query_sensors:
                 try:
@@ -309,27 +313,32 @@ class FrameCaptureService:
 
     def turn_off_led(self):
         """
-        Turns off LED if it's currently on.
+        Turns off LED at the end of recording.
+
+        IMPORTANT: Always attempts to turn off LED regardless of cached state,
+        since cached state may not reflect physical LED state if errors occurred.
 
         Call this at the end of recording to save power.
         """
-        if self._led_is_on:
-            try:
-                if self._current_led_type == "dual":
-                    self.esp32.led_dual_off()
-                    logger.info("Both LEDs turned off after recording")
-                elif self._current_led_type:
-                    self.esp32.led_off(self._current_led_type)
-                    logger.info(f"{self._current_led_type.upper()} LED turned off after recording")
-                else:
-                    # Fallback: turn off both to be safe
-                    self.esp32.led_dual_off()
-                    logger.info("LEDs turned off after recording (fallback)")
-            except Exception as e:
-                logger.warning(f"Failed to turn off LED: {e}")
-            finally:
-                self._led_is_on = False
-                self._current_led_type = None
+        try:
+            # CRITICAL: Don't check self._led_is_on - always try to turn off!
+            # The cached state may not match physical state if an error occurred
+            if self._current_led_type == "dual":
+                self.esp32.led_dual_off()
+                logger.info("Both LEDs turned off after recording")
+            elif self._current_led_type:
+                self.esp32.led_off(self._current_led_type)
+                logger.info(f"{self._current_led_type.upper()} LED turned off after recording")
+            else:
+                # Fallback: turn off both to be safe (we don't know which LED was on)
+                self.esp32.led_dual_off()
+                logger.info("LEDs turned off after recording (fallback - no LED type cached)")
+        except Exception as e:
+            logger.warning(f"Failed to turn off LED: {e}")
+        finally:
+            # Always reset cached state
+            self._led_is_on = False
+            self._current_led_type = None
 
     def test_capture(self) -> bool:
         """Test-Capture to validate LED control and frame capture"""
