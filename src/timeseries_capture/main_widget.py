@@ -630,37 +630,83 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             return
 
         try:
-            esp32 = self.esp32_gui_controller.get_esp32_controller()
-            if not esp32:
-                return
+            # Check if recording is active - if so, show intended LED configuration
+            # (not physical state, since LEDs pulse briefly during each frame)
+            if self.recording_controller and self.recording_controller.is_recording():
+                # Get recording state to determine current LED configuration
+                recording_state = self.recording_controller.get_state()
+                if recording_state:
+                    # Get current phase info (if phase recording enabled)
+                    phase_info = recording_state.get_phase()
 
-            led_status = esp32.get_led_status()
-            if led_status:
-                # Determine which LED is active
-                led_on = led_status.ir_state or led_status.white_state
+                    if phase_info:
+                        # Phase recording - show phase-specific LED type
+                        led_type = phase_info.led_type  # 'ir', 'white', or 'dual'
+                        led_on = True  # Recording is active
 
-                if led_status.ir_state and led_status.white_state:
-                    led_type = "dual"
-                    power = max(led_status.ir_power, led_status.white_power)
-                elif led_status.ir_state:
-                    led_type = "ir"
-                    power = led_status.ir_power
-                elif led_status.white_state:
-                    led_type = "white"
-                    power = led_status.white_power
+                        # Get power from recording config (phase-specific)
+                        config = recording_state.get_config()
+                        if led_type == "dual":
+                            # Dual mode - show average of both powers
+                            power = (
+                                config.light_phase_ir_power + config.light_phase_white_power
+                            ) // 2
+                        elif led_type == "ir":
+                            # IR only (dark phase)
+                            power = config.dark_phase_ir_power
+                        else:
+                            # White only (light phase, non-dual)
+                            power = config.light_phase_white_power
+                    else:
+                        # Continuous recording (no phases) - show legacy config
+                        config = recording_state.get_config()
+                        if config:
+                            # For continuous mode, check which LED is being used
+                            # (This should be tracked better, but for now assume IR is primary)
+                            led_type = "ir"  # Default assumption for continuous mode
+                            led_on = True
+                            power = config.ir_led_power
+                        else:
+                            led_type = "off"
+                            led_on = False
+                            power = 0
                 else:
                     led_type = "off"
+                    led_on = False
                     power = 0
+            else:
+                # Not recording - query physical LED state from ESP32
+                esp32 = self.esp32_gui_controller.get_esp32_controller()
+                if not esp32:
+                    return
 
-                # Update LED panel
-                self.led_panel.update_status(
-                    {"led_on": led_on, "led_type": led_type, "power": power}
-                )
+                led_status = esp32.get_led_status()
+                if led_status:
+                    # Determine which LED is active
+                    led_on = led_status.ir_state or led_status.white_state
 
-                # Update status panel
-                self.status_panel.update_led_status(
-                    {"led_on": led_on, "led_type": led_type, "power": power}
-                )
+                    if led_status.ir_state and led_status.white_state:
+                        led_type = "dual"
+                        power = max(led_status.ir_power, led_status.white_power)
+                    elif led_status.ir_state:
+                        led_type = "ir"
+                        power = led_status.ir_power
+                    elif led_status.white_state:
+                        led_type = "white"
+                        power = led_status.white_power
+                    else:
+                        led_type = "off"
+                        power = 0
+                else:
+                    return
+
+            # Update LED panel
+            self.led_panel.update_status({"led_on": led_on, "led_type": led_type, "power": power})
+
+            # Update status panel
+            self.status_panel.update_led_status(
+                {"led_on": led_on, "led_type": led_type, "power": power}
+            )
         except Exception as e:
             logger.debug(f"LED status update error: {e}")
 
