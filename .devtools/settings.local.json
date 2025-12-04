@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(findstr:*)",
+      "Bash(more:*)",
+      "Bash(cmd /c \"dir /b /o-d W:\\*.h5 2>nul | more\")",
+      "Bash(git filter-branch:*)",
+      "Bash(chmod:*)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch:*)",
+      "Bash(git mv:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
