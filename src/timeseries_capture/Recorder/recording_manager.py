@@ -154,6 +154,17 @@ class RecordingManager(QObject):
                     "interval_seconds": config.interval_sec,
                     "phase_enabled": config.phase_enabled,
                     "expected_frames": self.state.total_frames,
+                    # Phase config
+                    "light_duration_min": config.light_duration_min,
+                    "dark_duration_min": config.dark_duration_min,
+                    "start_with_light": config.start_with_light,
+                    "dual_light_phase": config.dual_light_phase,
+                    # LED power config
+                    "ir_led_power": config.ir_led_power,
+                    "white_led_power": config.white_led_power,
+                    "dark_phase_ir_power": config.dark_phase_ir_power,
+                    "light_phase_ir_power": config.light_phase_ir_power,
+                    "light_phase_white_power": config.light_phase_white_power,
                 }
             )
 
@@ -229,7 +240,7 @@ class RecordingManager(QObject):
 
             else:
                 # CONTINUOUS RECORDING: Use legacy single LED powers
-                logger.info(f"Setting LED powers for continuous mode:")
+                logger.info("Setting LED powers for continuous mode:")
                 logger.info(f"   IR LED power: {config.ir_led_power}%")
                 logger.info(f"   White LED power: {config.white_led_power}%")
 
@@ -238,12 +249,16 @@ class RecordingManager(QObject):
                 time.sleep(0.1)  # Small delay between commands
 
                 # Set White LED power
-                success_white = self.frame_capture.esp32.set_led_power(config.white_led_power, "white")
+                success_white = self.frame_capture.esp32.set_led_power(
+                    config.white_led_power, "white"
+                )
 
                 if success_ir and success_white:
                     logger.info("✅ Both LED powers configured for continuous mode")
                 else:
-                    logger.warning(f"⚠️ LED power configuration incomplete (IR: {success_ir}, White: {success_white})")
+                    logger.warning(
+                        f"⚠️ LED power configuration incomplete (IR: {success_ir}, White: {success_white})"
+                    )
 
             logger.info("=" * 60)
 
@@ -348,7 +363,11 @@ class RecordingManager(QObject):
                         time_until_next = self.state.get_time_until_next_frame()
 
                     # Sleep remaining time (if still needed and not stopped/paused)
-                    if time_until_next > 0 and not self._stop_requested and not self.state.is_paused():
+                    if (
+                        time_until_next > 0
+                        and not self._stop_requested
+                        and not self.state.is_paused()
+                    ):
                         time.sleep(time_until_next)
 
                     # Re-check after sleep (might have been paused/stopped during sleep)
@@ -439,6 +458,7 @@ class RecordingManager(QObject):
             if config and phase_info and config.phase_enabled:
                 # Phase recording: Use per-phase powers
                 from .recording_state import PhaseType
+
                 if phase_info.phase == PhaseType.DARK:
                     metadata["led_power"] = config.dark_phase_ir_power
                     metadata["ir_led_power"] = config.dark_phase_ir_power
@@ -446,7 +466,9 @@ class RecordingManager(QObject):
                 else:
                     # Light phase
                     if dual_mode:
-                        metadata["led_power"] = config.light_phase_ir_power  # Store IR power in legacy field
+                        metadata["led_power"] = (
+                            config.light_phase_ir_power
+                        )  # Store IR power in legacy field
                         metadata["ir_led_power"] = config.light_phase_ir_power
                         metadata["white_led_power"] = config.light_phase_white_power
                     else:
@@ -497,7 +519,9 @@ class RecordingManager(QObject):
 
                     # Periodic progress logging (every 10 frames to reduce I/O overhead)
                     if frame_number % 10 == 0 or frame_number == 1:
-                        logger.info(f"Progress: Frame {frame_number}/{self.state.total_frames} saved")
+                        logger.info(
+                            f"Progress: Frame {frame_number}/{self.state.total_frames} saved"
+                        )
                     else:
                         logger.debug(f"Frame {frame_number} saved successfully")
                 else:
@@ -587,7 +611,9 @@ class RecordingManager(QObject):
 
             if dual_mode:
                 # Dual LED mode: Set both powers
-                logger.debug(f"[PHASE POWER] Light phase (dual): Setting IR={ir_power}%, White={white_power}%")
+                logger.debug(
+                    f"[PHASE POWER] Light phase (dual): Setting IR={ir_power}%, White={white_power}%"
+                )
                 self.frame_capture.esp32.set_led_power(ir_power, "ir")
                 time.sleep(0.01)  # Small delay between commands
                 self.frame_capture.esp32.set_led_power(white_power, "white")

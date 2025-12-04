@@ -84,6 +84,8 @@ class ChunkedTimeseriesWriter:
             "humidity_percent": np.float32,
             "led_type_str": str_vlen,
             "led_power": np.int16,
+            "ir_led_power": np.int16,  # IR LED power (0-100%)
+            "white_led_power": np.int16,  # White LED power (0-100%)
             "phase_str": str_vlen,
             "cycle_number": np.int32,
             "frame_mean_intensity": np.float32,
@@ -300,7 +302,13 @@ class ChunkedTimeseriesWriter:
             led_power = int(et.get("led_power_actual") or fm.get("led_power", -1))
             led_type_str = str(et.get("led_type_used") or fm.get("led_type", ""))
 
+            # Per-LED powers (for phase-based recordings with per-phase calibration)
+            ir_led_power = int(fm.get("ir_led_power", -1))
+            white_led_power = int(fm.get("white_led_power", -1))
+
             set_value("led_power", led_power)
+            set_value("ir_led_power", ir_led_power)
+            set_value("white_led_power", white_led_power)
             set_value("led_type_str", led_type_str)  # Keep only string version, removed enum
 
             # Removed: led_mode (can infer from led_type: dual/ir/white)
@@ -420,7 +428,10 @@ class DataManager:
     """
 
     def __init__(
-        self, telemetry_mode: TelemetryMode = TelemetryMode.STANDARD, chunk_size: int = 10, flush_interval: int = 10
+        self,
+        telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
+        chunk_size: int = 10,
+        flush_interval: int = 10,
     ):
         """
         Args:
