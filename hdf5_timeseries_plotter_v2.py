@@ -35,6 +35,8 @@ class TimeseriesPlotter:
         "humidity_percent": ("Humidity", "%", "Relative humidity"),
         "led_type": ("LED Type", "enum", "LED configuration (-1=off, 0=IR, 1=White, 2=Dual)"),
         "led_power": ("LED Power", "%", "LED power level"),
+        "ir_led_power": ("IR LED Power", "%", "IR LED power level"),
+        "white_led_power": ("White LED Power", "%", "White LED power level"),
         "phase": ("Phase", "enum", "Recording phase (0=continuous, 1=light, 2=dark)"),
         "phase_transition": ("Phase Transition", "boolean", "Phase change indicator"),
         "cycle_number": ("Cycle Number", "#", "Phase cycle counter"),
@@ -159,6 +161,15 @@ class TimeseriesPlotter:
                 elif field_name == "phase":
                     ax.set_yticks([0, 1, 2])
                     ax.set_yticklabels(['Continuous', 'Light', 'Dark'])
+            elif field_name in ["led_type_str", "phase_str", "capture_method"]:
+                # String data - convert to categorical for plotting
+                unique_values = np.unique(y_data)
+                value_to_int = {val: i for i, val in enumerate(unique_values)}
+                y_numeric = np.array([value_to_int[val] for val in y_data])
+
+                ax.step(x_data, y_numeric, where='post', linewidth=2, label=field_name)
+                ax.set_yticks(range(len(unique_values)))
+                ax.set_yticklabels([str(v) for v in unique_values])
             else:
                 # Continuous data - line plot
                 ax.plot(x_data, y_data, linewidth=1.5, label=field_name)
@@ -168,13 +179,17 @@ class TimeseriesPlotter:
             ax.grid(True, alpha=0.3)
             ax.legend(loc='upper right')
 
-            # Show statistics
-            if not (field_name in ["led_type", "phase", "transition", "success"]):
-                mean_val = np.mean(y_data)
-                std_val = np.std(y_data)
-                ax.text(0.02, 0.98, f"μ={mean_val:.2f}, σ={std_val:.2f}",
-                       transform=ax.transAxes, va='top', fontsize=9,
-                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            # Show statistics (only for numeric data)
+            if not (field_name in ["led_type", "phase", "transition", "success", "led_type_str", "phase_str", "capture_method"]):
+                try:
+                    mean_val = np.mean(y_data)
+                    std_val = np.std(y_data)
+                    ax.text(0.02, 0.98, f"μ={mean_val:.2f}, σ={std_val:.2f}",
+                           transform=ax.transAxes, va='top', fontsize=9,
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                except TypeError:
+                    # Skip statistics for non-numeric data
+                    pass
 
         # X-axis label (only on bottom plot)
         axes[-1].set_xlabel(x_label, fontsize=11, fontweight='bold')

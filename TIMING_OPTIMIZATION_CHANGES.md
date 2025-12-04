@@ -165,8 +165,29 @@ Potential further optimizations (if needed):
 3. **Implement write buffering** to collect multiple frames in memory
 4. **Add compression** for image datasets (trade-off: CPU vs I/O)
 
+## Additional Improvements
+
+### Per-LED Power Fields Added to Timeseries
+
+**File**: [src/timeseries_capture/Datamanager/data_manager_hdf5.py](src/timeseries_capture/Datamanager/data_manager_hdf5.py)
+
+**Changes**:
+- Added `ir_led_power` and `white_led_power` fields to timeseries data (lines 87-88)
+- These fields store the actual LED power used for each LED independently
+- Enables verification of per-phase LED calibration in recorded data
+
+**Benefits**:
+- Can verify calibrated values are being used correctly during recording
+- Can diagnose intensity mismatches by plotting LED powers alongside intensity
+- Supports analysis of dual LED mode where both LEDs have different powers
+
+**Usage**:
+```bash
+python hdf5_timeseries_plotter_v2.py recording.h5 --fields phase_str,ir_led_power,white_led_power,frame_mean_intensity
+```
+
 ## Related Files
 
-- [data_manager_hdf5.py](src/timeseries_capture/Datamanager/data_manager_hdf5.py) - HDF5 flush optimization
+- [data_manager_hdf5.py](src/timeseries_capture/Datamanager/data_manager_hdf5.py) - HDF5 flush optimization & per-LED power fields
 - [recording_manager.py](src/timeseries_capture/Recorder/recording_manager.py) - Logging optimization
 - [hdf5_timeseries_plotter_v2.py](hdf5_timeseries_plotter_v2.py) - Visualization tool for timing analysis

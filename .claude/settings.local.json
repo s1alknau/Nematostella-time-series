@@ -1,10 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:*)",
-      "Bash(python:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(findstr:*)",
+      "Bash(more:*)",
+      "Bash(cmd /c \"dir /b /o-d W:\\*.h5 2>nul | more\")"
     ],
     "deny": [],
     "ask": []

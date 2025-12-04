@@ -162,6 +162,10 @@ class RecordingController(QObject):
                 camera_trigger_latency_ms=config_dict.get("camera_trigger_latency_ms", 20),
                 ir_led_power=config_dict.get("ir_led_power", 100),
                 white_led_power=config_dict.get("white_led_power", 50),
+                # Per-phase LED powers (from calibration)
+                dark_phase_ir_power=config_dict.get("dark_phase_ir_power", 100),
+                light_phase_ir_power=config_dict.get("light_phase_ir_power", 100),
+                light_phase_white_power=config_dict.get("light_phase_white_power", 50),
             )
 
             # Start recording
