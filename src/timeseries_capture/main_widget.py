@@ -71,6 +71,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self._calibrated_dark_phase_ir_power: Optional[int] = None
         self._calibrated_light_phase_ir_power: Optional[int] = None
         self._calibrated_light_phase_white_power: Optional[int] = None
+        self._calibration_exposure_ms: Optional[float] = None  # Camera exposure during calibration
 
         # Setup UI first
         self._setup_ui()
@@ -307,6 +308,51 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             return
 
         try:
+            # Verify camera exposure matches calibration exposure
+            if self._calibration_exposure_ms is not None:
+                try:
+                    current_exposure_ms = self.camera_adapter.get_exposure_ms()
+                    exposure_diff = abs(current_exposure_ms - self._calibration_exposure_ms)
+
+                    self.log_panel.add_log(
+                        f"📷 Camera exposure: {current_exposure_ms:.1f} ms", "INFO"
+                    )
+                    self.log_panel.add_log(
+                        f"📷 Calibration exposure: {self._calibration_exposure_ms:.1f} ms", "INFO"
+                    )
+
+                    if exposure_diff > 0.5:  # More than 0.5ms difference
+                        self.log_panel.add_log(
+                            f"⚠️ WARNING: Camera exposure changed by {exposure_diff:.1f} ms since calibration!",
+                            "WARNING"
+                        )
+                        self.log_panel.add_log(
+                            f"⚠️ This will cause intensity mismatch! Calibration was done at {self._calibration_exposure_ms:.1f} ms.",
+                            "WARNING"
+                        )
+                        # Ask user if they want to continue
+                        from PyQt5.QtWidgets import QMessageBox
+                        reply = QMessageBox.question(
+                            self,
+                            "Exposure Mismatch",
+                            f"Camera exposure ({current_exposure_ms:.1f} ms) differs from calibration exposure ({self._calibration_exposure_ms:.1f} ms).\n\n"
+                            f"This will cause intensity mismatch between calibration and recording.\n\n"
+                            f"Do you want to continue anyway?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.No
+                        )
+                        if reply == QMessageBox.No:
+                            self.log_panel.add_log("❌ Recording cancelled due to exposure mismatch", "INFO")
+                            return
+                    else:
+                        self.log_panel.add_log(
+                            f"✅ Camera exposure matches calibration ({current_exposure_ms:.1f} ms)", "SUCCESS"
+                        )
+                except Exception as e:
+                    self.log_panel.add_log(
+                        f"⚠️ Could not verify camera exposure: {e}", "WARNING"
+                    )
+
             # Get configuration from GUI
             recording_config = self.recording_panel.get_config()
             phase_config = self.phase_panel.get_config()
@@ -529,6 +575,21 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     # Get calibration settings from GUI
                     use_full_frame = self.led_panel.get_use_full_frame()
 
+                    # Read and log camera exposure time for calibration
+                    try:
+                        camera_exposure_ms = self.camera_adapter.get_exposure_ms()
+                        self.log_panel.add_log(
+                            f"📷 Camera exposure time: {camera_exposure_ms:.1f} ms", "INFO"
+                        )
+                        self.log_panel.add_log(
+                            f"⚠️ IMPORTANT: Do NOT change camera exposure between calibration and recording!", "WARNING"
+                        )
+                    except Exception as e:
+                        self.log_panel.add_log(
+                            f"⚠️ Could not read camera exposure: {e}", "WARNING"
+                        )
+                        camera_exposure_ms = None
+
                     # Create calibration service
                     calibrator = CalibrationService(
                         capture_callback=capture_frame,
@@ -536,8 +597,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         led_on_callback=led_on,
                         led_off_callback=led_off,
                         target_intensity=200.0,  # Target mean intensity
-                        max_iterations=10,
-                        tolerance_percent=5.0,
+                        max_iterations=15,  # Increased for better convergence
+                        tolerance_percent=2.5,  # Tighter tolerance for ≤5% phase difference
                         use_full_frame=use_full_frame,  # Use checkbox setting
                         roi_fraction=0.75,  # 75% x 75% center ROI when not using full frame
                     )
@@ -577,6 +638,14 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
                         # Store calibration results for per-phase recording
                         # These will be used when phase recording is enabled
+
+                        # Store camera exposure time used during calibration
+                        if camera_exposure_ms is not None:
+                            self._calibration_exposure_ms = camera_exposure_ms
+                            self.log_panel.add_log(
+                                f"💾 Calibration exposure time: {camera_exposure_ms:.1f} ms", "INFO"
+                            )
+
                         if mode == "ir":
                             # IR calibration → used for dark phase (IR only)
                             self._calibrated_dark_phase_ir_power = result.ir_power

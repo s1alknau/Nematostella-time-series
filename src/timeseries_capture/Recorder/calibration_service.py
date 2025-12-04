@@ -125,12 +125,16 @@ class CalibrationService:
         IMPORTANT: This method calibrates IR and White LEDs together with both on at the same time.
         This ensures the combined intensity matches the target when using dual LED mode.
 
+        CONSTRAINT: IR LED power is constrained to a minimum of 20% to maintain adequate
+        darkfield illumination quality for transparent specimens. This ensures sufficient
+        contrast and image quality even when white LED is present.
+
         Args:
             ir_initial_power: Starting IR LED power
             white_initial_power: Starting White LED power
 
         Returns:
-            CalibrationResult with both LED powers
+            CalibrationResult with both LED powers (IR power will be >= 20%)
         """
         logger.info("Starting Dual LED calibration (SIMULTANEOUS mode)")
         logger.info(f"Target intensity: {self.target_intensity}")
@@ -144,7 +148,9 @@ class CalibrationService:
         best_error = float("inf")
 
         # Binary search boundaries for both LEDs
-        min_ir = 1
+        # IMPORTANT: IR LED minimum set to 20% to maintain adequate darkfield illumination
+        # quality for transparent specimens (darkfield microscopy requirement)
+        min_ir = 20
         max_ir = 100
         min_white = 1
         max_white = 100
