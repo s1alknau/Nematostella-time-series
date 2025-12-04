@@ -48,7 +48,7 @@ class CalibrationService:
         led_on_callback: Callable[[str], bool],
         led_off_callback: Callable[[], bool],
         target_intensity: float = 200.0,
-        max_iterations: int = 10,
+        max_iterations: int = 15,  # Increased from 10 to 15 for better convergence
         tolerance_percent: float = 2.5,  # Reduced from 5.0% to 2.5% for tighter intensity matching
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
