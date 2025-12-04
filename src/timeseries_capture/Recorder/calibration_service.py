@@ -49,7 +49,7 @@ class CalibrationService:
         led_off_callback: Callable[[], bool],
         target_intensity: float = 200.0,
         max_iterations: int = 10,
-        tolerance_percent: float = 5.0,
+        tolerance_percent: float = 2.5,  # Reduced from 5.0% to 2.5% for tighter intensity matching
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
     ):
@@ -61,9 +61,13 @@ class CalibrationService:
             led_off_callback: Function() that turns LED off
             target_intensity: Target mean intensity value
             max_iterations: Maximum calibration iterations
-            tolerance_percent: Acceptable error percentage from target
+            tolerance_percent: Acceptable error percentage from target (default 2.5% for ≤5% phase difference)
             use_full_frame: If True, measure intensity over entire frame. If False, use center ROI
             roi_fraction: Fraction of frame to use for ROI (e.g., 0.75 = 75% x 75% center region)
+
+        Note:
+            A tolerance of 2.5% ensures that the maximum difference between dark and light phases
+            is within 5% (worst case: both at opposite tolerance bounds: 2.5% + 2.5% = 5%)
         """
         self.capture_callback = capture_callback
         self.set_led_power_callback = set_led_power_callback
