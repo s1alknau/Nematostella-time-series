@@ -9,6 +9,20 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 
 ---
 
+## Recent Updates (v2.1.0 - 2024-12-04)
+
+🎉 **Major improvements to calibration and timing systems!**
+
+- ✅ **Per-Phase LED Calibration**: Automatic intensity matching between dark/light phases (target: ≤5% difference)
+- ✅ **IR LED Minimum Constraint**: Enforced 20% minimum in dual mode for optimal darkfield illumination
+- ✅ **Camera Exposure Tracking**: Automatic verification that exposure matches between calibration and recording
+- ✅ **Timing Optimizations**: 95% reduction in cumulative drift, 40% improvement in interval stability
+- ✅ **Bug Fixes**: Fixed phase recording config passing and string field plotting
+
+See [CHANGELOG.md](CHANGELOG.md) for complete details.
+
+---
+
 ## Features
 
 - **Hardware-Synchronized LED Control**: Precise synchronization between camera exposure and LED illumination via ESP32 microcontroller
