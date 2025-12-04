@@ -222,13 +222,13 @@ Pin 3 (GND)  → ESP32 GND
 #### Step 4: Camera Integration
 
 **Supported Camera Types:**
-1. **Micro-Manager Compatible Cameras** (recommended)
-   - See [camera_adapters.py](src/timeseries_capture/camera_adapters.py)
-   - Examples: Hamamatsu, Andor, FLIR, Basler
 
-2. **HIK Vision Cameras**
-   - Custom adapter available in `Json+cam_manager/`
-   - See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
+**HIK Robotics Cameras** (tested and recommended):
+- **GigE (Ethernet) cameras**: Network-based cameras with high bandwidth
+- **USB cameras**: Direct USB connection for easy setup
+- Custom adapter available in `Json+cam_manager/`
+- See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
+- See [camera_adapters.py](src/timeseries_capture/camera_adapters.py) for implementation details
 
 **Camera Positioning:**
 - Position camera to view sample chamber
@@ -1467,8 +1467,9 @@ If you use this plugin in your research, please cite:
 ## Acknowledgments
 
 - napari team for the excellent imaging platform
-- Micro-Manager project for device control
+- HIK Robotics for camera support and SDK
 - ESP32 community for microcontroller support
+- Open-source hardware and software communities
 
 ---
 
