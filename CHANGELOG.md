@@ -174,7 +174,7 @@ None - all changes are backward compatible:
 
 ### Contributors
 
-- Implementation and testing: Claude Code & User
+- Implementation and testing: Development team
 - Hardware setup: Nematostella time-series imaging system
 - Documentation: Comprehensive guides and diagnostic tools
 
