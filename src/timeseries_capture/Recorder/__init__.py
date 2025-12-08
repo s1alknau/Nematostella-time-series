@@ -39,7 +39,9 @@ Version: 2.0.0-refactored
 """
 
 from .calibration_service import CalibrationResult, CalibrationService
+from .camera_recording_unit import CameraRecordingUnit
 from .frame_capture import CameraAdapter, ESP32Adapter, FrameCaptureService
+from .multi_camera_controller import MultiCameraController
 from .phase_manager import PhaseManager
 from .recording_manager import RecordingManager
 from .recording_state import PhaseInfo, PhaseType, RecordingConfig, RecordingState, RecordingStatus
@@ -47,11 +49,14 @@ from .recording_state import PhaseInfo, PhaseType, RecordingConfig, RecordingSta
 # DataManager wird aus separatem Package importiert
 # from Datamanager import DataManager
 
-__version__ = "2.0.0-refactored"
+__version__ = "2.1.0-multicam"
 
 __all__ = [
     # Main Manager
     "RecordingManager",
+    # Multi-Camera Support
+    "MultiCameraController",
+    "CameraRecordingUnit",
     # State Management
     "RecordingState",
     "RecordingStatus",
