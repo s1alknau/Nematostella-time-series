@@ -31,15 +31,17 @@ Version: 2.0.0-refactored
 """
 
 from ..main_widget import NematostellaTimelapseCaptureWidget, create_timelapse_widget
+from .camera_selection_panel import CameraSelectionPanel
 from .esp32_connection_panel import ESP32ConnectionPanel
 from .led_control_panel import LEDControlPanel
 from .log_panel import LogPanel
+from .multi_camera_status_panel import MultiCameraStatusPanel
 from .phase_panel import PhaseConfigPanel
 from .recording_panel import RecordingControlPanel
 from .status_panel import StatusPanel
 
 # Version info
-__version__ = "2.0.0-refactored"
+__version__ = "2.1.0-multicam"
 __author__ = "s1alknau"
 
 # Public API
@@ -54,6 +56,9 @@ __all__ = [
     "ESP32ConnectionPanel",
     "StatusPanel",
     "LogPanel",
+    # Multi-Camera Panels
+    "CameraSelectionPanel",
+    "MultiCameraStatusPanel",
     # Version
     "__version__",
 ]
