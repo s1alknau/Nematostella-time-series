@@ -66,6 +66,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.recording_controller: Optional[RecordingController] = None
         self.camera_adapter = None
 
+        # Multi-camera support
+        self.multi_camera_controller = None
+        self.camera_system_config = None
+        self._multi_camera_mode = False
+
         # Calibration results storage (for per-phase LED power)
         # These are set by calibration and used when starting phase recordings
         self._calibrated_dark_phase_ir_power: Optional[int] = None
@@ -75,6 +80,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
         # Setup UI first
         self._setup_ui()
+
+        # Try to load multi-camera configuration
+        self._load_camera_system_config()
 
         # Initialize hardware after UI is ready
         QTimer.singleShot(500, self._initialize_hardware)
@@ -109,6 +117,10 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.tabs.addTab(self.led_panel, "💡 LED Control")
         self.tabs.addTab(self.log_panel, "📋 System Log")
 
+        # Multi-camera panels (will be populated after config is loaded)
+        self.camera_selection_panel = None
+        self.multi_camera_status_panel = None
+
         # Status panel (bottom)
         self.status_panel = StatusPanel()
         layout.addWidget(self.status_panel)
@@ -132,6 +144,76 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.led_panel.led_off_requested.connect(self._on_led_off_requested)
         self.led_panel.led_power_changed.connect(self._on_led_power_changed)
         self.led_panel.calibration_requested.connect(self._on_calibration_requested)
+
+    def _load_camera_system_config(self):
+        """Load camera system configuration if available"""
+        from .Config import load_camera_system_config
+
+        # Look for camera_system.json in various locations
+        config_paths = [
+            Path("camera_system.json"),
+            Path.home() / ".imswitch" / "camera_system.json",
+            Path(__file__).parent / "camera_system.json",
+        ]
+
+        for config_path in config_paths:
+            if config_path.exists():
+                try:
+                    self.camera_system_config = load_camera_system_config(config_path)
+                    self.log_panel.add_log(
+                        f"Multi-camera config loaded: {self.camera_system_config.num_enabled_cameras} cameras",
+                        "INFO",
+                    )
+                    # Add multi-camera GUI panels
+                    self._add_multi_camera_panels()
+                    return
+                except Exception as e:
+                    self.log_panel.add_log(f"Failed to load multi-camera config: {e}", "WARNING")
+                    logger.warning(f"Failed to load multi-camera config from {config_path}: {e}")
+
+        # No config found - use single camera mode
+        self.log_panel.add_log("No multi-camera config found, using single camera mode", "INFO")
+
+    def _add_multi_camera_panels(self):
+        """Add multi-camera GUI panels to the layout"""
+        if not self.camera_system_config or self.camera_system_config.num_cameras <= 1:
+            return
+
+        from .GUI import CameraSelectionPanel, MultiCameraStatusPanel
+
+        # Camera selection panel
+        self.camera_selection_panel = CameraSelectionPanel()
+        self.camera_selection_panel.set_cameras(
+            [
+                {"id": cam.id, "name": cam.name, "enabled": cam.enabled}
+                for cam in self.camera_system_config.cameras
+            ]
+        )
+
+        # Connect signals
+        self.camera_selection_panel.camera_selected.connect(self._on_camera_selected)
+        self.camera_selection_panel.apply_to_all_clicked.connect(self._on_apply_to_all)
+        self.camera_selection_panel.multi_camera_toggled.connect(self._on_multi_camera_toggled)
+
+        # Add to layout (insert before tabs)
+        self.layout().insertWidget(0, self.camera_selection_panel)
+
+        # Multi-camera status panel
+        self.multi_camera_status_panel = MultiCameraStatusPanel()
+        self.multi_camera_status_panel.set_cameras(
+            [
+                {"id": cam.id, "name": cam.name, "enabled": cam.enabled}
+                for cam in self.camera_system_config.cameras
+            ]
+        )
+
+        # Add to layout (insert before status panel at bottom)
+        status_panel_index = self.layout().indexOf(self.status_panel)
+        self.layout().insertWidget(status_panel_index, self.multi_camera_status_panel)
+
+        self.log_panel.add_log(
+            f"Multi-camera GUI panels added ({self.camera_system_config.num_cameras} cameras)", "INFO"
+        )
 
     # ========================================================================
     # HARDWARE INITIALIZATION
@@ -219,10 +301,14 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
             self.log_panel.add_log("✅ Recording controller ready", "SUCCESS")
 
-            # 5. Update hardware status
+            # 5. Initialize multi-camera controller if config available
+            if self.camera_system_config and self.camera_system_config.num_enabled_cameras > 1:
+                self._init_multi_camera_controller()
+
+            # 6. Update hardware status
             self._update_hardware_status()
 
-            # 6. Start periodic status updates
+            # 7. Start periodic status updates
             self._start_status_updates()
 
         except Exception as e:
@@ -263,6 +349,52 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.status_timer.timeout.connect(self._update_hardware_status)
         self.status_timer.start(2000)  # Update every 2 seconds
 
+    def _init_multi_camera_controller(self):
+        """Initialize multi-camera controller"""
+        from .Recorder import MultiCameraController
+
+        try:
+            self.log_panel.add_log("Initializing multi-camera controller...", "INFO")
+
+            # Create controller with factory functions
+            self.multi_camera_controller = MultiCameraController(
+                system_config=self.camera_system_config,
+                camera_factory=self._create_camera_adapter_for_config,
+                esp32_factory=self._create_esp32_controller_for_port,
+            )
+
+            # Connect all cameras
+            results = self.multi_camera_controller.connect_all()
+
+            success_count = sum(1 for success in results.values() if success)
+            self.log_panel.add_log(
+                f"Multi-camera: Connected {success_count}/{len(results)} cameras",
+                "SUCCESS" if success_count == len(results) else "WARNING",
+            )
+
+        except Exception as e:
+            self.log_panel.add_log(f"Failed to initialize multi-camera controller: {e}", "ERROR")
+            logger.error(f"Multi-camera controller init failed: {e}", exc_info=True)
+            self.multi_camera_controller = None
+
+    def _create_camera_adapter_for_config(self, camera_config):
+        """Create camera adapter from camera config"""
+        if camera_config.type in ["hik_gige", "hik_usb"]:
+            from .camera_adapters import ImSwitchCameraAdapter
+
+            # Use ImSwitch camera manager to get camera
+            return ImSwitchCameraAdapter(
+                camera_manager=self.camera_manager, camera_name=camera_config.name
+            )
+        else:
+            raise ValueError(f"Unsupported camera type: {camera_config.type}")
+
+    def _create_esp32_controller_for_port(self, port: str):
+        """Create ESP32 controller for COM port"""
+        from .ESP32_Controller import ESP32Controller
+
+        return ESP32Controller(port=port)
+
     # ========================================================================
     # ESP32 SIGNAL HANDLERS
     # ========================================================================
@@ -292,6 +424,12 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
     def _on_start_recording_requested(self):
         """Start recording button pressed"""
+        # Check if multi-camera mode is enabled
+        if self._multi_camera_mode and self.multi_camera_controller:
+            self._start_multi_camera_recording()
+            return
+
+        # Single camera mode validation
         # Check if ESP32 is connected
         if not self.esp32_gui_controller or not self.esp32_gui_controller.is_connected():
             self._show_error("Error", "ESP32 not connected. Please connect first.")
@@ -403,19 +541,93 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self._show_error("Error", f"Failed to start: {e}")
             self.log_panel.add_log(f"❌ Recording start failed: {e}", "ERROR")
 
+    def _start_multi_camera_recording(self):
+        """Start recording in multi-camera mode"""
+        try:
+            # Get configuration from GUI
+            recording_config = self.recording_panel.get_config()
+            phase_config = self.phase_panel.get_config()
+            led_powers = self.led_panel.get_led_powers()
+
+            # Merge configs
+            from .Recorder import RecordingConfig
+
+            full_config = RecordingConfig(
+                duration_min=recording_config["duration_min"],
+                interval_sec=recording_config["interval_sec"],
+                experiment_name=recording_config["experiment_name"],
+                output_dir=recording_config["output_dir"],
+                phase_enabled=phase_config.get("phase_enabled", False),
+                light_duration_min=phase_config.get("light_duration_min", 30),
+                dark_duration_min=phase_config.get("dark_duration_min", 30),
+                ir_led_power=led_powers["ir"],
+                white_led_power=led_powers["white"],
+            )
+
+            # Add per-phase LED powers if calibrated
+            if self._calibrated_dark_phase_ir_power is not None:
+                full_config.dark_phase_ir_power = self._calibrated_dark_phase_ir_power
+            if self._calibrated_light_phase_ir_power is not None:
+                full_config.light_phase_ir_power = self._calibrated_light_phase_ir_power
+            if self._calibrated_light_phase_white_power is not None:
+                full_config.light_phase_white_power = self._calibrated_light_phase_white_power
+
+            # Start all recordings
+            self.log_panel.add_log("Starting multi-camera recording...", "INFO")
+            results = self.multi_camera_controller.start_all_recordings(full_config)
+
+            success_count = sum(1 for success in results.values() if success)
+
+            if success_count > 0:
+                self.log_panel.add_log(
+                    f"Started {success_count}/{len(results)} cameras",
+                    "SUCCESS" if success_count == len(results) else "WARNING",
+                )
+
+                # Start status update timer
+                self._start_multi_camera_status_timer()
+            else:
+                self.log_panel.add_log("Failed to start any cameras", "ERROR")
+
+        except Exception as e:
+            logger.error(f"Multi-camera recording start error: {e}", exc_info=True)
+            self.log_panel.add_log(f"Multi-camera recording start failed: {e}", "ERROR")
+            self._show_error("Error", f"Failed to start multi-camera recording: {e}")
+
     def _on_stop_recording_requested(self):
         """Stop recording button pressed"""
+        # Check if multi-camera mode
+        if self._multi_camera_mode and self.multi_camera_controller:
+            try:
+                self.log_panel.add_log("Stopping multi-camera recording...", "INFO")
+                results = self.multi_camera_controller.stop_all_recordings()
+
+                success_count = sum(1 for success in results.values() if success)
+                self.log_panel.add_log(
+                    f"Stopped {success_count}/{len(results)} cameras", "SUCCESS"
+                )
+
+                # Stop status timer
+                if hasattr(self, "_multi_cam_status_timer"):
+                    self._multi_cam_status_timer.stop()
+
+            except Exception as e:
+                logger.error(f"Multi-camera stop error: {e}", exc_info=True)
+                self.log_panel.add_log(f"Multi-camera stop error: {e}", "ERROR")
+            return
+
+        # Single camera mode
         if not self.recording_controller:
-            self.log_panel.add_log("⚠️ Recording controller not initialized", "WARNING")
+            self.log_panel.add_log("Recording controller not initialized", "WARNING")
             return
 
         try:
-            self.log_panel.add_log("⏹️ Stopping recording...", "INFO")
+            self.log_panel.add_log("Stopping recording...", "INFO")
             self.recording_controller.stop_recording()
-            self.log_panel.add_log("✅ Recording stopped", "SUCCESS")
+            self.log_panel.add_log("Recording stopped", "SUCCESS")
         except Exception as e:
             logger.error(f"Stop recording error: {e}", exc_info=True)
-            self.log_panel.add_log(f"❌ Stop error: {e}", "ERROR")
+            self.log_panel.add_log(f"Stop error: {e}", "ERROR")
 
     def _on_pause_recording_requested(self):
         """Pause recording button pressed"""
@@ -692,6 +904,74 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             logger.error(f"Calibration start error: {e}", exc_info=True)
 
     # ========================================================================
+    # MULTI-CAMERA EVENT HANDLERS
+    # ========================================================================
+
+    def _on_camera_selected(self, camera_id: str):
+        """Handle camera selection change"""
+        self.log_panel.add_log(f"Selected camera: {camera_id}", "INFO")
+
+        # Update GUI to show settings for selected camera
+        if self.multi_camera_controller:
+            unit = self.multi_camera_controller.get_unit(camera_id)
+            if unit:
+                # Future: Update LED panel with per-camera settings
+                pass
+
+    def _on_apply_to_all(self):
+        """Handle apply settings to all cameras"""
+        self.log_panel.add_log("Applying settings to all cameras...", "INFO")
+
+        # Get current settings from GUI
+        led_powers = self.led_panel.get_led_powers()
+
+        # Log what's being applied
+        self.log_panel.add_log(
+            f"Applied: IR={led_powers['ir']}%, White={led_powers['white']}% to all cameras", "INFO"
+        )
+
+        # Future: Store in camera configs for future recordings
+
+    def _on_multi_camera_toggled(self, enabled: bool):
+        """Handle multi-camera mode toggle"""
+        self._multi_camera_mode = enabled
+
+        if enabled:
+            self.log_panel.add_log("Switched to multi-camera mode", "INFO")
+            # Future: Hide single camera controls, show multi controls
+        else:
+            self.log_panel.add_log("Switched to single camera mode", "INFO")
+            # Future: Show single camera controls, hide multi controls
+
+    def _start_multi_camera_status_timer(self):
+        """Start timer for updating multi-camera status"""
+        if not hasattr(self, "_multi_cam_status_timer"):
+            self._multi_cam_status_timer = QTimer()
+            self._multi_cam_status_timer.timeout.connect(self._update_multi_camera_status)
+
+        self._multi_cam_status_timer.start(1000)  # Update every second
+
+    def _update_multi_camera_status(self):
+        """Update multi-camera status display"""
+        if not self.multi_camera_controller:
+            return
+
+        try:
+            # Get status of all cameras
+            status = self.multi_camera_controller.get_all_status()
+
+            # Update status panel
+            if self.multi_camera_status_panel:
+                self.multi_camera_status_panel.update_all_status(status)
+
+            # Stop timer if no cameras recording
+            if not self.multi_camera_controller.is_any_recording:
+                self._multi_cam_status_timer.stop()
+
+        except Exception as e:
+            logger.debug(f"Multi-camera status update error: {e}")
+
+    # ========================================================================
     # HARDWARE STATUS UPDATES
     # ========================================================================
 
@@ -841,6 +1121,17 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         # Stop status updates
         if hasattr(self, "status_timer"):
             self.status_timer.stop()
+
+        # Stop multi-camera status timer
+        if hasattr(self, "_multi_cam_status_timer"):
+            self._multi_cam_status_timer.stop()
+
+        # Cleanup multi-camera controller
+        if self.multi_camera_controller:
+            try:
+                self.multi_camera_controller.disconnect_all()
+            except Exception as e:
+                logger.error(f"Multi-camera controller cleanup error: {e}")
 
         # Cleanup recording controller
         if self.recording_controller:
