@@ -221,6 +221,16 @@ Pin 3 (GND)  → ESP32 GND
 - Direct 3-wire connection to ESP32
 - Use short wires (<30cm) for reliable communication
 
+**Power Supply Note:**
+- DHT22 datasheet specifies 3.3-6V operating range (5V optimal)
+- **This setup uses 3.3V** which provides excellent logic level compatibility:
+  - ✅ ESP32 GPIO operates at 3.3V logic
+  - ✅ DHT22 powered at 3.3V
+  - ✅ Integrated pull-up at 3.3V
+  - ✅ All signal levels perfectly matched
+- While 5V can provide slightly more stable readings, 3.3V works reliably and avoids any logic level conversion issues
+- Sensor has been tested extensively at 3.3V with stable temperature/humidity readings
+
 #### Step 4: Camera Integration
 
 **Supported Camera Types:**
@@ -509,7 +519,7 @@ White IRLZ34N MOSFET:
 | Component | Voltage | Current | Notes |
 |-----------|---------|---------|-------|
 | ESP32 | 5V USB | ~500mA | Powered via USB from computer |
-| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin |
+| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin (datasheet: 3.3-6V range, 5V optimal) |
 | IRLZ34N MOSFETs (2x) | 3.3V (gate) | <1mA each | Logic-level, driven by ESP32 GPIO |
 | IR LED Strip | 12V | 1-3A | Via IRLZ34N MOSFET, dedicated 12V PSU |
 | White LED Strip | 24V | 1-3A | Via IRLZ34N MOSFET, dedicated 24V PSU |
