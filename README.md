@@ -528,13 +528,15 @@ White IRLZ34N MOSFET:
 
 #### Signal Specifications
 
-**PWM Signals (GPIO 25, 26):**
+**PWM Signals (GPIO 4, 15):**
+- **GPIO 4**: IR LED MOSFET Gate
+- **GPIO 15**: White LED MOSFET Gate
 - Logic Level: 3.3V
-- Frequency: 1 kHz (configurable in firmware)
+- Frequency: 15 kHz (set in firmware)
 - Duty Cycle: 0-100% (controlled by plugin)
 - Rise/Fall Time: <1µs
 
-**DHT22 Communication:**
+**DHT22 Communication (GPIO 14):**
 - Protocol: Single-wire digital (proprietary)
 - Pull-up: 10kΩ to 3.3V (required)
 - Sampling Rate: ~0.5 Hz (one reading per 2 seconds max)
@@ -563,9 +565,9 @@ White IRLZ34N MOSFET:
 - Verify GPIO pin assignments match firmware
 
 **DHT22 Returns 0.0 Values:**
-- Check 10kΩ pull-up resistor is installed
+- Check 10kΩ pull-up resistor is installed (or use DHT22 board with integrated pull-up)
 - Verify 3.3V power to sensor
-- Ensure data pin connected to GPIO 4
+- Ensure data pin connected to **GPIO 14** (not GPIO 4!)
 - Try different DHT22 sensor (failure rate ~5%)
 
 **LED Intensities Don't Match:**
