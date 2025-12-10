@@ -239,54 +239,7 @@ Pin 3 (GND)  → ESP32 GND
 
 **System Overview:**
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│          COMPLETE SYSTEM WIRING (2 PSUs + USB Power)               │
-└─────────────────────────────────────────────────────────────────────┘
 
-Power Sources:
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  USB Cable   │     │   12V PSU    │     │   24V PSU    │
-│   (ESP32)    │     │  (IR LED)    │     │ (White LED)  │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │                    │                    │
-       │ USB                │ 12V+               │ 24V+
-       │                    │                    │
-       ▼                    ▼                    ▼
-   ┌────────┐          ┌─────────┐         ┌─────────┐
-   │ ESP32  │          │ WAGO #2 │         │ WAGO #3 │
-   │        │          │(IR 12V+)│         │(W 24V+) │
-   │ GPIO 4 ├──────┐   └────┬────┘         └────┬────┘
-   │ GPIO15 ├────┐ │     [1][2][3]           [1][2][3]
-   │ GPIO14 ◄─┐  │ │      │  │  │             │  │  │
-   │  3.3V──┬─┼──┼─┘      │  │  │             │  │  │
-   │  GND─┬─┼─┼──┘     12V+│  │  │         24V+│  │  │
-   │  GND─┼─┼─┘            │  │  │             │  │  │
-   └──┬───┼─┘              │  │  │             │  │  │
-      │   └──DHT22         │  │  │             │  │  │
-      │       VCC          │  │  │             │  │  │
-      │       Data    ┌────┘  │  └──┐     ┌────┘  │  └──┐
-      │       GND     │        │     │     │       │     │
-      │           IR MOSFET    │     │  White MOSFET│     │
-      │           Gate◄─GPIO4  │     │  Gate◄─GPIO15│     │
-      │           Drain────────┘     │  Drain───────┘     │
-      │           Source─┐           │  Source─┐          │
-      │                  │           │         │          │
-      │                  └─►IR LED(+)│         └─►White LED(+)
-      │                      12V     │             24V
-      │                              │
-      ▼                              ▼
-   ┌────────────────────────────────────────────────────┐
-   │           WAGO #1 (Common Ground Hub)              │
-   │  [1] ESP32 GND    [2] USB PSU GND    [3] 12V PSU GND│
-   │                                                     │
-   │  Additional wires connected:                       │
-   │  - 24V PSU GND (-)                                 │
-   │  - IR MOSFET Source                                │
-   │  - White MOSFET Source                             │
-   │  - IR LED Cathode (-)                              │
-   │  - White LED Cathode (-)                           │
-   └────────────────────────────────────────────────────┘
-```
 
 **Key Points:**
 - **Power Sources**: USB (ESP32), 12V PSU (IR LED), 24V PSU (White LED)
