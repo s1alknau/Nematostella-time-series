@@ -212,7 +212,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.layout().insertWidget(status_panel_index, self.multi_camera_status_panel)
 
         self.log_panel.add_log(
-            f"Multi-camera GUI panels added ({self.camera_system_config.num_cameras} cameras)", "INFO"
+            f"Multi-camera GUI panels added ({self.camera_system_config.num_cameras} cameras)",
+            "INFO",
         )
 
     # ========================================================================
@@ -462,14 +463,15 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     if exposure_diff > 0.5:  # More than 0.5ms difference
                         self.log_panel.add_log(
                             f"⚠️ WARNING: Camera exposure changed by {exposure_diff:.1f} ms since calibration!",
-                            "WARNING"
+                            "WARNING",
                         )
                         self.log_panel.add_log(
                             f"⚠️ This will cause intensity mismatch! Calibration was done at {self._calibration_exposure_ms:.1f} ms.",
-                            "WARNING"
+                            "WARNING",
                         )
                         # Ask user if they want to continue
                         from PyQt5.QtWidgets import QMessageBox
+
                         reply = QMessageBox.question(
                             self,
                             "Exposure Mismatch",
@@ -477,19 +479,20 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             f"This will cause intensity mismatch between calibration and recording.\n\n"
                             f"Do you want to continue anyway?",
                             QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.No
+                            QMessageBox.No,
                         )
                         if reply == QMessageBox.No:
-                            self.log_panel.add_log("❌ Recording cancelled due to exposure mismatch", "INFO")
+                            self.log_panel.add_log(
+                                "❌ Recording cancelled due to exposure mismatch", "INFO"
+                            )
                             return
                     else:
                         self.log_panel.add_log(
-                            f"✅ Camera exposure matches calibration ({current_exposure_ms:.1f} ms)", "SUCCESS"
+                            f"✅ Camera exposure matches calibration ({current_exposure_ms:.1f} ms)",
+                            "SUCCESS",
                         )
                 except Exception as e:
-                    self.log_panel.add_log(
-                        f"⚠️ Could not verify camera exposure: {e}", "WARNING"
-                    )
+                    self.log_panel.add_log(f"⚠️ Could not verify camera exposure: {e}", "WARNING")
 
             # Get configuration from GUI
             recording_config = self.recording_panel.get_config()
@@ -603,9 +606,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 results = self.multi_camera_controller.stop_all_recordings()
 
                 success_count = sum(1 for success in results.values() if success)
-                self.log_panel.add_log(
-                    f"Stopped {success_count}/{len(results)} cameras", "SUCCESS"
-                )
+                self.log_panel.add_log(f"Stopped {success_count}/{len(results)} cameras", "SUCCESS")
 
                 # Stop status timer
                 if hasattr(self, "_multi_cam_status_timer"):
@@ -794,12 +795,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             f"📷 Camera exposure time: {camera_exposure_ms:.1f} ms", "INFO"
                         )
                         self.log_panel.add_log(
-                            f"⚠️ IMPORTANT: Do NOT change camera exposure between calibration and recording!", "WARNING"
+                            "⚠️ IMPORTANT: Do NOT change camera exposure between calibration and recording!",
+                            "WARNING",
                         )
                     except Exception as e:
-                        self.log_panel.add_log(
-                            f"⚠️ Could not read camera exposure: {e}", "WARNING"
-                        )
+                        self.log_panel.add_log(f"⚠️ Could not read camera exposure: {e}", "WARNING")
                         camera_exposure_ms = None
 
                     # Create calibration service
