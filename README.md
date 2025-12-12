@@ -89,9 +89,19 @@ Core dependencies:
 
 ### Required Components
 
-1. **ESP32 Microcontroller** (e.g., ESP32-DevKitC)
+1. **ESP32 Microcontroller**
+
+   **Option A: ESP32-DevKitC (Standard)**
    - Firmware: Custom firmware with LED control and sensor support
    - Firmware version: v2.2 or higher
+   - GPIO Pins Used: GPIO 4 (IR LED), GPIO 15 (White LED), GPIO 14 (DHT22)
+
+   **Option B: ESP32-S3-BOX-3 (Advanced)** ⭐ *New!*
+   - Development board with integrated 2.4" touchscreen display
+   - Requires ESP32-S3-BOX-3-DOCK accessory for GPIO access
+   - GPIO Pins Used: GPIO 10 (IR LED), GPIO 11 (White LED), GPIO 12 (DHT22)
+   - Optional: Local status display and touch control
+   - See [ESP32-S3-BOX-3 Configuration Guide](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details
 
 2. **LED System**
    - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm)
