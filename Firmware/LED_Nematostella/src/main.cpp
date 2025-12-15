@@ -20,9 +20,10 @@
 const bool DEBUG_ENABLED = false;
 
 // PIN DEFINITIONS
-const int ledIrPin     = 4;
-const int ledWhitePin  = 15;
-const int dhtPin       = 14;
+// ESP32-S3-BOX-3 Configuration (via Pmod headers on DOCK)
+const int ledIrPin     = 10;  // GPIO 10 (was GPIO 4 on ESP32)
+const int ledWhitePin  = 11;  // GPIO 11 (was GPIO 15 on ESP32)
+const int dhtPin       = 12;  // GPIO 12 (was GPIO 14 on ESP32)
 #define DHTTYPE DHT22
 
 // PWM CONFIG
