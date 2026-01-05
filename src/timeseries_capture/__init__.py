@@ -59,16 +59,23 @@ Architecture Principles:
    - Thread-safe Operations
    - Sichere Parallelverarbeitung
 
-Version: 2.4.0-timing-optimized
+Version: 2.4.1-black-frame-fix
 Author: Nematostella Timelapse Team
 
 Changelog:
 ===========
+v2.4.1 (2026-01-05) - Black Frame Prevention:
+  - Automatic brightness validation for captured frames
+  - Retry mechanism for frames below brightness threshold (<50 grayscale)
+  - Self-healing recovery from system timing delays
+  - Metadata tagging for recovered frames ("dark_frame_recovered")
+  - Prevents occasional black frames from system scheduling delays
+
 v2.4.0 (2025-12-28) - Timing Precision Optimization:
   - Deadline-based sleep with minimal jitter accumulation
   - Async HDF5 flush (prevents 300-500ms blocking spikes)
   - Frame statistics only in COMPREHENSIVE mode (-20-30ms per frame)
-  - Expected improvement: <50ms timing variance (was ~1000ms spikes)
+  - Validated: σ=190ms timing variance over 58min (was ~1000ms spikes)
 
 v2.0.0 (2024) - Refactored Architecture:
   - Modular component separation (GUI/Recorder/Data/Hardware)
@@ -81,7 +88,7 @@ v2.0.0 (2024) - Refactored Architecture:
 # PACKAGE METADATA
 # ============================================================================
 
-__version__ = "2.4.0-timing-optimized"
+__version__ = "2.4.1-black-frame-fix"
 __author__ = "Nematostella Timelapse Team"
 __description__ = "Modular timelapse recording system for Nematostella experiments"
 

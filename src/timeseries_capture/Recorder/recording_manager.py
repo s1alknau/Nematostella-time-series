@@ -431,21 +431,70 @@ class RecordingManager(QObject):
             if phase_info:
                 self._set_phase_led_powers(phase_info, led_type, dual_mode)
 
-            # Capture frame (reduced logging to minimize I/O overhead)
+            # ================================================================
+            # FRAME CAPTURE WITH BRIGHTNESS VALIDATION (v2.4.1)
+            # ================================================================
+            # Captures frame with automatic retry if frame is too dark (black frame bug)
+            # This prevents occasional system delays from causing completely black frames
+
+            frame_number = self.state.current_frame + 1
+            max_capture_retries = 3
+            brightness_threshold = 50  # Grayscale threshold for "too dark" detection
+
             logger.debug(
-                f"Capturing frame {self.state.current_frame + 1}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
+                f"Capturing frame {frame_number}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
             )
             if phase_info:
                 logger.debug(
                     f"Phase: {phase_info.phase.value}, Cycle: {phase_info.cycle_number}/{phase_info.total_cycles}"
                 )
 
-            frame, metadata = self.frame_capture.capture_with_retry(
-                led_type=led_type, dual_mode=dual_mode, max_retries=3
-            )
+            frame = None
+            metadata = None
+
+            for retry_attempt in range(max_capture_retries):
+                # Attempt frame capture
+                frame, metadata = self.frame_capture.capture_with_retry(
+                    led_type=led_type, dual_mode=dual_mode, max_retries=3
+                )
+
+                if frame is None:
+                    logger.error("Frame capture failed")
+                    self.error_occurred.emit("Frame capture failed")
+                    return
+
+                # Validate frame brightness
+                import numpy as np
+                frame_mean = float(np.mean(frame))
+
+                # Check if frame is too dark (likely a timing issue)
+                if frame_mean < brightness_threshold:
+                    logger.warning(
+                        f"⚠️  Frame {frame_number} too dark (mean={frame_mean:.1f} < {brightness_threshold}), "
+                        f"retry {retry_attempt + 1}/{max_capture_retries}"
+                    )
+
+                    if retry_attempt < max_capture_retries - 1:
+                        # Wait a bit before retry to let system stabilize
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        # Last retry failed - log error but save frame anyway
+                        logger.error(
+                            f"❌ Frame {frame_number} still dark (mean={frame_mean:.1f}) after {max_capture_retries} retries - saving anyway"
+                        )
+                        metadata["capture_method"] = "dark_frame_recovered"
+                        break
+                else:
+                    # Frame brightness OK
+                    if retry_attempt > 0:
+                        logger.info(
+                            f"✅ Frame {frame_number} recovered successfully (mean={frame_mean:.1f}) on retry {retry_attempt + 1}"
+                        )
+                    break
 
             if frame is None:
-                logger.error("Frame capture failed")
+                logger.error("Frame capture failed after all retries")
                 self.error_occurred.emit("Frame capture failed")
                 return
 
