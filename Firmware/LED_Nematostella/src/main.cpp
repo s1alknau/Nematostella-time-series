@@ -2,12 +2,20 @@
 #include "esp_task_wdt.h"
 #include <DHT.h>
 
+#ifdef USE_DISPLAY
+  #include "display_ui.h"
+#endif
+
 // ========================================================================
 // NEMATOSTELLA ESP32 FIRMWARE - PYTHON-COMPATIBLE VERSION
 // ========================================================================
-// Version: 2.2 - Python Communication Compatible (Corrected)
-// Date: 2025-11-03
-// FIXES:
+// Version: 2.3 - Multi-Board Auto-Detection
+// Date: 2025-12-15
+// NEW IN v2.3:
+// - Automatic board detection (ESP32 vs ESP32-S3)
+// - Auto-configured pin assignments based on detected board
+// - Single firmware for both ESP32 DevKit and ESP32-S3-BOX-3
+// PREVIOUS FIXES (v2.2):
 // - CMD_LED_ON now sends 0xAA (RESPONSE_LED_ON_ACK) for Python compatibility
 // - CMD_LED_OFF now sends 0xAA for Python compatibility
 // - All ACK responses properly aligned with Python code expectations
@@ -17,13 +25,31 @@
 // - Clarified timing: LED stays on for (stabilization_ms + exposure_ms) total
 // ========================================================================
 
-const bool DEBUG_ENABLED = false;
+const bool DEBUG_ENABLED = false;  // Disable debug output for production (interferes with binary protocol)
 
-// PIN DEFINITIONS
-// ESP32-S3-BOX-3 Configuration (via Pmod headers on DOCK)
-const int ledIrPin     = 10;  // GPIO 10 (was GPIO 4 on ESP32)
-const int ledWhitePin  = 11;  // GPIO 11 (was GPIO 15 on ESP32)
-const int dhtPin       = 12;  // GPIO 12 (was GPIO 14 on ESP32)
+// ========================================================================
+// AUTOMATIC BOARD DETECTION AND PIN CONFIGURATION
+// ========================================================================
+// The firmware automatically detects the board type at compile-time and
+// configures the correct GPIO pins accordingly.
+// ========================================================================
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(ESP32S3)
+    // ESP32-S3-BOX-3 Configuration
+    #define BOARD_TYPE "ESP32-S3-BOX-3"
+    const int ledIrPin     = 10;  // GPIO 10 (Pmod header)
+    const int ledWhitePin  = 11;  // GPIO 11 (Pmod header)
+    const int dhtPin       = 12;  // GPIO 12 (Pmod header)
+#elif defined(CONFIG_IDF_TARGET_ESP32) || defined(ESP32)
+    // ESP32 DevKit Configuration
+    #define BOARD_TYPE "ESP32-DevKit"
+    const int ledIrPin     = 4;   // GPIO 4
+    const int ledWhitePin  = 15;  // GPIO 15
+    const int dhtPin       = 14;  // GPIO 14
+#else
+    #error "Unsupported board! Only ESP32 and ESP32-S3 are supported."
+#endif
+
 #define DHTTYPE DHT22
 
 // PWM CONFIG
@@ -65,9 +91,9 @@ const byte RESPONSE_LED_STATUS         = 0x32;
 const byte CAMERA_TYPE_HIK_GIGE    = 1;
 const byte CAMERA_TYPE_USB_GENERIC = 2;
 
-// LED TYPES
-const byte LED_TYPE_IR    = 0;
-const byte LED_TYPE_WHITE = 1;
+// LED TYPES (extern für display_ui.cpp)
+extern const byte LED_TYPE_IR    = 0;
+extern const byte LED_TYPE_WHITE = 1;
 
 // DEFAULT TIMING
 // NOTE: Total LED-on time = LED_STABILIZATION_MS + EXPOSURE_MS
@@ -138,6 +164,39 @@ void setup() {
   Serial.begin(115200);
   Serial.setTimeout(100);
 
+  // Board-specific startup delay
+  #if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(ESP32S3)
+    // ESP32-S3 needs time for USB CDC initialization
+    delay(2000);
+  #else
+    // Regular ESP32 only needs minimal delay
+    delay(100);
+  #endif
+
+  // Always print this first message (regardless of DEBUG_ENABLED)
+  Serial.println("\n\n========================================");
+  Serial.println("ESP32 Nematostella Controller v2.3 STARTING");
+  Serial.print("Board Type: ");
+  Serial.println(BOARD_TYPE);
+  Serial.println("========================================\n");
+  Serial.flush();
+
+  // Display board information
+  debugPrintln("========================================");
+  debugPrint("ESP32 Nematostella Controller v2.3");
+  debugPrintln("");
+  debugPrint("Detected Board: ");
+  debugPrintln(BOARD_TYPE);
+  debugPrint("Pin Configuration:");
+  debugPrintln("");
+  debugPrint("  IR LED:    GPIO ");
+  debugPrintln(ledIrPin);
+  debugPrint("  White LED: GPIO ");
+  debugPrintln(ledWhitePin);
+  debugPrint("  DHT22:     GPIO ");
+  debugPrintln(dhtPin);
+  debugPrintln("========================================");
+
   // Configure PWM
   ledcSetup(PWM_CHANNEL_IR, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcSetup(PWM_CHANNEL_WHITE, PWM_FREQUENCY, PWM_RESOLUTION);
@@ -150,15 +209,23 @@ void setup() {
 
   // Init DHT
   dht.begin();
+  debugPrintln("Initializing DHT22 sensor...");
   delay(2000);  // DHT warmup
 
   // Read initial sensor values
   float temp, hum;
-  readSensorsWithValidation(temp, hum);
+  if (readSensorsWithValidation(temp, hum)) {
+    debugPrint("Initial sensor reading: T=");
+    debugPrint((int)temp);
+    debugPrint("C, H=");
+    debugPrint((int)hum);
+    debugPrintln("%");
+  } else {
+    debugPrintln("Warning: Initial sensor reading failed");
+  }
 
   bootTime = millis();
 
-  debugPrintln("ESP32 Nematostella Controller - Python Compatible v2.2");
   debugPrint("Default timing: ");
   debugPrint(LED_STABILIZATION_MS);
   debugPrint("ms stab + ");
@@ -166,12 +233,41 @@ void setup() {
   debugPrint("ms exp = ");
   debugPrint(LED_STABILIZATION_MS + EXPOSURE_MS);
   debugPrintln("ms total");
+
+  // Initialize display if enabled
+  #ifdef USE_DISPLAY
+    debugPrintln("Setting up display and touch interface...");
+    display_init();
+    debugPrintln("Display ready!");
+  #endif
+
+  debugPrintln("System ready. Waiting for commands...");
+  debugPrintln("========================================");
 }
 
 // ========================================================================
 // MAIN LOOP
 // ========================================================================
 void loop() {
+  // Update display if enabled
+  #ifdef USE_DISPLAY
+    display_update();
+
+    // Update sensor values on display
+    static unsigned long last_display_sensor_update = 0;
+    if (millis() - last_display_sensor_update > 2000) {
+      float temp, hum;
+      if (readSensorsWithValidation(temp, hum)) {
+        display_update_sensor_values(temp, hum);
+      }
+      last_display_sensor_update = millis();
+    }
+
+    // Update LED status on display
+    display_update_led_status(ledIrState, ledWhiteState,
+                               currentLedType == LED_TYPE_IR ? LED_POWER_PERCENT_IR : LED_POWER_PERCENT_WHITE);
+  #endif
+
   // Periodic buffer clear
   if (millis() - lastBufferClear > BUFFER_CLEAR_INTERVAL) {
     if (Serial.available() > 10) {
@@ -208,12 +304,31 @@ void loop() {
       // STATUS - Returns status + sensor data (5 bytes)
       // ================================================================
       case CMD_STATUS:
-        if (ledIrState || ledWhiteState) {
-          sendStatusWithSensorData(RESPONSE_STATUS_ON);
-        } else {
-          sendStatusWithSensorData(RESPONSE_STATUS_OFF);
+        {
+          // Use cached sensor values for fast response (important for connection test)
+          float temp = getFilteredTemperature();
+          float hum = getFilteredHumidity();
+
+          // Convert to int16 (scaled by 10)
+          int16_t temp_scaled = (int16_t)(temp * 10.0);
+          uint16_t hum_scaled = (uint16_t)(hum * 10.0);
+
+          // Clamp values
+          if (temp_scaled < -400) temp_scaled = -400;
+          if (temp_scaled > 850) temp_scaled = 850;
+          if (hum_scaled > 1000) hum_scaled = 1000;
+
+          // Send 5-byte packet immediately
+          byte status_code = (ledIrState || ledWhiteState) ? RESPONSE_STATUS_ON : RESPONSE_STATUS_OFF;
+          sendRawByte(status_code);
+          sendRawByte((temp_scaled >> 8) & 0xFF);
+          sendRawByte(temp_scaled & 0xFF);
+          sendRawByte((hum_scaled >> 8) & 0xFF);
+          sendRawByte(hum_scaled & 0xFF);
+          Serial.flush();
+
+          debugPrintln("Status sent with cached sensor data");
         }
-        debugPrintln("Status sent with sensor data");
         break;
 
       // ================================================================

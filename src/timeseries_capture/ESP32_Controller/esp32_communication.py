@@ -239,8 +239,8 @@ class ESP32Communication:
             self.serial_connection.write(bytes([0x02]))
             self.serial_connection.flush()
 
-            # Wait for response
-            time.sleep(0.2)
+            # Wait for response (increased to 300ms for reliability)
+            time.sleep(0.3)
 
             if self.serial_connection.in_waiting > 0:
                 response = self.serial_connection.read(self.serial_connection.in_waiting)

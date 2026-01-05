@@ -345,34 +345,43 @@ class RecordingManager(QObject):
                     time.sleep(0.1)
                     continue
 
-                # Check timing - warte bis nächstes Frame
-                time_until_next = self.state.get_time_until_next_frame()
+                # ================================================================
+                # OPTIMIZED TIMING v2.4: Deadline-based sleep with minimal jitter
+                # ================================================================
+                # Calculate absolute deadline for next frame (prevents jitter accumulation)
+                next_frame_deadline = self.state.start_time + (
+                    self.state.current_frame * self.state.get_config().interval_sec
+                )
 
-                if time_until_next > 0.01:  # Small threshold to prevent busy-waiting
-                    # CRITICAL FIX: Sleep in larger chunks (0.5s) to prevent timing drift
-                    # This allows responsive pause/stop while maintaining accurate timing
-                    while time_until_next > 0.5:
-                        # Check if stop/pause requested during wait
-                        if self._stop_requested or self.state.is_paused():
-                            break
+                # Wait until deadline, checking periodically for pause/stop
+                # Use 0.5s chunks for responsiveness, but always respect absolute deadline
+                while True:
+                    current_time = time.time()
+                    time_remaining = next_frame_deadline - current_time
 
-                        # Sleep for 0.5s chunk
-                        time.sleep(0.5)
+                    # If deadline reached or passed, break immediately
+                    if time_remaining <= 0.001:  # 1ms threshold for precision
+                        break
 
-                        # Recalculate remaining time
-                        time_until_next = self.state.get_time_until_next_frame()
-
-                    # Sleep remaining time (if still needed and not stopped/paused)
-                    if (
-                        time_until_next > 0
-                        and not self._stop_requested
-                        and not self.state.is_paused()
-                    ):
-                        time.sleep(time_until_next)
-
-                    # Re-check after sleep (might have been paused/stopped during sleep)
+                    # Check if stop/pause requested
                     if self._stop_requested or self.state.is_paused():
-                        continue
+                        break
+
+                    # Sleep in chunks for responsiveness, but never overshoot deadline
+                    if time_remaining > 0.5:
+                        # Long wait remaining: sleep 0.5s chunk
+                        time.sleep(0.5)
+                    elif time_remaining > 0.05:
+                        # Medium wait: sleep 50ms chunk (more precise near deadline)
+                        time.sleep(0.05)
+                    else:
+                        # Final precision sleep to exact deadline
+                        time.sleep(time_remaining)
+                        break  # Exit after precision sleep
+
+                # Final check after sleep (might have been paused/stopped)
+                if self._stop_requested or self.state.is_paused():
+                    continue
 
                 # Capture frame
                 self._capture_single_frame()

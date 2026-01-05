@@ -86,3 +86,40 @@ venv/
 !Firmware/**
 !Firmware/.vscode/
 !Firmware/lib/
+
+# ============================================================================
+# Internal Documentation (not for public repository)
+# ============================================================================
+# Multi-Camera Design Docs
+MULTI_CAMERA_DESIGN.md
+MULTI_CAMERA_GUI_INTEGRATION.md
+MULTI_CAMERA_USAGE.md
+
+# Calibration Guides
+PER_PHASE_CALIBRATION_GUIDE.md
+TEMPERATURE_CALIBRATION.md
+CALIBRATION_GUIDE.md
+CALIBRATION_IR_MINIMUM_CONSTRAINT.md
+
+# Timing Documentation
+TIMING_OPTIMIZATION_CHANGES.md
+TIMING_OPTIMIZATIONS_v2.4.md
+
+# Fix Documentation
+PHASE_TIMING_FIX.md
+NAPARI_LAYER_SOLUTION.md
+CAMERA_LAYER_FIX.md
+CAMERA_INTEGRATION_FIX.md
+IMSWITCH_CAMERA_FIX.md
+ESP32_BUFFER_FIX.md
+EXPOSURE_TRACKING_IMPLEMENTATION.md
+
+# Firmware Extra Documentation
+Firmware/LED_Nematostella/README_DISPLAY.md
+Firmware/LED_Nematostella/README_MULTI_BOARD.md
+Firmware/LED_Nematostella/UPLOAD_ANLEITUNG.md
+Firmware/LED_Nematostella/CHANGELOG_v2.3.md
+
+# Claude working directories
+Firmware/LED_Nematostella/.claude/
+.claude/settings.local.json
