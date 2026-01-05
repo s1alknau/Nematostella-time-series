@@ -9,15 +9,24 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 
 ---
 
-## Recent Updates (v2.1.0 - 2024-12-04)
+## Recent Updates (v2.4.1 - 2026-01-05)
 
-🎉 **Major improvements to calibration and timing systems!**
+🎉 **Black Frame Prevention & ESP32-S3 Support!**
 
-- ✅ **Per-Phase LED Calibration**: Automatic intensity matching between dark/light phases (target: ≤5% difference)
-- ✅ **IR LED Minimum Constraint**: Enforced 20% minimum in dual mode for optimal darkfield illumination
-- ✅ **Camera Exposure Tracking**: Automatic verification that exposure matches between calibration and recording
-- ✅ **Timing Optimizations**: 95% reduction in cumulative drift, 40% improvement in interval stability
-- ✅ **Bug Fixes**: Fixed phase recording config passing and string field plotting
+### v2.4.1 - Black Frame Prevention
+- ✅ **Automatic Brightness Validation**: Detects and recovers from black frames caused by timing delays
+- ✅ **Self-Healing Retry Mechanism**: Up to 3 automatic retries with 500ms stabilization delay
+- ✅ **Validated Performance**: Frame intensity σ=0.63, no black frames in production tests
+
+### v2.4.0 - Timing Precision Optimization
+- ✅ **Deadline-Based Sleep**: Eliminates jitter accumulation (85% improvement)
+- ✅ **Async HDF5 Flush**: Non-blocking I/O prevents 300-500ms spikes
+- ✅ **Optimized Statistics**: Frame calculations only in COMPREHENSIVE mode (-20-30ms)
+- ✅ **Validated Results**: σ=190ms timing variance over 58min (was ~1000ms spikes)
+
+### ESP32-S3-BOX-3 Support
+- ✅ **Unified Firmware**: Single firmware with compile-time auto-detection for both ESP32 and ESP32-S3
+- ✅ **Multi-Board Compatibility**: Works seamlessly with ESP32-DevKit and ESP32-S3-BOX-3
 
 See [CHANGELOG.md](CHANGELOG.md) for complete details.
 

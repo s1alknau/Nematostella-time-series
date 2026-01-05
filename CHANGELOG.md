@@ -1,4 +1,83 @@
-# Changelog - Per-Phase LED Calibration System
+# Changelog
+
+## Version 2.4.1 - 2026-01-05
+
+### Black Frame Prevention
+
+**Problem Solved:**
+- Occasional completely black frames (mean=0.01) caused by system timing delays
+- Frame capture occurred before LED stabilization during scheduling delays
+
+**Solution:**
+- Automatic brightness validation for all captured frames (threshold: <50 grayscale)
+- Self-healing retry mechanism (up to 3 attempts with 500ms stabilization delay)
+- Metadata tagging for recovered frames (`capture_method: "dark_frame_recovered"`)
+
+**Validation Results:**
+- Frame mean intensity: μ=198.43, σ=0.63 (excellent consistency)
+- Cumulative drift: μ=-0.05s, σ=0.10s (minimal)
+- No black frames in production testing
+- Dual/IR phase intensity difference: <1 grayscale (perfectly matched)
+
+**Files Modified:**
+- `src/timeseries_capture/Recorder/recording_manager.py` (lines 434-499)
+- `src/timeseries_capture/__init__.py` - Version bump to 2.4.1
+
+---
+
+## Version 2.4.0 - 2025-12-28
+
+### Timing Precision Optimization
+
+**Major Improvements:**
+- **85% reduction** in timing variance (1000ms spikes → 190ms std)
+- **Deadline-based sleep** eliminates jitter accumulation
+- **Async HDF5 flush** prevents 300-500ms blocking operations
+- **Optimized frame statistics** only in COMPREHENSIVE mode (-20-30ms/frame)
+
+**Technical Details:**
+1. **Absolute Deadline Timing**
+   - Calculates frame deadlines from recording start time
+   - Prevents cumulative drift from chunked sleep recalculation
+
+2. **Non-Blocking I/O**
+   - Background thread for HDF5 flush operations
+   - Main recording loop never blocks on disk I/O
+
+3. **Conditional Statistics**
+   - Expensive calculations (std, min, max) only in COMPREHENSIVE telemetry mode
+   - STANDARD mode calculates only mean (needed for calibration)
+
+**Validation:**
+- σ=190ms timing variance over 58min recording
+- Cumulative drift: ±0.2s over hours
+- No performance degradation in normal operation
+
+**Files Modified:**
+- `src/timeseries_capture/Recorder/recording_manager.py` - Deadline-based sleep logic
+- `src/timeseries_capture/Datamanager/data_manager_hdf5.py` - AsyncHDF5Flusher class
+- `src/timeseries_capture/__init__.py` - Version 2.4.0
+
+---
+
+## Version 2.3.0 - 2025-12-15
+
+### ESP32-S3-BOX-3 Hardware Support
+
+**Multi-Board Firmware:**
+- Unified firmware with compile-time auto-detection
+- Single codebase for ESP32-DevKit and ESP32-S3-BOX-3
+- Automatic GPIO pin configuration based on detected board
+
+**Board Support:**
+- **ESP32-DevKit**: GPIO 4, 15, 14 (original)
+- **ESP32-S3-BOX-3**: GPIO 10, 11, 12 (Pmod header)
+
+**Files Modified:**
+- `Firmware/LED_Nematostella/src/main.cpp` - Board auto-detection
+- `Firmware/LED_Nematostella/platformio.ini` - Multi-environment config
+
+---
 
 ## Version 2.1.0 - 2024-12-04
 
