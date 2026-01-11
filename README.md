@@ -1496,6 +1496,233 @@ If you use this plugin in your research, please cite:
 - **Discussions**: [GitHub Discussions](https://github.com/s1alknau/Nematostella-time-series/discussions)
 - **Email**: [your.email@domain.com]
 
+
+---
+
+## Quick Reference
+
+### ESP32 Firmware Installation (Detailed)
+
+**For Arduino IDE Users:**
+
+1. **Install ESP32 Support:**
+   ```
+   File → Preferences → Additional Board Manager URLs:
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+   Then: Tools → Board → Boards Manager → Install "esp32 by Espressif Systems"
+
+2. **Install DHT Library:**
+   ```
+   Tools → Manage Libraries → Search "DHT sensor library"
+   Install: "DHT sensor library by Adafruit" + "Adafruit Unified Sensor"
+   ```
+
+3. **Upload Firmware:**
+   ```
+   File → Open → Firmware/LED_Nematostella/src/main.cpp
+   Tools → Board → ESP32 Dev Module
+   Tools → Port → [Your ESP32 port]
+   Click Upload → Press RESET on ESP32 when done
+   ```
+
+4. **Verify:**
+   ```
+   Tools → Serial Monitor (115200 baud)
+   Expected: "ESP32 Nematostella Controller - Python Compatible v2.2"
+   ```
+
+**Troubleshooting:**
+- **No port found?** Install CH340/CP2102 USB driver
+- **Upload fails?** Hold BOOT button during upload
+- **Compile error?** Check DHT library is installed
+
+See [Firmware/QUICK_START_GUIDE.md](Firmware/QUICK_START_GUIDE.md) for full step-by-step guide.
+
+### ESP32 Communication Protocol (Quick Reference)
+
+**Key Commands:**
+
+| Command | Hex | Description | Response |
+|---------|-----|-------------|----------|
+| LED ON | 0x01 | Turn on current LED | 0xAA |
+| LED OFF | 0x00 | Turn off current LED | 0xAA |
+| SELECT IR | 0x20 | Select IR LED | 0x30 |
+| SELECT WHITE | 0x21 | Select White LED | 0x31 |
+| SET IR POWER | 0x24 + power | Set IR LED power (0-100) | 0xAA |
+| SET WHITE POWER | 0x25 + power | Set White LED power (0-100) | 0xAA |
+| SYNC CAPTURE | 0x0C | Synchronized LED+camera capture | 15 bytes |
+| SYNC DUAL | 0x2C | Dual LED capture | 15 bytes |
+| STATUS | 0x02 | Get temp/humidity/status | 5 bytes |
+
+**Serial Settings:**
+- Baud Rate: 115200
+- Data: 8N1 (8 bits, no parity, 1 stop bit)
+- Timeout: 100ms
+
+**SYNC CAPTURE Response (15 bytes):**
+```
+[0x1B] [temp_high] [temp_low] [hum_high] [hum_low] [dur_high] [dur_low]
+[led_type] [ir_state] [white_state] [ir_power] [white_power] [stab_high] [stab_low]
+```
+
+See [Firmware/FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for complete protocol specification.
+
+### ESP32-S3-BOX-3 Configuration
+
+The plugin supports both standard ESP32-DevKit and ESP32-S3-BOX-3 boards.
+
+**ESP32-S3-BOX-3 Pin Mapping:**
+
+| Function | ESP32 DevKit | ESP32-S3-BOX-3 | Notes |
+|----------|--------------|----------------|-------|
+| IR LED PWM | GPIO 4 | **GPIO 10** | Via Pmod header |
+| White LED PWM | GPIO 15 | **GPIO 11** | Via Pmod header |
+| DHT22 Data | GPIO 14 | **GPIO 12** | Via Pmod header |
+
+**Key Differences:**
+- ESP32-S3-BOX-3 requires ESP32-S3-BOX-3-DOCK for GPIO access
+- Unified firmware auto-detects board type (compile-time)
+- 2.4" touchscreen available for optional status display
+- 16MB Flash, 16MB PSRAM (vs 4MB Flash on standard ESP32)
+
+**Firmware Configuration:**
+```cpp
+// Firmware auto-detects board and configures pins accordingly
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  #define IR_LED_PIN 10
+  #define WHITE_LED_PIN 11
+  #define DHT22_PIN 12
+#else
+  #define IR_LED_PIN 4
+  #define WHITE_LED_PIN 15
+  #define DHT22_PIN 14
+#endif
+```
+
+See [docs/ESP32-S3-BOX-3_CONFIGURATION.md](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for complete setup guide.
+
+### Pin Reference Card
+
+**ESP32 DevKit Standard:**
+```
+GPIO 4  → IR LED MOSFET Gate (PWM, 15kHz)
+GPIO 15 → White LED MOSFET Gate (PWM, 15kHz)
+GPIO 14 → DHT22 Data (with 10kΩ pull-up)
+3.3V    → DHT22 VCC
+GND     → DHT22 GND, Common Ground Hub (WAGO #3)
+```
+
+**MOSFET Connections:**
+```
+IRLZ34N (IR LED):
+  Gate   → ESP32 GPIO 4
+  Drain  → 12V PSU (+)
+  Source → Common Ground
+
+IRLZ34N (White LED):
+  Gate   → ESP32 GPIO 15
+  Drain  → 24V PSU (+)
+  Source → Common Ground
+```
+
+**Power Distribution:**
+```
+WAGO #1: 12V+ (IR LED)
+WAGO #2: 24V+ (White LED)
+WAGO #3: Common Ground (critical!)
+  - 12V PSU GND
+  - 24V PSU GND
+  - ESP32 GND
+  - Both MOSFET Sources
+  - Both LED cathodes (-)
+```
+
+
+---
+
+## Quick Reference
+
+### ESP32 Firmware Installation (Detailed)
+
+**For Arduino IDE Users:**
+
+1. **Install ESP32 Support:**
+   - File → Preferences → Additional Board Manager URLs:
+   ```
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+   - Tools → Board → Boards Manager → Install "esp32 by Espressif Systems"
+
+2. **Install DHT Library:**
+   - Tools → Manage Libraries → Search "DHT sensor library"
+   - Install: "DHT sensor library by Adafruit" + "Adafruit Unified Sensor"
+
+3. **Upload Firmware:**
+   - File → Open → Firmware/LED_Nematostella/src/main.cpp
+   - Tools → Board → ESP32 Dev Module
+   - Tools → Port → [Your ESP32 port]
+   - Click Upload → Press RESET on ESP32 when done
+
+4. **Verify:**
+   - Tools → Serial Monitor (115200 baud)
+   - Expected: "ESP32 Nematostella Controller - Python Compatible v2.2"
+
+**Troubleshooting:**
+- **No port found?** Install CH340/CP2102 USB driver
+- **Upload fails?** Hold BOOT button during upload
+- **Compile error?** Check DHT library is installed
+
+See [Firmware/QUICK_START_GUIDE.md](Firmware/QUICK_START_GUIDE.md) for full guide.
+
+### ESP32 Communication Protocol (Quick Reference)
+
+**Key Commands:**
+
+| Command | Hex | Description | Response |
+|---------|-----|-------------|----------|
+| LED ON | 0x01 | Turn on current LED | 0xAA |
+| LED OFF | 0x00 | Turn off current LED | 0xAA |
+| SELECT IR | 0x20 | Select IR LED | 0x30 |
+| SELECT WHITE | 0x21 | Select White LED | 0x31 |
+| SET IR POWER | 0x24 + power | Set IR LED power (0-100) | 0xAA |
+| SET WHITE POWER | 0x25 + power | Set White LED power (0-100) | 0xAA |
+| SYNC CAPTURE | 0x0C | Synchronized LED+camera capture | 15 bytes |
+| SYNC DUAL | 0x2C | Dual LED capture | 15 bytes |
+| STATUS | 0x02 | Get temp/humidity/status | 5 bytes |
+
+**Serial Settings:** 115200 baud, 8N1, 100ms timeout
+
+**SYNC CAPTURE Response (15 bytes):** `[0x1B] [temp_high] [temp_low] [hum_high] [hum_low] [dur_high] [dur_low] [led_type] [ir_state] [white_state] [ir_power] [white_power] [stab_high] [stab_low]`
+
+See [Firmware/FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for complete protocol.
+
+### ESP32-S3-BOX-3 Configuration
+
+**Pin Mapping:**
+
+| Function | ESP32 DevKit | ESP32-S3-BOX-3 |
+|----------|--------------|----------------|
+| IR LED PWM | GPIO 4 | GPIO 10 |
+| White LED PWM | GPIO 15 | GPIO 11 |
+| DHT22 Data | GPIO 14 | GPIO 12 |
+
+Firmware auto-detects board type. ESP32-S3-BOX-3 has 16MB Flash/PSRAM and optional 2.4" touchscreen.
+
+See [docs/ESP32-S3-BOX-3_CONFIGURATION.md](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details.
+
+### Pin Reference Card
+
+**ESP32 DevKit:**
+- GPIO 4 → IR LED MOSFET Gate (PWM, 15kHz)
+- GPIO 15 → White LED MOSFET Gate (PWM, 15kHz)
+- GPIO 14 → DHT22 Data (with 10kΩ pull-up)
+
+**Power Distribution:**
+- WAGO #1: 12V+ (IR LED)
+- WAGO #2: 24V+ (White LED)
+- WAGO #3: Common Ground (12V GND + 24V GND + ESP32 GND + MOSFET Sources + LED cathodes)
+
 ---
 
 ## Acknowledgments
