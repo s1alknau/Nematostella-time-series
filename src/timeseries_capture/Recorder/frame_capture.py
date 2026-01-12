@@ -164,37 +164,18 @@ class FrameCaptureService:
                 return None, {"error": "Camera capture failed", "success": False}
 
             # =================================================================
-            # SCHRITT 3: Get ESP32 sensor data (temperature, humidity)
+            # SCHRITT 3: Use cached ESP32 sensor data (temperature, humidity)
             # =================================================================
-            # Query ESP32 for environmental data periodically
-            # OPTIMIZATION: Don't query on LED config change to reduce phase transition overhead
-            # Only query every N frames to minimize delays
-            should_query_sensors = (self._frames_since_sensor_query >= self._sensor_query_interval)
+            # Sensor queries are now handled BETWEEN frames in recording_manager.py
+            # to avoid timing interference with frame capture
+            # This ensures sensors are queried after frame save, not during capture
 
-            if should_query_sensors:
-                try:
-                    sensor_data = self.esp32.get_sensor_data()
-                    if sensor_data:
-                        self._last_temperature = sensor_data.get("temperature", 0.0)
-                        self._last_humidity = sensor_data.get("humidity", 0.0)
-                        logger.debug(f"[SENSOR] T={self._last_temperature:.1f}°C, H={self._last_humidity:.1f}%")
-                    else:
-                        # Sensor read failed, keep previous values
-                        logger.debug("[SENSOR] No data returned, keeping previous values")
-                except Exception as e:
-                    logger.warning(f"[SENSOR] Failed to get sensor data: {e}")
-                    # Keep previous values on error
-
-                # Reset counter
-                self._frames_since_sensor_query = 0
-            else:
-                # Use cached sensor data
-                self._frames_since_sensor_query += 1
-                logger.debug(f"[SENSOR] Using cached values (next query in {self._sensor_query_interval - self._frames_since_sensor_query} frames)")
-
-            # Use current sensor values (either fresh or cached)
+            # Use current cached sensor values
             temperature = self._last_temperature
             humidity = self._last_humidity
+
+            # Increment counter (actual query happens in recording_manager between frames)
+            self._frames_since_sensor_query += 1
 
             logger.debug("[LED VERIFY] ✓ Capture completed while LED was ON")
 
@@ -339,6 +320,44 @@ class FrameCaptureService:
             # Always reset cached state
             self._led_is_on = False
             self._current_led_type = None
+
+    def query_sensors_if_needed(self) -> bool:
+        """
+        Query ESP32 sensors (temperature, humidity) if query interval reached.
+
+        This method is called BETWEEN frame captures by recording_manager.py
+        to avoid timing interference with frame capture.
+
+        Returns:
+            bool: True if sensors were queried, False if using cached values
+        """
+        should_query = self._frames_since_sensor_query >= self._sensor_query_interval
+
+        if should_query:
+            try:
+                sensor_data = self.esp32.get_sensor_data()
+                if sensor_data:
+                    self._last_temperature = sensor_data.get("temperature", 0.0)
+                    self._last_humidity = sensor_data.get("humidity", 0.0)
+                    logger.debug(
+                        f"[SENSOR] T={self._last_temperature:.1f}°C, H={self._last_humidity:.1f}% (queried between frames)"
+                    )
+                else:
+                    # Sensor read failed, keep previous values
+                    logger.debug("[SENSOR] No data returned, keeping previous values")
+            except Exception as e:
+                logger.warning(f"[SENSOR] Failed to get sensor data: {e}")
+                # Keep previous values on error
+
+            # Reset counter
+            self._frames_since_sensor_query = 0
+            return True
+        else:
+            # Use cached sensor data
+            logger.debug(
+                f"[SENSOR] Using cached values (next query in {self._sensor_query_interval - self._frames_since_sensor_query} frames)"
+            )
+            return False
 
     def test_capture(self) -> bool:
         """Test-Capture to validate LED control and frame capture"""

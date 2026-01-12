@@ -77,6 +77,13 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self._calibrated_light_phase_ir_power: Optional[int] = None
         self._calibrated_light_phase_white_power: Optional[int] = None
         self._calibration_exposure_ms: Optional[float] = None  # Camera exposure during calibration
+        self._calibrated_intensity: Optional[float] = (
+            None  # Measured intensity from last calibration (for brightness validation)
+        )
+        self._calibration_use_full_frame: Optional[bool] = (
+            None  # ROI setting used during calibration
+        )
+        self._calibration_roi_fraction: float = 0.75  # ROI fraction used during calibration
 
         # Setup UI first
         self._setup_ui()
@@ -519,6 +526,42 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             if self._calibrated_light_phase_white_power is not None:
                 full_config["light_phase_white_power"] = self._calibrated_light_phase_white_power
 
+            # Set adaptive brightness validation threshold based on calibration
+            # Uses 50% of calibrated intensity, with a minimum of 10
+            if self._calibrated_intensity is not None:
+                threshold = max(10.0, self._calibrated_intensity * 0.5)
+                full_config["brightness_validation_threshold"] = threshold
+                self.log_panel.add_log(
+                    f"🔍 Brightness validation threshold: {threshold:.1f} (50% of calibrated {self._calibrated_intensity:.1f})",
+                    "INFO",
+                )
+            else:
+                # No calibration performed - use conservative default
+                full_config["brightness_validation_threshold"] = 10.0
+                self.log_panel.add_log(
+                    "⚠️ No calibration found - using default brightness threshold 10.0", "WARNING"
+                )
+
+            # Set ROI measurement method to match calibration
+            if self._calibration_use_full_frame is not None:
+                full_config["use_full_frame_for_validation"] = self._calibration_use_full_frame
+                full_config["roi_fraction"] = self._calibration_roi_fraction
+                roi_desc = (
+                    "Full frame"
+                    if self._calibration_use_full_frame
+                    else f"Center ROI ({self._calibration_roi_fraction*100:.0f}%)"
+                )
+                self.log_panel.add_log(
+                    f"🔍 Intensity measurement: {roi_desc} (matching calibration)", "INFO"
+                )
+            else:
+                # No calibration - default to full frame
+                full_config["use_full_frame_for_validation"] = True
+                full_config["roi_fraction"] = 0.75
+                self.log_panel.add_log(
+                    "⚠️ No calibration ROI found - defaulting to full frame measurement", "WARNING"
+                )
+
             # Validate output directory
             output_dir = Path(full_config["output_dir"])
             if not output_dir.exists():
@@ -574,6 +617,22 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 full_config.light_phase_ir_power = self._calibrated_light_phase_ir_power
             if self._calibrated_light_phase_white_power is not None:
                 full_config.light_phase_white_power = self._calibrated_light_phase_white_power
+
+            # Set adaptive brightness validation threshold
+            if self._calibrated_intensity is not None:
+                full_config.brightness_validation_threshold = max(
+                    10.0, self._calibrated_intensity * 0.5
+                )
+            else:
+                full_config.brightness_validation_threshold = 10.0
+
+            # Set ROI measurement method to match calibration
+            if self._calibration_use_full_frame is not None:
+                full_config.use_full_frame_for_validation = self._calibration_use_full_frame
+                full_config.roi_fraction = self._calibration_roi_fraction
+            else:
+                full_config.use_full_frame_for_validation = True
+                full_config.roi_fraction = 0.75
 
             # Start all recordings
             self.log_panel.add_log("Starting multi-camera recording...", "INFO")
@@ -788,6 +847,10 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     # Get calibration settings from GUI
                     use_full_frame = self.led_panel.get_use_full_frame()
 
+                    # Get calibration settings from GUI
+                    target_intensity = self.led_panel.get_target_intensity()
+                    tolerance_percent = self.led_panel.get_tolerance_percent()
+
                     # Read and log camera exposure time for calibration
                     try:
                         camera_exposure_ms = self.camera_adapter.get_exposure_ms()
@@ -802,15 +865,29 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         self.log_panel.add_log(f"⚠️ Could not read camera exposure: {e}", "WARNING")
                         camera_exposure_ms = None
 
+                    # Log calibration settings
+                    self.log_panel.add_log(
+                        f"🎯 Target intensity: {target_intensity:.1f} (adjust based on your objective aperture)",
+                        "INFO",
+                    )
+                    self.log_panel.add_log(
+                        f"🎯 Tolerance: {tolerance_percent:.1f}% (lower = stricter matching)",
+                        "INFO",
+                    )
+                    self.log_panel.add_log(
+                        f"🔍 Measurement region: {'Full frame' if use_full_frame else 'Center ROI (75%)'}",
+                        "INFO",
+                    )
+
                     # Create calibration service
                     calibrator = CalibrationService(
                         capture_callback=capture_frame,
                         set_led_power_callback=set_led_power,
                         led_on_callback=led_on,
                         led_off_callback=led_off,
-                        target_intensity=200.0,  # Target mean intensity
-                        max_iterations=15,  # Increased for better convergence
-                        tolerance_percent=2.5,  # Tighter tolerance for ≤5% phase difference
+                        target_intensity=target_intensity,  # Use value from GUI
+                        max_iterations=20,  # Increased to 20 for stricter tolerance convergence
+                        tolerance_percent=tolerance_percent,  # Use value from GUI
                         use_full_frame=use_full_frame,  # Use checkbox setting
                         roi_fraction=0.75,  # 75% x 75% center ROI when not using full frame
                     )
@@ -857,6 +934,25 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             self.log_panel.add_log(
                                 f"💾 Calibration exposure time: {camera_exposure_ms:.1f} ms", "INFO"
                             )
+
+                        # Store measured intensity for brightness validation threshold
+                        self._calibrated_intensity = result.measured_intensity
+                        self.log_panel.add_log(
+                            f"💾 Calibrated intensity: {result.measured_intensity:.1f} (will use 50% = {result.measured_intensity * 0.5:.1f} as black frame threshold)",
+                            "INFO",
+                        )
+
+                        # Store ROI settings used during calibration
+                        self._calibration_use_full_frame = use_full_frame
+                        self._calibration_roi_fraction = 0.75  # Currently hardcoded
+                        roi_desc = (
+                            "Full frame"
+                            if use_full_frame
+                            else f"Center ROI ({self._calibration_roi_fraction*100:.0f}%)"
+                        )
+                        self.log_panel.add_log(
+                            f"💾 Calibration ROI: {roi_desc} (recording will use same)", "INFO"
+                        )
 
                         if mode == "ir":
                             # IR calibration → used for dark phase (IR only)

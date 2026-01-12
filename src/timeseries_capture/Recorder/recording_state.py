@@ -56,9 +56,19 @@ class RecordingConfig:
 
     # PER-PHASE LED Powers (for phase recordings with intensity matching)
     # These override the legacy values when phase_enabled=True
-    dark_phase_ir_power: int = 100      # IR power for dark phase (IR only)
-    light_phase_ir_power: int = 100     # IR power for light phase (dual mode)
-    light_phase_white_power: int = 50   # White power for light phase (white or dual mode)
+    dark_phase_ir_power: int = 100  # IR power for dark phase (IR only)
+    light_phase_ir_power: int = 100  # IR power for light phase (dual mode)
+    light_phase_white_power: int = 50  # White power for light phase (white or dual mode)
+
+    # Brightness Validation (v2.4.1+)
+    # Adaptive threshold for detecting black frames (set to 50% of calibrated intensity, or 10 minimum)
+    brightness_validation_threshold: float = 10.0  # Minimum mean intensity for valid frames
+
+    # ROI Settings (for consistent intensity measurement with calibration)
+    use_full_frame_for_validation: bool = (
+        True  # If True, measure full frame; if False, use center ROI
+    )
+    roi_fraction: float = 0.75  # Fraction of frame for ROI (e.g., 0.75 = 75% x 75% center)
 
 
 @dataclass

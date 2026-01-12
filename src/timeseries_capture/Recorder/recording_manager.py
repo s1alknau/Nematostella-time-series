@@ -386,6 +386,11 @@ class RecordingManager(QObject):
                 # Capture frame
                 self._capture_single_frame()
 
+                # Query sensors BETWEEN frame captures (not during capture)
+                # This prevents timing interference with frame capture
+                if self.frame_capture:
+                    self.frame_capture.query_sensors_if_needed()
+
                 # Update progress
                 progress = self.state.get_progress_percent()
                 self.progress_updated.emit(progress)
@@ -428,18 +433,38 @@ class RecordingManager(QObject):
                     self.phase_changed.emit(phase_info.phase.value, phase_info.cycle_number)
 
             # Set phase-specific LED powers (if phase recording enabled)
+            phase_transition_occurred = False
             if phase_info:
-                self._set_phase_led_powers(phase_info, led_type, dual_mode)
+                phase_transition_occurred = self._set_phase_led_powers(
+                    phase_info, led_type, dual_mode
+                )
 
             # ================================================================
-            # FRAME CAPTURE WITH BRIGHTNESS VALIDATION (v2.4.1)
+            # CAMERA BUFFER FLUSH AFTER PHASE TRANSITION (DISABLED)
+            # ================================================================
+            # NOTE: Buffer flushing is currently DISABLED due to camera stability issues
+            # Direct camera.capture_frame() calls can cause the camera to freeze or fail
+            #
+            # The LED stabilization time (1000ms) should be sufficient for the camera
+            # to naturally flush old frames from its internal buffer.
+            # If phase transition artifacts persist, consider:
+            # - Increasing LED stabilization time instead
+            # - Using a different buffer clearing strategy
+            if phase_transition_occurred:
+                logger.debug("⚡ Phase transition detected (buffer flush disabled for stability)")
+
+            # ================================================================
+            # FRAME CAPTURE WITH BRIGHTNESS VALIDATION (v2.4.1+)
             # ================================================================
             # Captures frame with automatic retry if frame is too dark (black frame bug)
             # This prevents occasional system delays from causing completely black frames
+            # Uses adaptive threshold based on calibrated intensity (from RecordingConfig)
 
             frame_number = self.state.current_frame + 1
             max_capture_retries = 3
-            brightness_threshold = 50  # Grayscale threshold for "too dark" detection
+            brightness_threshold = (
+                self.state.config.brightness_validation_threshold
+            )  # Adaptive threshold
 
             logger.debug(
                 f"Capturing frame {frame_number}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
@@ -463,9 +488,32 @@ class RecordingManager(QObject):
                     self.error_occurred.emit("Frame capture failed")
                     return
 
-                # Validate frame brightness
+                # Validate frame brightness (using same ROI as calibration)
                 import numpy as np
-                frame_mean = float(np.mean(frame))
+
+                # Calculate mean intensity using same method as calibration
+                if self.state.config.use_full_frame_for_validation:
+                    # Use entire frame
+                    frame_mean = float(np.mean(frame))
+                else:
+                    # Use center ROI (same as calibration)
+                    h, w = frame.shape[:2]
+                    roi_frac = self.state.config.roi_fraction
+
+                    # Calculate ROI boundaries
+                    center_h = h // 2
+                    center_w = w // 2
+                    roi_h = int(h * roi_frac)
+                    roi_w = int(w * roi_frac)
+
+                    roi_y1 = center_h - roi_h // 2
+                    roi_y2 = roi_y1 + roi_h
+                    roi_x1 = center_w - roi_w // 2
+                    roi_x2 = roi_x1 + roi_w
+
+                    # Extract ROI and calculate mean
+                    roi_region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
+                    frame_mean = float(np.mean(roi_region))
 
                 # Check if frame is too dark (likely a timing issue)
                 if frame_mean < brightness_threshold:
@@ -635,7 +683,7 @@ class RecordingManager(QObject):
         except Exception as e:
             logger.error(f"Error finalizing recording: {e}")
 
-    def _set_phase_led_powers(self, phase_info, led_type: str, dual_mode: bool):
+    def _set_phase_led_powers(self, phase_info, led_type: str, dual_mode: bool) -> bool:
         """
         Sets LED powers based on current phase for intensity matching.
 
@@ -646,12 +694,27 @@ class RecordingManager(QObject):
             phase_info: Current phase information
             led_type: LED type for this frame ('ir', 'white', or 'dual')
             dual_mode: Whether dual LED mode is active
+
+        Returns:
+            True if phase transition occurred (LED configuration changed), False otherwise
         """
         config = self.state.get_config()
         if not config or not config.phase_enabled:
-            return
+            return False
 
         from .recording_state import PhaseType
+
+        # Track if this is a new phase (transition occurred)
+        current_phase = phase_info.phase
+        phase_transition = False
+
+        if not hasattr(self, "_last_phase"):
+            self._last_phase = None
+
+        if self._last_phase is None or self._last_phase != current_phase:
+            phase_transition = True
+            logger.info(f"🔄 Phase transition: {self._last_phase} → {current_phase}")
+            self._last_phase = current_phase
 
         # Determine which LED powers to set based on current phase
         if phase_info.phase == PhaseType.DARK:
@@ -679,6 +742,8 @@ class RecordingManager(QObject):
                 # White-only light phase
                 logger.debug(f"[PHASE POWER] Light phase (white): Setting White={white_power}%")
                 self.frame_capture.esp32.set_led_power(white_power, "white")
+
+        return phase_transition
 
     # ========================================================================
     # STATUS & INFO

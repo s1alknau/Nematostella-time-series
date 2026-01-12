@@ -7,6 +7,7 @@ from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -162,10 +163,52 @@ class LEDControlPanel(QWidget):
         calib_info.setStyleSheet("color: #7f8c8d; font-size: 11px;")
         calib_layout.addWidget(calib_info)
 
+        # Target Intensity Input
+        target_layout = QHBoxLayout()
+        target_layout.addWidget(QLabel("Target Intensity:"))
+
+        self.target_intensity_spinbox = QDoubleSpinBox()
+        self.target_intensity_spinbox.setRange(1.0, 1000.0)
+        self.target_intensity_spinbox.setValue(200.0)
+        self.target_intensity_spinbox.setDecimals(1)
+        self.target_intensity_spinbox.setSingleStep(10.0)
+        self.target_intensity_spinbox.setToolTip(
+            "Target mean intensity for calibration.\n"
+            "Adjust based on your optical configuration (objective aperture).\n"
+            "Typical values: 30-50 for high aperture, 100-200 for low aperture."
+        )
+        self.target_intensity_spinbox.setMinimumWidth(100)
+        target_layout.addWidget(self.target_intensity_spinbox)
+        target_layout.addStretch()
+
+        calib_layout.addLayout(target_layout)
+
+        # Tolerance Input
+        tolerance_layout = QHBoxLayout()
+        tolerance_layout.addWidget(QLabel("Tolerance (%):"))
+
+        self.tolerance_spinbox = QDoubleSpinBox()
+        self.tolerance_spinbox.setRange(0.1, 10.0)
+        self.tolerance_spinbox.setValue(1.0)
+        self.tolerance_spinbox.setDecimals(1)
+        self.tolerance_spinbox.setSingleStep(0.5)
+        self.tolerance_spinbox.setToolTip(
+            "Acceptable error percentage from target.\n"
+            "Lower = stricter matching (takes longer).\n"
+            "1.0% = excellent matching (ensures <2% phase difference)\n"
+            "2.5% = good matching (ensures <5% phase difference)"
+        )
+        self.tolerance_spinbox.setMinimumWidth(100)
+        tolerance_layout.addWidget(self.tolerance_spinbox)
+        tolerance_layout.addStretch()
+
+        calib_layout.addLayout(tolerance_layout)
+
         # Calibration Options
         calib_options_layout = QHBoxLayout()
 
         self.use_full_frame_checkbox = QCheckBox("Use full frame for calibration")
+        self.use_full_frame_checkbox.setChecked(True)  # Default: use full frame
         self.use_full_frame_checkbox.setToolTip(
             "If checked, measures intensity over entire frame.\n"
             "If unchecked, uses center 75% x 75% ROI (avoids edge artifacts)."
@@ -289,3 +332,11 @@ class LEDControlPanel(QWidget):
     def get_use_full_frame(self) -> bool:
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
+
+    def get_target_intensity(self) -> float:
+        """Returns the target intensity value for calibration"""
+        return self.target_intensity_spinbox.value()
+
+    def get_tolerance_percent(self) -> float:
+        """Returns the tolerance percentage for calibration"""
+        return self.tolerance_spinbox.value()
