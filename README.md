@@ -9,33 +9,10 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 
 ---
 
-## Recent Updates (v2.4.1 - 2026-01-05)
-
-🎉 **Black Frame Prevention & ESP32-S3 Support!**
-
-### v2.4.1 - Black Frame Prevention
-- ✅ **Automatic Brightness Validation**: Detects and recovers from black frames caused by timing delays
-- ✅ **Self-Healing Retry Mechanism**: Up to 3 automatic retries with 500ms stabilization delay
-- ✅ **Validated Performance**: Frame intensity σ=0.63, no black frames in production tests
-
-### v2.4.0 - Timing Precision Optimization
-- ✅ **Deadline-Based Sleep**: Eliminates jitter accumulation (85% improvement)
-- ✅ **Async HDF5 Flush**: Non-blocking I/O prevents 300-500ms spikes
-- ✅ **Optimized Statistics**: Frame calculations only in COMPREHENSIVE mode (-20-30ms)
-- ✅ **Validated Results**: σ=190ms timing variance over 58min (was ~1000ms spikes)
-
-### ESP32-S3-BOX-3 Support
-- ✅ **Unified Firmware**: Single firmware with compile-time auto-detection for both ESP32 and ESP32-S3
-- ✅ **Multi-Board Compatibility**: Works seamlessly with ESP32-DevKit and ESP32-S3-BOX-3
-
-See [CHANGELOG.md](CHANGELOG.md) for complete details.
-
----
-
 ## Features
 
 - **Hardware-Synchronized LED Control**: Precise synchronization between camera exposure and LED illumination via ESP32 microcontroller
-- **Dual-LED Support**: Independent control of IR (850nm) exchangeable LEDs and White (broad-spectrum) LEDs for creating light stimulation and oblique lighting
+- **Dual-LED Support**: Independent control of IR (850nm) and White (broad-spectrum) LEDs for multi-modal imaging
 - **Phase-Based Recording**: Automated light/dark cycles for circadian rhythm studies
 - **Drift-Compensated Timing**: Frame timing measured from absolute recording start, preventing cumulative drift
 - **Environmental Monitoring**: Real-time temperature and humidity tracking via DHT22 sensor
@@ -98,45 +75,22 @@ Core dependencies:
 
 ### Required Components
 
-1. **ESP32 Microcontroller**
-
-   **Option A: ESP32-DevKitC (Standard)**
+1. **ESP32 Microcontroller** (e.g., ESP32-DevKitC)
    - Firmware: Custom firmware with LED control and sensor support
    - Firmware version: v2.2 or higher
-   - GPIO Pins Used: GPIO 4 (IR LED), GPIO 15 (White LED), GPIO 14 (DHT22)
-
-   **Option B: ESP32-S3-BOX-3 (Advanced)** ⭐ *New!*
-   - Development board with integrated 2.4" touchscreen display
-   - Requires ESP32-S3-BOX-3-DOCK accessory for GPIO access
-   - GPIO Pins Used: GPIO 10 (IR LED), GPIO 11 (White LED), GPIO 12 (DHT22)
-   - Optional: Local status display and touch control
-   - See [ESP32-S3-BOX-3 Configuration Guide](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details
 
 2. **LED System**
-   - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm)
-   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation)
-   - **MOSFET Drivers**: 2x BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
-   - **Important**: IR and White LEDs use different voltages (12V vs 24V)
+   - **IR LED**: 850nm wavelength (e.g., TSAL6400)
+   - **White LED**: Broad-spectrum (e.g., high-CRI 5000K)
+   - LED drivers with PWM control (0-100%)
 
 3. **DHT22 Sensor**
    - Temperature range: -40°C to 80°C (±0.5°C accuracy)
    - Humidity range: 0-100% RH (±2-5% accuracy)
-   - DHT22 sensor board with integrated pull-up resistor (no external resistor needed)
 
-4. **Power Supplies**
-   - **ESP32 Power**: 5V via USB (from computer)
-   - **IR LED Power**: 12V DC, 2-5A power supply
-   - **White LED Power**: 24V DC, 2-5A power supply
-   - **Critical**: Common ground connection required between USB ground and both PSU grounds
-
-5. **Connectors & Wiring**
-   - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor)
-   - Wire: 18-22 AWG for signal, 16-18 AWG for power
-   - Tool-free connection, reusable
-
-6. **Camera**
-   - Hik Robotics MV-CS-013 60GN Near Infrared
-   - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
+4. **Camera**
+   - Compatible with Micro-Manager device adapters
+   - Recommended: Cameras with hardware triggering support
 
 ---
 
@@ -159,292 +113,86 @@ Core dependencies:
    # Open src/main.cpp and upload to ESP32 board
    ```
 
-3. **Verify Firmware** (optional)
+3. **Verify Firmware**
    - Open Serial Monitor (115200 baud)
    - You should see: `ESP32 LED Controller v2.2 Ready`
    - Type `STATUS` to verify all systems operational
 
-#### Step 2: LED System Assembly with IRLZ34N MOSFETs
-
-**MOSFET Specifications:**
-- Model: BOJACK IRLZ34N (IRLZ34NPBF)
-- Type: N-Channel Logic-Level MOSFET
-- Maximum Ratings: 30A, 55V
-- Gate Threshold: 1-2V (logic-level, works with 3.3V from ESP32)
-- Package: TO-220
+#### Step 2: LED System Assembly
 
 **IR LED Circuit:**
 ```
-                    ┌─────────────┐
-ESP32 GPIO 4 ──────►│ Gate        │
-(3.3V PWM)          │  IRLZ34N    │
-                    │  MOSFET     │
-                    │             │
-12V PSU (+) ────────┤ Drain       │
-                    │             │
-                    │ Source      ├─────► IR LED Strip (+)
-                    └─────────────┘
-                                        IR LED Strip (-) ──► GND
-
-Note: Add current-limiting resistor if using individual LEDs
+ESP32 GPIO 4 → LED Driver (PWM Input) → IR LED (850nm) → GND
+                     ↑
+                  Power Supply (12V recommended)
 ```
 
 **White LED Circuit:**
 ```
-                    ┌─────────────┐
-ESP32 GPIO 15 ─────►│ Gate        │
-(3.3V PWM)          │  IRLZ34N    │
-                    │  MOSFET     │
-                    │             │
-24V PSU (+) ────────┤ Drain       │
-                    │             │
-                    │ Source      ├─────► White LED Strip (+)
-                    └─────────────┘
-                                        White LED Strip (-) ──► GND
-
-Note: White LED uses 24V power supply (different from 12V IR LED)
+ESP32 GPIO 15 → LED Driver (PWM Input) → White LED → GND
+                      ↑
+                   Power Supply (12V recommended)
 ```
 
-**MOSFET Connection Details:**
-1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor (optional, for protection)
-2. **Drain Pin** → Power Supply (+) [12V for IR, 24V for White]
-3. **Source Pin** → Common Ground (WAGO #3)
-4. **LED Connections:**
-   - IR LED: (+) from 12V PSU via WAGO #1, (-) to Common Ground
-   - White LED: (+) from 24V PSU via WAGO #2, (-) to Common Ground
-
-**Important:**
-- IRLZ34N is **logic-level** compatible (works with 3.3V gate voltage)
-- No additional driver circuit needed between ESP32 and MOSFET
-- PWM frequency: 15kHz (set in firmware)
-- Can handle high-power LED strips (up to 30A theoretical, typically use 1-3A)
+**Recommended LED Drivers:**
+- PWM-compatible constant current drivers
+- Input: 5V PWM signal from ESP32
+- Output: Adjustable current (typically 350-700mA for high-power LEDs)
 
 **Safety Notes:**
 - ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
-- Use heatsink on MOSFET if driving >2A continuous
-- Add flyback diode (1N4007) across LED if using inductive loads
-- Ensure common ground between ESP32, PSU, and MOSFETs
-- Use appropriate gauge wire for current loads
+- Use appropriate current limiting to prevent LED damage
+- Ensure proper heat sinking for high-power LEDs
 
 #### Step 3: DHT22 Sensor Connection
 
 ```
-DHT22 Sensor Board Pinout:
+DHT22 Sensor Pinout:
 Pin 1 (VCC)  → ESP32 3.3V
-Pin 2 (Data) → ESP32 GPIO 14
-Pin 3 (GND)  → ESP32 GND
+Pin 2 (Data) → ESP32 GPIO 14 (+ 10kΩ pull-up resistor to 3.3V)
+Pin 3 (NC)   → Not connected
+Pin 4 (GND)  → ESP32 GND
 ```
 
-**Important Notes:**
-- DHT22 sensor board has **integrated pull-up resistor** - no external resistor needed
-- Direct 3-wire connection to ESP32
-- Use short wires (<30cm) for reliable communication
-
-**Power Supply Note:**
-- DHT22 datasheet specifies 3.3-6V operating range (5V optimal)
-- **This setup uses 3.3V** which provides excellent logic level compatibility:
-  - ✅ ESP32 GPIO operates at 3.3V logic
-  - ✅ DHT22 powered at 3.3V
-  - ✅ Integrated pull-up at 3.3V
-  - ✅ All signal levels perfectly matched
-- While 5V can provide slightly more stable readings, 3.3V works reliably and avoids any logic level conversion issues
-- Sensor has been tested extensively at 3.3V with stable temperature/humidity readings
+**Pull-up Resistor:**
+- Required: 10kΩ resistor between Data pin and VCC
+- Ensures reliable sensor communication
 
 #### Step 4: Camera Integration
 
 **Supported Camera Types:**
+1. **Micro-Manager Compatible Cameras** (recommended)
+   - See [camera_adapters.py](src/timeseries_capture/camera_adapters.py)
+   - Examples: Hamamatsu, Andor, FLIR, Basler
 
-**HIK Robotics Cameras** (tested and recommended):
-- **GigE (Ethernet) cameras**: Network-based cameras with high bandwidth
-- **USB cameras**: Direct USB connection for easy setup
-- Custom adapter available in `Json+cam_manager/`
-- See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
-- See [camera_adapters.py](src/timeseries_capture/camera_adapters.py) for implementation details
+2. **HIK Vision Cameras**
+   - Custom adapter available in `Json+cam_manager/`
+   - See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
 
 **Camera Positioning:**
 - Position camera to view sample chamber
 - Ensure LEDs illuminate sample area uniformly
 - Use IR-pass filter for IR-only imaging (optional)
 
-#### Step 5: Complete System Wiring with WAGO Connectors
-
-**System Overview:**
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│          COMPLETE SYSTEM WIRING (2 PSUs + USB Power)               │
-└─────────────────────────────────────────────────────────────────────┘
-
-Power Sources:
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  USB Cable   │     │   12V PSU    │     │   24V PSU    │
-│   (ESP32)    │     │  (IR LED)    │     │ (White LED)  │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │                    │                    │
-       │ USB                │ 12V+               │ 24V+
-       │                    │                    │
-       ▼                    ▼                    ▼
-   ┌────────┐          ┌─────────┐         ┌─────────┐
-   │ ESP32  │          │ WAGO #1 │         │ WAGO #2 │
-   │        │          │(IR 12V+)│         │(W 24V+) │
-   │ GPIO 4 ├──────┐   └────┬────┘         └────┬────┘
-   │ GPIO15 ├────┐ │     [1][2][3]           [1][2][3]
-   │ GPIO14 ◄─┐  │ │      │  │               │  │
-   │  3.3V──┬─┼──┼─┘   12V+│  │           24V+│  │
-   │  GND─┬─┼─┼──┘         │  │               │  │
-   │  GND─┼─┼─┘            │  │               │  │
-   └──┬───┼─┘              │  │               │  │
-      │   └──DHT22         │  │               │  │
-      │       VCC          │  │               │  │
-      │       Data         │  └──►IR LED(+)   │  └──►White LED(+)
-      │       GND          │      12V         │      24V
-      │                    │                  │
-      │           IR MOSFET│         White MOSFET
-      │           Gate◄─GPIO4       Gate◄─GPIO15
-      │           Drain◄─12V PSU(+) Drain◄─24V PSU(+)
-      │           Source─┐          Source─┐
-      │                  │                 │
-      ▼                  ▼                 ▼
-   ┌─────────────────────────────────────────────────────┐
-   │           WAGO #3 (Common Ground Hub)               │
-   │  [1] 12V PSU GND(-)  [2] 24V PSU GND(-)  [3] ESP32 GND│
-   │                                                      │
-   │  Additional wires connected:                        │
-   │  - IR MOSFET Source                                 │
-   │  - White MOSFET Source                              │
-   │  - IR LED Cathode (-) 12V                           │
-   │  - White LED Cathode (-) 24V                        │
-   └─────────────────────────────────────────────────────┘
-```
-
-**Key Points:**
-- **Power Sources**: USB (ESP32), 12V PSU (IR LED), 24V PSU (White LED)
-- DHT22 GND → ESP32 second GND pin (direct, NOT via WAGO #3)
-- **WAGO #1**: 12V+ distribution - [1]=12V PSU(+), [2]=IR LED(+)
-- **WAGO #2**: 24V+ distribution - [1]=24V PSU(+), [2]=White LED(+)
-- **WAGO #3 (Critical)**: Common ground hub connecting all power sources
-  - [1] 12V PSU GND (-)
-  - [2] 24V PSU GND (-)
-  - [3] ESP32 GND pin
-  - Plus: Both MOSFET Sources, both LED cathodes (-)
-- GPIO 4 → IR MOSFET Gate (direct wire)
-- GPIO 15 → White MOSFET Gate (direct wire)
-
-**WAGO Connector Usage:**
-
-**WAGO #1 - 12V IR LED Power Distribution**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #1                   │
-│   (IR LED 12V+ Circuit)             │
-├─────────────────────────────────────┤
-│ [1] 12V PSU (+)                     │
-│ [2] 12V IR LED Strip (+)            │
-│ [3] (unused or spare connection)    │
-└─────────────────────────────────────┘
-
-12V+ flows: 12V PSU → WAGO #1 [1] → IR LED+ [2]
-IR LED Strip (-) → Common Ground (WAGO #3)
-```
-
-**WAGO #2 - 24V White LED Power Distribution**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #2                   │
-│   (White LED 24V+ Circuit)          │
-├─────────────────────────────────────┤
-│ [1] 24V PSU (+)                     │
-│ [2] 24V White LED Strip (+)         │
-│ [3] (unused or spare connection)    │
-└─────────────────────────────────────┘
-
-24V+ flows: 24V PSU → WAGO #2 [1] → White LED+ [2]
-White LED Strip (-) → Common Ground (WAGO #3)
-```
-
-**WAGO #3 - Common Ground Hub**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #3                   │
-│   (Common Ground)                   │
-├─────────────────────────────────────┤
-│ [1] 12V PSU GND (-)                 │
-│ [2] 24V PSU GND (-)                 │
-│ [3] ESP32 GND                       │
-│                                     │
-│ Connected via additional wires:     │
-│ - IR MOSFET Source                  │
-│ - White MOSFET Source               │
-│ - IR LED Strip (-) 12V              │
-│ - White LED Strip (-) 24V           │
-└─────────────────────────────────────┘
-```
-**Critical:** This connector creates the common ground between **all power sources** (12V PSU, 24V PSU, ESP32 USB) and all components. Without this common ground, the MOSFETs cannot switch properly.
-
-**MOSFET Wiring:**
-
-IR IRLZ34N MOSFET:
-- Gate  → ESP32 GPIO 4 (direct wire, no WAGO)
-- Drain → 12V PSU (+) via WAGO #1
-- Source → Common Ground (WAGO #3)
-
-White IRLZ34N MOSFET:
-- Gate  → ESP32 GPIO 15 (direct wire, no WAGO)
-- Drain → 24V PSU (+) via WAGO #2
-- Source → Common Ground (WAGO #3)
-
-**Assembly Steps:**
+#### Step 5: Complete System Assembly
 
 1. **Mount Components:**
    - ESP32 in accessible location for USB connection
-   - 2x IRLZ34N MOSFETs (can use heatsinks if needed)
    - LEDs positioned for optimal sample illumination
    - DHT22 sensor near sample chamber for accurate readings
    - Camera mounted with stable positioning
 
-2. **Connect WAGO #1 (12V IR LED Power):**
-   - Port [1]: 12V PSU (+) positive
-   - Port [2]: IR LED Strip (+) anode
-   - Port [3]: Spare/unused
-   - IR MOSFET Drain → 12V PSU (+) directly or via WAGO #1
+2. **Connect Power:**
+   - ESP32: USB power (5V, typically from computer)
+   - LED drivers: External 12V power supply
+   - Camera: Per manufacturer specifications
 
-3. **Connect WAGO #2 (24V White LED Power):**
-   - Port [1]: 24V PSU (+) positive
-   - Port [2]: White LED Strip (+) anode
-   - Port [3]: Spare/unused
-   - White MOSFET Drain → 24V PSU (+) directly or via WAGO #2
-
-4. **Connect WAGO #3 (Common Ground Hub):**
-   - Port [1]: 12V PSU GND (-)
-   - Port [2]: 24V PSU GND (-)
-   - Port [3]: ESP32 GND pin
-   - Additional wires to WAGO #3 (all grounds go here):
-     - IR MOSFET Source pin
-     - White MOSFET Source pin
-     - IR LED Strip (-) cathode
-     - White LED Strip (-) cathode
-
-5. **Connect MOSFETs:**
-   - IR MOSFET: Gate → ESP32 GPIO 4, Drain → 12V+, Source → GND (WAGO #3)
-   - White MOSFET: Gate → ESP32 GPIO 15, Drain → 24V+, Source → GND (WAGO #3)
-
-5. **Connect DHT22 Sensor:**
-   - DHT22 VCC → ESP32 3.3V (direct connection)
-   - DHT22 Data → ESP32 GPIO 14 (direct connection)
-   - DHT22 GND → ESP32 second GND pin (direct connection, NOT via WAGO)
-
-6. **Connect Power Sources:**
-   - ESP32: USB cable to computer
-   - 12V PSU: Connect mains power (ensure correct voltage!)
-   - 24V PSU: Connect mains power (ensure correct voltage!)
-   - **Critical:** Verify common ground (WAGO #1) is connected before powering on
-
-7. **Cable Management:**
+3. **Cable Management:**
    - Keep signal cables (PWM, DHT22) away from power cables
    - Use shielded cables for long runs
    - Secure all connections to prevent accidental disconnection
-   - Use cable ties to organize wiring
 
-8. **Initial Testing:**
+4. **Initial Testing:**
    ```bash
    # Test ESP32 connection
    python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic
@@ -503,69 +251,31 @@ White IRLZ34N MOSFET:
 #### Complete Pinout Reference
 
 ```
-╔══════════════════════════════════════════════════════════════╗
-║                    ESP32 DevKit Pinout                       ║
-╠══════════════════════════════════════════════════════════════╣
-║                                                              ║
-║  3.3V  ─────────────────────┬─────────────┐                 ║
-║                             │             │                 ║
-║                         DHT22 VCC    10kΩ Pull-up           ║
-║                                            │                 ║
-║  GPIO 14 ───────────────────┴──────────────┤                ║
-║                                            │                 ║
-║                                       DHT22 Data             ║
-║                                                              ║
-║  GPIO 4  ─────────────────── IRLZ34N Gate (IR MOSFET)       ║
-║                                      │                       ║
-║                                      └──→ IR LED Strip      ║
-║                                                              ║
-║  GPIO 15 ─────────────────── IRLZ34N Gate (White MOSFET)    ║
-║                                      │                       ║
-║                                      └──→ White LED Strip   ║
-║                                                              ║
-║  GND ────────────────────────┬───────┬─────────┬────────    ║
-║                              │       │         │            ║
-║                          DHT22    IR LED   White LED        ║
-║                           GND      GND       GND            ║
-║                                                              ║
-║  USB ────────────────────── Computer (Serial 115200 baud)   ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝
-```
 
 #### Power Requirements
 
 | Component | Voltage | Current | Notes |
 |-----------|---------|---------|-------|
 | ESP32 | 5V USB | ~500mA | Powered via USB from computer |
-| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin (datasheet: 3.3-6V range, 5V optimal) |
-| IRLZ34N MOSFETs (2x) | 3.3V (gate) | <1mA each | Logic-level, driven by ESP32 GPIO |
-| IR LED Strip | 12V | 1-3A | Via IRLZ34N MOSFET, dedicated 12V PSU |
-| White LED Strip | 24V | 1-3A | Via IRLZ34N MOSFET, dedicated 24V PSU |
+| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin |
+| IR LED | 12V | 350-700mA | Requires external power supply |
+| White LED | 12V | 350-700mA | Requires external power supply |
+| **Total** | - | **~1.5A** | External 12V PSU for LEDs |
 
-**Recommended Power Supplies:**
-- **12V PSU**: 2-5A for IR LED (regulated output)
-- **24V PSU**: 2-5A for White LED (regulated output)
-- Both PSUs separate from computer/ESP32 power to avoid noise
-- **Critical**: Common ground connection between both PSUs and ESP32 via WAGO #3
-
-**Connectors:**
-- WAGO 221-413 COMPACT Lever Connectors (3-conductor)
-- Used for safe wire connections (ESP32-MOSFET-LED-PSU)
-- Tool-free connection, reusable
-- Rated for 32A, 4mm² wire
+**Recommended Power Supply:**
+- 12V DC, 2A minimum
+- Regulated output
+- Separate from computer/ESP32 power to avoid noise
 
 #### Signal Specifications
 
-**PWM Signals (GPIO 4, 15):**
-- **GPIO 4**: IR LED MOSFET Gate
-- **GPIO 15**: White LED MOSFET Gate
+**PWM Signals (GPIO 25, 26):**
 - Logic Level: 3.3V
-- Frequency: 15 kHz (set in firmware)
+- Frequency: 1 kHz (configurable in firmware)
 - Duty Cycle: 0-100% (controlled by plugin)
 - Rise/Fall Time: <1µs
 
-**DHT22 Communication (GPIO 14):**
+**DHT22 Communication:**
 - Protocol: Single-wire digital (proprietary)
 - Pull-up: 10kΩ to 3.3V (required)
 - Sampling Rate: ~0.5 Hz (one reading per 2 seconds max)
@@ -594,9 +304,9 @@ White IRLZ34N MOSFET:
 - Verify GPIO pin assignments match firmware
 
 **DHT22 Returns 0.0 Values:**
-- Check 10kΩ pull-up resistor is installed (or use DHT22 board with integrated pull-up)
+- Check 10kΩ pull-up resistor is installed
 - Verify 3.3V power to sensor
-- Ensure data pin connected to **GPIO 14** (not GPIO 4!)
+- Ensure data pin connected to GPIO 4
 - Try different DHT22 sensor (failure rate ~5%)
 
 **LED Intensities Don't Match:**
@@ -1073,34 +783,17 @@ LED calibration ensures **consistent intensity** across:
 ### Calibration Types
 
 **1. IR-Only Calibration**
-- Adjusts IR LED power to reach target intensity (200)
-- Used for: **IR-only recordings** OR **phase recordings with IR-only dark phase**
+- Adjusts IR LED power to reach target intensity
+- Used for IR-only recordings
 
 **2. White-Only Calibration**
-- Adjusts White LED power to reach target intensity (200)
-- Used for: **White-only recordings** OR **phase recordings with White-only light phase**
+- Adjusts White LED power to reach target intensity
+- Used for White-only recordings
 
-**3. Dual LED Calibration** ⚠️
-- Calibrates **both LEDs simultaneously** to reach target intensity (200) when both are ON together
-- Turns on both IR and White LEDs, then adjusts their powers proportionally
-- Used for: **Continuous dual LED recordings** OR **phase recordings with dual LED light phase**
-
-### CRITICAL: Calibration Workflow for Phase Recordings
-
-Choose the correct calibration method based on your recording phases:
-
-| Recording Configuration | Calibration Method | Why |
-|------------------------|-------------------|-----|
-| **Continuous IR only** | `calibrate_ir()` | Single LED calibration |
-| **Continuous White only** | `calibrate_white()` | Single LED calibration |
-| **Continuous Dual LED** | `calibrate_dual()` | Both LEDs together |
-| **Phases: IR + White (separate)** | `calibrate_ir()` + `calibrate_white()` | Calibrate each LED individually |
-| **Phases: IR + Dual LED** | `calibrate_ir()` + `calibrate_dual()` | Calibrate IR alone, then both together |
-| **Phases: White + Dual LED** | `calibrate_white()` + `calibrate_dual()` | Calibrate White alone, then both together |
-
-**Common Mistake:**
-- ❌ Using `calibrate_dual()` for phase recording with separate IR/White phases
-- ✅ Use `calibrate_ir()` and `calibrate_white()` separately instead
+**3. Dual Calibration** ⚠️
+- Calibrates IR and White LEDs separately
+- **Note**: When both LEDs are used together, intensities add up
+- **Recommendation**: Use separate IR/White calibrations for phase recordings
 
 ### Calibration Algorithm
 
@@ -1496,241 +1189,13 @@ If you use this plugin in your research, please cite:
 - **Discussions**: [GitHub Discussions](https://github.com/s1alknau/Nematostella-time-series/discussions)
 - **Email**: [your.email@domain.com]
 
-
----
-
-## Quick Reference
-
-### ESP32 Firmware Installation (Detailed)
-
-**For Arduino IDE Users:**
-
-1. **Install ESP32 Support:**
-   ```
-   File → Preferences → Additional Board Manager URLs:
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-   Then: Tools → Board → Boards Manager → Install "esp32 by Espressif Systems"
-
-2. **Install DHT Library:**
-   ```
-   Tools → Manage Libraries → Search "DHT sensor library"
-   Install: "DHT sensor library by Adafruit" + "Adafruit Unified Sensor"
-   ```
-
-3. **Upload Firmware:**
-   ```
-   File → Open → Firmware/LED_Nematostella/src/main.cpp
-   Tools → Board → ESP32 Dev Module
-   Tools → Port → [Your ESP32 port]
-   Click Upload → Press RESET on ESP32 when done
-   ```
-
-4. **Verify:**
-   ```
-   Tools → Serial Monitor (115200 baud)
-   Expected: "ESP32 Nematostella Controller - Python Compatible v2.2"
-   ```
-
-**Troubleshooting:**
-- **No port found?** Install CH340/CP2102 USB driver
-- **Upload fails?** Hold BOOT button during upload
-- **Compile error?** Check DHT library is installed
-
-See [Firmware/QUICK_START_GUIDE.md](Firmware/QUICK_START_GUIDE.md) for full step-by-step guide.
-
-### ESP32 Communication Protocol (Quick Reference)
-
-**Key Commands:**
-
-| Command | Hex | Description | Response |
-|---------|-----|-------------|----------|
-| LED ON | 0x01 | Turn on current LED | 0xAA |
-| LED OFF | 0x00 | Turn off current LED | 0xAA |
-| SELECT IR | 0x20 | Select IR LED | 0x30 |
-| SELECT WHITE | 0x21 | Select White LED | 0x31 |
-| SET IR POWER | 0x24 + power | Set IR LED power (0-100) | 0xAA |
-| SET WHITE POWER | 0x25 + power | Set White LED power (0-100) | 0xAA |
-| SYNC CAPTURE | 0x0C | Synchronized LED+camera capture | 15 bytes |
-| SYNC DUAL | 0x2C | Dual LED capture | 15 bytes |
-| STATUS | 0x02 | Get temp/humidity/status | 5 bytes |
-
-**Serial Settings:**
-- Baud Rate: 115200
-- Data: 8N1 (8 bits, no parity, 1 stop bit)
-- Timeout: 100ms
-
-**SYNC CAPTURE Response (15 bytes):**
-```
-[0x1B] [temp_high] [temp_low] [hum_high] [hum_low] [dur_high] [dur_low]
-[led_type] [ir_state] [white_state] [ir_power] [white_power] [stab_high] [stab_low]
-```
-
-See [Firmware/FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for complete protocol specification.
-
-### ESP32-S3-BOX-3 Configuration
-
-The plugin supports both standard ESP32-DevKit and ESP32-S3-BOX-3 boards.
-
-**ESP32-S3-BOX-3 Pin Mapping:**
-
-| Function | ESP32 DevKit | ESP32-S3-BOX-3 | Notes |
-|----------|--------------|----------------|-------|
-| IR LED PWM | GPIO 4 | **GPIO 10** | Via Pmod header |
-| White LED PWM | GPIO 15 | **GPIO 11** | Via Pmod header |
-| DHT22 Data | GPIO 14 | **GPIO 12** | Via Pmod header |
-
-**Key Differences:**
-- ESP32-S3-BOX-3 requires ESP32-S3-BOX-3-DOCK for GPIO access
-- Unified firmware auto-detects board type (compile-time)
-- 2.4" touchscreen available for optional status display
-- 16MB Flash, 16MB PSRAM (vs 4MB Flash on standard ESP32)
-
-**Firmware Configuration:**
-```cpp
-// Firmware auto-detects board and configures pins accordingly
-#ifdef CONFIG_IDF_TARGET_ESP32S3
-  #define IR_LED_PIN 10
-  #define WHITE_LED_PIN 11
-  #define DHT22_PIN 12
-#else
-  #define IR_LED_PIN 4
-  #define WHITE_LED_PIN 15
-  #define DHT22_PIN 14
-#endif
-```
-
-See [docs/ESP32-S3-BOX-3_CONFIGURATION.md](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for complete setup guide.
-
-### Pin Reference Card
-
-**ESP32 DevKit Standard:**
-```
-GPIO 4  → IR LED MOSFET Gate (PWM, 15kHz)
-GPIO 15 → White LED MOSFET Gate (PWM, 15kHz)
-GPIO 14 → DHT22 Data (with 10kΩ pull-up)
-3.3V    → DHT22 VCC
-GND     → DHT22 GND, Common Ground Hub (WAGO #3)
-```
-
-**MOSFET Connections:**
-```
-IRLZ34N (IR LED):
-  Gate   → ESP32 GPIO 4
-  Drain  → 12V PSU (+)
-  Source → Common Ground
-
-IRLZ34N (White LED):
-  Gate   → ESP32 GPIO 15
-  Drain  → 24V PSU (+)
-  Source → Common Ground
-```
-
-**Power Distribution:**
-```
-WAGO #1: 12V+ (IR LED)
-WAGO #2: 24V+ (White LED)
-WAGO #3: Common Ground (critical!)
-  - 12V PSU GND
-  - 24V PSU GND
-  - ESP32 GND
-  - Both MOSFET Sources
-  - Both LED cathodes (-)
-```
-
-
----
-
-## Quick Reference
-
-### ESP32 Firmware Installation (Detailed)
-
-**For Arduino IDE Users:**
-
-1. **Install ESP32 Support:**
-   - File → Preferences → Additional Board Manager URLs:
-   ```
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-   - Tools → Board → Boards Manager → Install "esp32 by Espressif Systems"
-
-2. **Install DHT Library:**
-   - Tools → Manage Libraries → Search "DHT sensor library"
-   - Install: "DHT sensor library by Adafruit" + "Adafruit Unified Sensor"
-
-3. **Upload Firmware:**
-   - File → Open → Firmware/LED_Nematostella/src/main.cpp
-   - Tools → Board → ESP32 Dev Module
-   - Tools → Port → [Your ESP32 port]
-   - Click Upload → Press RESET on ESP32 when done
-
-4. **Verify:**
-   - Tools → Serial Monitor (115200 baud)
-   - Expected: "ESP32 Nematostella Controller - Python Compatible v2.2"
-
-**Troubleshooting:**
-- **No port found?** Install CH340/CP2102 USB driver
-- **Upload fails?** Hold BOOT button during upload
-- **Compile error?** Check DHT library is installed
-
-See [Firmware/QUICK_START_GUIDE.md](Firmware/QUICK_START_GUIDE.md) for full guide.
-
-### ESP32 Communication Protocol (Quick Reference)
-
-**Key Commands:**
-
-| Command | Hex | Description | Response |
-|---------|-----|-------------|----------|
-| LED ON | 0x01 | Turn on current LED | 0xAA |
-| LED OFF | 0x00 | Turn off current LED | 0xAA |
-| SELECT IR | 0x20 | Select IR LED | 0x30 |
-| SELECT WHITE | 0x21 | Select White LED | 0x31 |
-| SET IR POWER | 0x24 + power | Set IR LED power (0-100) | 0xAA |
-| SET WHITE POWER | 0x25 + power | Set White LED power (0-100) | 0xAA |
-| SYNC CAPTURE | 0x0C | Synchronized LED+camera capture | 15 bytes |
-| SYNC DUAL | 0x2C | Dual LED capture | 15 bytes |
-| STATUS | 0x02 | Get temp/humidity/status | 5 bytes |
-
-**Serial Settings:** 115200 baud, 8N1, 100ms timeout
-
-**SYNC CAPTURE Response (15 bytes):** `[0x1B] [temp_high] [temp_low] [hum_high] [hum_low] [dur_high] [dur_low] [led_type] [ir_state] [white_state] [ir_power] [white_power] [stab_high] [stab_low]`
-
-See [Firmware/FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for complete protocol.
-
-### ESP32-S3-BOX-3 Configuration
-
-**Pin Mapping:**
-
-| Function | ESP32 DevKit | ESP32-S3-BOX-3 |
-|----------|--------------|----------------|
-| IR LED PWM | GPIO 4 | GPIO 10 |
-| White LED PWM | GPIO 15 | GPIO 11 |
-| DHT22 Data | GPIO 14 | GPIO 12 |
-
-Firmware auto-detects board type. ESP32-S3-BOX-3 has 16MB Flash/PSRAM and optional 2.4" touchscreen.
-
-See [docs/ESP32-S3-BOX-3_CONFIGURATION.md](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details.
-
-### Pin Reference Card
-
-**ESP32 DevKit:**
-- GPIO 4 → IR LED MOSFET Gate (PWM, 15kHz)
-- GPIO 15 → White LED MOSFET Gate (PWM, 15kHz)
-- GPIO 14 → DHT22 Data (with 10kΩ pull-up)
-
-**Power Distribution:**
-- WAGO #1: 12V+ (IR LED)
-- WAGO #2: 24V+ (White LED)
-- WAGO #3: Common Ground (12V GND + 24V GND + ESP32 GND + MOSFET Sources + LED cathodes)
-
 ---
 
 ## Acknowledgments
 
 - napari team for the excellent imaging platform
-- HIK Robotics for camera support and SDK
+- Micro-Manager project for device control
 - ESP32 community for microcontroller support
-- Open-source hardware and software communities
 
 ---
 
