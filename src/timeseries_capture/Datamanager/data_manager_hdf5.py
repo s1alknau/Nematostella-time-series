@@ -44,7 +44,7 @@ class AsyncHDF5Flusher:
     def __init__(self, hdf5_file: h5py.File, ts_writer):
         self.hdf5_file = hdf5_file
         self.ts_writer = ts_writer
-        self._flush_queue = queue.Queue(maxsize=10)
+        self._flush_queue: queue.Queue = queue.Queue(maxsize=10)
         self._shutdown = threading.Event()
         self._thread = threading.Thread(target=self._flush_worker, daemon=True)
         self._thread.start()
@@ -529,6 +529,12 @@ class DataManager:
         # Async flusher (v2.4 optimization)
         self._async_flusher: Optional[AsyncHDF5Flusher] = None
 
+        # Pre-allocated 3D image dataset (v5.1 optimization)
+        # Eliminates per-frame B-tree insertions that cause exponential write slowdown
+        self._images_dataset: Optional[h5py.Dataset] = None
+        self._images_max_frames: int = 100_000  # Pre-allocated rows
+        self._image_shape: Optional[tuple] = None  # (H, W) determined on first frame
+
         # Counters
         self.frame_count = 0
         self._frames_since_flush = 0
@@ -670,23 +676,31 @@ class DataManager:
                 phase_metadata = self._process_phase_info(frame_number, metadata)
 
                 # ============================================================
-                # 1. SAVE IMAGE (uncompressed numpy array)
+                # 1. SAVE IMAGE into pre-allocated 3D dataset (v5.1)
+                # Eliminates per-frame B-tree insertions -> O(1) write per frame
+                # All per-frame metadata (timestamp, phase, etc.) is in /timeseries
                 # ============================================================
-                images_group = self.hdf5_file["images"]
-                frame_ds_name = f"frame_{frame_index:06d}"
 
-                # Delete if exists (for idempotency)
-                if frame_ds_name in images_group:
-                    del images_group[frame_ds_name]
+                # Initialize on first frame (shape/dtype determined here)
+                if self._images_dataset is None:
+                    # Re-attach if file was reopened
+                    if "frames" in self.hdf5_file["images"]:
+                        self._images_dataset = self.hdf5_file["images"]["frames"]
+                        self._image_shape = self._images_dataset.shape[1:]
+                        logger.info(
+                            f"Re-attached existing images dataset, shape={self._images_dataset.shape}"
+                        )
+                    else:
+                        self._initialize_images_dataset(frame)
 
-                # Create dataset (uncompressed)
-                ds = images_group.create_dataset(frame_ds_name, data=frame, compression=None)
+                # Grow dataset if index exceeds pre-allocated size
+                if frame_index >= self._images_dataset.shape[0]:
+                    new_size = frame_index + self._images_max_frames
+                    self._images_dataset.resize((new_size,) + self._image_shape)  # type: ignore[operator]
+                    logger.warning(f"Images dataset extended to {new_size} frames")
 
-                # Essential attributes on frame dataset
-                ds.attrs["timestamp"] = current_time
-                ds.attrs["frame_number"] = frame_number
-                ds.attrs["frame_index"] = frame_index
-                ds.attrs["source"] = metadata.get("capture_method", "normal")
+                # Write by index - O(1), no B-tree modification
+                self._images_dataset[frame_index] = frame
 
                 # ============================================================
                 # 2. SAVE TIMESERIES DATA
@@ -723,7 +737,7 @@ class DataManager:
                 python_timing = timing_metrics
 
                 # Append to timeseries
-                self._ts_writer.append(
+                self._ts_writer.append(  # type: ignore[union-attr]
                     frame_index=frame_index,
                     frame_metadata=frame_metadata,
                     esp32_timing=esp32_timing,
@@ -743,7 +757,7 @@ class DataManager:
                         logger.debug(f"Async HDF5 flush requested at frame {frame_number}")
                     else:
                         # Fallback to synchronous flush if async flusher not available
-                        self._ts_writer.flush()
+                        self._ts_writer.flush()  # type: ignore[union-attr]
                         self.hdf5_file.flush()
                         logger.debug(f"HDF5 buffers flushed (sync) at frame {frame_number}")
                     self._frames_since_flush = 0
@@ -901,6 +915,51 @@ class DataManager:
             "phase_transition": is_transition,
         }
 
+    def _initialize_images_dataset(self, frame: np.ndarray) -> None:
+        """
+        Pre-allocate a single 3D dataset for all image frames (v5.1).
+        Called once on the first frame to determine shape and dtype.
+
+        HDF5 structure:
+            OLD: /images/frame_000000, /images/frame_000001, ... (B-tree explosion)
+            NEW: /images/frames  shape=(max_frames, H, W), chunked=(1, H, W)
+
+        Args:
+            frame: First frame - used to determine shape and dtype
+        """
+        h, w = frame.shape[0], frame.shape[1]
+        self._image_shape = (h, w)
+        dtype = frame.dtype
+
+        # One full frame per chunk = O(1) random access per frame
+        chunk_shape = (1, h, w)
+
+        images_group = self.hdf5_file["images"]  # type: ignore[index]
+
+        self._images_dataset = images_group.create_dataset(
+            "frames",
+            shape=(self._images_max_frames, h, w),
+            maxshape=(None, h, w),  # Unlimited along frame axis
+            dtype=dtype,
+            chunks=chunk_shape,
+            compression=None,  # Uncompressed for write speed
+        )
+
+        self._images_dataset.attrs["frame_height"] = h
+        self._images_dataset.attrs["frame_width"] = w
+        self._images_dataset.attrs["frame_dtype"] = str(dtype)
+        self._images_dataset.attrs["max_preallocated"] = self._images_max_frames
+        self._images_dataset.attrs["storage_format"] = "preallocated_3d"
+
+        images_group.attrs["frame_shape"] = [h, w]
+        images_group.attrs["frame_dtype"] = str(dtype)
+        images_group.attrs["storage_format"] = "preallocated_3d"
+
+        logger.info(
+            f"Pre-allocated images dataset: ({self._images_max_frames}, {h}, {w}) "
+            f"dtype={dtype}, chunk={chunk_shape}"
+        )
+
     def flush_file(self):
         """Flush HDF5 file to disk"""
         try:
@@ -951,6 +1010,19 @@ class DataManager:
 
                     # Get timeseries stats after trimming
                     ts_stats = self._ts_writer.get_stats()
+                # Truncate pre-allocated images dataset to actual frame count
+                if self._images_dataset is not None:
+                    actual = self.frame_count
+                    current_alloc = self._images_dataset.shape[0]
+                    if actual < current_alloc:
+                        logger.info(
+                            f"Truncating images dataset from {current_alloc} to {actual} frames"
+                        )
+                        self._images_dataset.resize((actual,) + self._image_shape)  # type: ignore[operator]
+                    self.hdf5_file["images"].attrs["actual_frames"] = actual
+                    logger.info(
+                        f"Images dataset finalized: {actual} frames, shape={self._images_dataset.shape}"
+                    )
                     ts_group = self.hdf5_file["timeseries"]
                     ts_group.attrs["written_frames"] = ts_stats["written_frames"]
                     ts_group.attrs["dataset_count"] = ts_stats["dataset_count"]
@@ -1037,7 +1109,7 @@ class DataManager:
         }
 
         if self._ts_writer:
-            stats["timeseries"] = self._ts_writer.get_stats()
+            stats["timeseries"] = self._ts_writer.get_stats()  # type: ignore[assignment]
 
         return stats
 
@@ -1093,7 +1165,16 @@ def get_recording_summary(filepath: str) -> dict:
             }
 
             if "images" in f:
-                summary["image_count"] = len(f["images"].keys())
+                img_grp = f["images"]
+                if "frames" in img_grp:
+                    # New format (v5.1): single pre-allocated 3D dataset
+                    summary["image_count"] = img_grp["frames"].shape[0]
+                    summary["image_format"] = "preallocated_3d"
+                    summary["image_shape"] = list(img_grp["frames"].shape[1:])
+                else:
+                    # Old format: individual frame_XXXXXX datasets
+                    summary["image_count"] = len(img_grp.keys())
+                    summary["image_format"] = "individual_datasets_legacy"
 
             if "timeseries" in f:
                 ts = f["timeseries"]

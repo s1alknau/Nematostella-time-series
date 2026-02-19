@@ -305,9 +305,9 @@ void loop() {
       // ================================================================
       case CMD_STATUS:
         {
-          // Use cached sensor values for fast response (important for connection test)
-          float temp = getFilteredTemperature();
-          float hum = getFilteredHumidity();
+          // Actually read the sensor (not just cached values)
+          float temp, hum;
+          readSensorsWithValidation(temp, hum);
 
           // Convert to int16 (scaled by 10)
           int16_t temp_scaled = (int16_t)(temp * 10.0);
@@ -327,7 +327,7 @@ void loop() {
           sendRawByte(hum_scaled & 0xFF);
           Serial.flush();
 
-          debugPrintln("Status sent with cached sensor data");
+          debugPrintln("Status sent with fresh sensor data");
         }
         break;
 
@@ -875,10 +875,12 @@ bool readSensorsWithValidation(float &temperature, float &humidity) {
 
   if (valid) {
     addToSensorHistory(t, h);
-    temperature = getFilteredTemperature();
-    humidity = getFilteredHumidity();
+    // Return fresh values directly (not filtered average)
+    temperature = t;
+    humidity = h;
     return true;
   } else {
+    // Only use filtered values as fallback when reading fails
     temperature = getFilteredTemperature();
     humidity = getFilteredHumidity();
     return false;
@@ -918,11 +920,6 @@ float getFilteredHumidity() {
   }
   return sum / sensor_history.count;
 }
-
-// Zum Testen der Hardware ohne Plugin
-
-// Test Tempsensor
-// #include <DHT.h>
 // DHT dht(14, DHT22);
 
 // void setup() {
