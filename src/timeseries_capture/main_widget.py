@@ -14,12 +14,8 @@ from pathlib import Path
 from typing import Optional
 
 # Qt imports
-try:
-    from qtpy.QtCore import QTimer
-    from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
-except:
-    from PyQt5.QtCore import QTimer
-    from PyQt5.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
+from qtpy.QtCore import QTimer
+from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
 
 # Import GUI components (from GUI subfolder)
 # Import controllers and adapters
@@ -477,8 +473,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             "WARNING",
                         )
                         # Ask user if they want to continue
-                        from PyQt5.QtWidgets import QMessageBox
-
                         reply = QMessageBox.question(
                             self,
                             "Exposure Mismatch",
@@ -1089,7 +1083,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 try:
                     info = self.camera_adapter.get_camera_info()
                     camera_name = info.get("name", "Unknown")
-                except:
+                except Exception:
                     pass
 
             # Update status panel
