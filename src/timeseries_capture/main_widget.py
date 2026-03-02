@@ -502,10 +502,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             # Get LED power settings from LED control panel
             led_powers = self.led_panel.get_led_powers()
 
-            # Phase nur aktiv wenn BEIDE Checkboxen gesetzt sind
-            phase_active = phase_config.get("enabled", False) and phase_config.get(
-                "phase_recording_enabled", False
-            )
+            phase_active = phase_config.get("enabled", False)
 
             # Merge configs
             full_config = {
@@ -600,9 +597,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             # Merge configs
             from .Recorder import RecordingConfig
 
-            phase_active = phase_config.get("enabled", False) and phase_config.get(
-                "phase_recording_enabled", False
-            )
+            phase_active = phase_config.get("enabled", False)
 
             full_config = RecordingConfig(
                 duration_min=recording_config["duration_min"],
