@@ -6,7 +6,6 @@ from pathlib import Path
 
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtWidgets import (
-    QCheckBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -89,29 +88,6 @@ class RecordingControlPanel(QWidget):
         dir_layout.addWidget(browse_btn)
 
         config_layout.addRow("Output Dir:", dir_layout)
-
-        # Phase Recording Checkbox
-        self.phase_recording_check = QCheckBox("Aktiviere Day/Night Zyklus")
-        self.phase_recording_check.setChecked(False)
-        self.phase_recording_check.setEnabled(False)
-        self.phase_recording_check.setToolTip(
-            "Tag/Nacht-Phasenwechsel während der Aufnahme aktivieren.\n"
-            "Nur verfügbar wenn Phase Control im Tab 'Phase Config' aktiviert ist."
-        )
-        config_layout.addRow("Phase Recording:", self.phase_recording_check)
-
-        # White LED Dauerbetrieb Checkbox
-        self.white_led_continuous_check = QCheckBox("White LED dauerhaft an (Tagphase)")
-        self.white_led_continuous_check.setChecked(False)
-        self.white_led_continuous_check.setEnabled(False)
-        self.white_led_continuous_check.setToolTip(
-            "White LED bleibt während der gesamten Tagphase dauerhaft eingeschaltet.\n"
-            "Wenn deaktiviert: White LED blinkt nur kurz für jede Aufnahme."
-        )
-        config_layout.addRow("White LED:", self.white_led_continuous_check)
-
-        # Interne Verknüpfung: Phase Recording → White LED Checkbox
-        self.phase_recording_check.toggled.connect(self._on_phase_recording_toggled)
 
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
@@ -322,12 +298,6 @@ class RecordingControlPanel(QWidget):
     # PUBLIC METHODS - Vom Main Widget aufgerufen
     # ========================================================================
 
-    def _on_phase_recording_toggled(self, checked: bool):
-        """Wenn Phase Recording deaktiviert wird, auch White-LED-Checkbox deaktivieren."""
-        self.white_led_continuous_check.setEnabled(checked)
-        if not checked:
-            self.white_led_continuous_check.setChecked(False)
-
     def get_config(self) -> dict:
         """Gibt aktuelle Konfiguration zurück"""
         return {
@@ -335,17 +305,7 @@ class RecordingControlPanel(QWidget):
             "interval_sec": self.interval_spin.value(),
             "experiment_name": self.experiment_name_edit.text(),
             "output_dir": self.output_dir_edit.text(),
-            "phase_recording_enabled": self.phase_recording_check.isChecked(),
-            "white_led_continuous": self.white_led_continuous_check.isChecked(),
         }
-
-    def set_phase_recording_available(self, available: bool):
-        """Aktiviert/deaktiviert die Phase-Recording-Checkbox je nach Phase-Config-Status."""
-        self.phase_recording_check.setEnabled(available)
-        if not available:
-            self.phase_recording_check.setChecked(False)
-            self.white_led_continuous_check.setEnabled(False)
-            self.white_led_continuous_check.setChecked(False)
 
     def update_status(self, status: dict):
         """Update Status-Anzeige"""

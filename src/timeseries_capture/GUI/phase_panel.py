@@ -54,6 +54,27 @@ class PhaseConfigPanel(QWidget):
         self.phase_enabled_check.toggled.connect(self._emit_config_changed)
         enable_layout.addWidget(self.phase_enabled_check)
 
+        self.phase_recording_check = QCheckBox("Aktiviere Day/Night Zyklus für nächste Aufnahme")
+        self.phase_recording_check.setChecked(False)
+        self.phase_recording_check.setEnabled(False)
+        self.phase_recording_check.setToolTip(
+            "Aktiviert den Tag/Nacht-Phasenwechsel für die nächste Aufnahme.\n"
+            "Erfordert dass 'Enable Day/Night Phase Recording' gesetzt ist."
+        )
+        self.phase_recording_check.toggled.connect(self._on_phase_recording_toggled)
+        self.phase_recording_check.toggled.connect(self._emit_config_changed)
+        enable_layout.addWidget(self.phase_recording_check)
+
+        self.white_led_continuous_check = QCheckBox("White LED dauerhaft an (Tagphase)")
+        self.white_led_continuous_check.setChecked(False)
+        self.white_led_continuous_check.setEnabled(False)
+        self.white_led_continuous_check.setToolTip(
+            "White LED bleibt während der gesamten Tagphase dauerhaft eingeschaltet.\n"
+            "Wenn deaktiviert: White LED blinkt nur kurz für jede Aufnahme."
+        )
+        self.white_led_continuous_check.toggled.connect(self._emit_config_changed)
+        enable_layout.addWidget(self.white_led_continuous_check)
+
         enable_group.setLayout(enable_layout)
         layout.addWidget(enable_group)
 
@@ -172,6 +193,17 @@ class PhaseConfigPanel(QWidget):
         self.starting_group.setEnabled(enabled)
         self.led_config_group.setEnabled(enabled)
         self.preview_group.setEnabled(enabled)
+        self.phase_recording_check.setEnabled(enabled)
+        if not enabled:
+            self.phase_recording_check.setChecked(False)
+            self.white_led_continuous_check.setChecked(False)
+            self.white_led_continuous_check.setEnabled(False)
+
+    def _on_phase_recording_toggled(self, checked: bool):
+        """Phase Recording Checkbox wurde geändert"""
+        self.white_led_continuous_check.setEnabled(checked)
+        if not checked:
+            self.white_led_continuous_check.setChecked(False)
 
     def _update_cycle_info(self):
         """Update Cycle Info Label"""
@@ -232,6 +264,8 @@ class PhaseConfigPanel(QWidget):
         """Gibt aktuelle Phase-Konfiguration zurück"""
         return {
             "enabled": self.phase_enabled_check.isChecked(),
+            "phase_recording_enabled": self.phase_recording_check.isChecked(),
+            "white_led_continuous": self.white_led_continuous_check.isChecked(),
             "light_duration_min": self.light_duration_spin.value(),
             "dark_duration_min": self.dark_duration_spin.value(),
             "start_with_light": self.start_light_radio.isChecked(),
