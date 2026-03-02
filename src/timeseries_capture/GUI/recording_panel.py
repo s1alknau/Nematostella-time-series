@@ -6,6 +6,7 @@ from pathlib import Path
 
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -88,6 +89,16 @@ class RecordingControlPanel(QWidget):
         dir_layout.addWidget(browse_btn)
 
         config_layout.addRow("Output Dir:", dir_layout)
+
+        # Phase Recording Checkbox
+        self.phase_recording_check = QCheckBox("Aktiviere Day/Night Zyklus")
+        self.phase_recording_check.setChecked(False)
+        self.phase_recording_check.setEnabled(False)
+        self.phase_recording_check.setToolTip(
+            "Tag/Nacht-Phasenwechsel während der Aufnahme aktivieren.\n"
+            "Nur verfügbar wenn Phase Control im Tab 'Phase Config' aktiviert ist."
+        )
+        config_layout.addRow("Phase Recording:", self.phase_recording_check)
 
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
@@ -305,7 +316,14 @@ class RecordingControlPanel(QWidget):
             "interval_sec": self.interval_spin.value(),
             "experiment_name": self.experiment_name_edit.text(),
             "output_dir": self.output_dir_edit.text(),
+            "phase_recording_enabled": self.phase_recording_check.isChecked(),
         }
+
+    def set_phase_recording_available(self, available: bool):
+        """Aktiviert/deaktiviert die Phase-Recording-Checkbox je nach Phase-Config-Status."""
+        self.phase_recording_check.setEnabled(available)
+        if not available:
+            self.phase_recording_check.setChecked(False)
 
     def update_status(self, status: dict):
         """Update Status-Anzeige"""
