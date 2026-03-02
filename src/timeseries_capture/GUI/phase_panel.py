@@ -65,12 +65,12 @@ class PhaseConfigPanel(QWidget):
         self.phase_recording_check.toggled.connect(self._emit_config_changed)
         enable_layout.addWidget(self.phase_recording_check)
 
-        self.white_led_continuous_check = QCheckBox("White LED dauerhaft an (Tagphase)")
+        self.white_led_continuous_check = QCheckBox("White LED continuous (day phase)")
         self.white_led_continuous_check.setChecked(False)
         self.white_led_continuous_check.setEnabled(False)
         self.white_led_continuous_check.setToolTip(
-            "White LED bleibt während der gesamten Tagphase dauerhaft eingeschaltet.\n"
-            "Wenn deaktiviert: White LED blinkt nur kurz für jede Aufnahme."
+            "White LED stays on continuously throughout the entire light phase.\n"
+            "When disabled: White LED pulses briefly for each frame capture only."
         )
         self.white_led_continuous_check.toggled.connect(self._emit_config_changed)
         enable_layout.addWidget(self.white_led_continuous_check)
