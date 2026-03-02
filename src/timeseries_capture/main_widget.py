@@ -517,6 +517,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 **recording_config,
                 **phase_config,
                 "phase_enabled": phase_active,  # korrekter Key für RecordingConfig
+                "white_led_continuous": phase_active
+                and recording_config.get("white_led_continuous", False),
                 # Legacy single LED powers (for backward compatibility and continuous mode)
                 "ir_led_power": led_powers["ir"],
                 "white_led_power": led_powers["white"],
@@ -613,6 +615,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 experiment_name=recording_config["experiment_name"],
                 output_dir=recording_config["output_dir"],
                 phase_enabled=phase_active,
+                white_led_continuous=phase_active
+                and recording_config.get("white_led_continuous", False),
                 light_duration_min=phase_config.get("light_duration_min", 30),
                 dark_duration_min=phase_config.get("dark_duration_min", 30),
                 ir_led_power=led_powers["ir"],

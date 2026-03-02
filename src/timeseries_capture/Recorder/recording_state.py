@@ -48,6 +48,7 @@ class RecordingConfig:
     start_with_light: bool = True
     dual_light_phase: bool = False
     camera_trigger_latency_ms: int = 20
+    white_led_continuous: bool = False  # White LED bleibt während Tagphase dauerhaft an
 
     # LED Power Config (0-100%)
     # LEGACY: Single power values (for backward compatibility and continuous mode)
