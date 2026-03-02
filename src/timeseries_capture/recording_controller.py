@@ -155,6 +155,7 @@ class RecordingController(QObject):
                 experiment_name=config_dict["experiment_name"],
                 output_dir=config_dict["output_dir"],
                 phase_enabled=phase_enabled,
+                white_led_continuous=config_dict.get("white_led_continuous", False),
                 light_duration_min=config_dict.get("light_duration_min", 30),
                 dark_duration_min=config_dict.get("dark_duration_min", 30),
                 start_with_light=config_dict.get("start_with_light", True),
@@ -166,6 +167,14 @@ class RecordingController(QObject):
                 dark_phase_ir_power=config_dict.get("dark_phase_ir_power", 100),
                 light_phase_ir_power=config_dict.get("light_phase_ir_power", 100),
                 light_phase_white_power=config_dict.get("light_phase_white_power", 50),
+                # Brightness validation
+                brightness_validation_threshold=config_dict.get(
+                    "brightness_validation_threshold", 10.0
+                ),
+                use_full_frame_for_validation=config_dict.get(
+                    "use_full_frame_for_validation", True
+                ),
+                roi_fraction=config_dict.get("roi_fraction", 0.75),
             )
 
             # Start recording
