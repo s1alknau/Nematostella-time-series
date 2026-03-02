@@ -47,6 +47,7 @@ class FrameCaptureService:
         self._current_led_type = None  # 'ir', 'white', or 'dual'
         self._led_is_on = False
         self._pending_sync_complete = False  # Track if we need to read sync response
+        self._white_led_continuous = False  # White LED stays on during full light phase
 
         # Sensor data caching - query periodically to avoid delays
         self._last_temperature = None  # None = not yet queried
@@ -98,48 +99,54 @@ class FrameCaptureService:
             # =================================================================
             pulse_start = time.time()
 
-            # LED is OFF between frames, so we always need to turn it on
             if not self._led_is_on:
-                # Turn ON LED (reuse existing LED type if possible)
-                # OPTIMIZATION: Use logger.debug for LED config change to reduce I/O overhead
-                if led_config_changed:
+                stabilization_sec = self.stabilization_ms / 1000.0
+
+                if self._white_led_continuous:
+                    # White LED ist dauerhaft an (Tagphase-Modus)
+                    if dual_mode:
+                        # White läuft durch — nur IR zusätzlich einschalten
+                        logger.debug("[LED ON] Continuous White active – turning on IR only...")
+                        self.esp32.select_led_type("ir")
+                        self.esp32.led_on()
+                        time.sleep(stabilization_sec)
+                    else:
+                        # White-only: LED bereits an, kein weiterer Schritt nötig
+                        logger.debug(
+                            "[LED ON] Continuous White active – White already on, skip LED on"
+                        )
+                        # Keine Stabilisierungszeit nötig (LED war bereits stabil an)
+                else:
+                    # Normaler Modus: LED jetzt einschalten
+                    if led_config_changed:
+                        logger.debug(
+                            f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}"
+                        )
+                    else:
+                        logger.debug(
+                            f"[LED ON] Turning on {target_led_config} LED (same as previous)"
+                        )
+
+                    if dual_mode:
+                        logger.debug("[LED DUAL ON] Turning on both IR and White LEDs...")
+                        self.esp32.select_led_type("ir")
+                        self.esp32.led_on()
+                        time.sleep(0.01)
+                        self.esp32.select_led_type("white")
+                        self.esp32.led_on()
+                    else:
+                        logger.debug(f"[LED ON] Turning on {led_type} LED...")
+                        self.esp32.select_led_type(led_type)
+                        self.esp32.led_on()
+
+                    time.sleep(stabilization_sec)
                     logger.debug(
-                        f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}"
+                        f"[LED STABLE] Stabilization complete after {stabilization_sec:.3f}s"
                     )
-                else:
-                    logger.debug(f"[LED ON] Turning on {target_led_config} LED (same as previous)")
 
-                if dual_mode:
-                    # Dual mode: Turn on both LEDs
-                    logger.debug("[LED DUAL ON] Turning on both IR and White LEDs...")
-                    # Select IR and turn on
-                    self.esp32.select_led_type("ir")
-                    self.esp32.led_on()
-                    # OPTIMIZATION: Reduce delay from 50ms to 10ms for faster phase transitions
-                    # ESP32 serial commands complete in <10ms, minimal delay needed
-                    time.sleep(0.01)
-                    # Select White and turn on
-                    self.esp32.select_led_type("white")
-                    self.esp32.led_on()
-                else:
-                    # Single LED mode
-                    logger.debug(f"[LED ON] Turning on {led_type} LED...")
-                    self.esp32.select_led_type(led_type)
-                    self.esp32.led_on()
-
-                # Update cached state
                 self._current_led_type = target_led_config
                 self._led_is_on = True
-
-                # ALWAYS wait for LED Stabilization (same time regardless of LED type or config change)
-                stabilization_sec = self.stabilization_ms / 1000.0
-                logger.debug(
-                    f"[LED STABILIZING] Waiting {stabilization_sec:.3f}s for LED to stabilize"
-                )
-                time.sleep(stabilization_sec)
-
                 stabilization_complete = time.time()
-                logger.debug(f"[LED STABLE] Stabilization complete at {stabilization_complete:.3f}")
             else:
                 # This should never happen - LED should be OFF between frames
                 logger.warning("[LED WARNING] LED was already ON - this should not happen!")
@@ -222,17 +229,27 @@ class FrameCaptureService:
             # =================================================================
             # SCHRITT 5: Turn OFF LED after capture
             # =================================================================
-            # LED should only be ON during capture, not between frames
             if self._led_is_on:
                 try:
-                    if target_led_config == "dual":
-                        self.esp32.led_dual_off()
-                        logger.debug("[LED OFF] Both LEDs turned off after capture")
+                    if self._white_led_continuous:
+                        # White LED bleibt an — nur IR abschalten (falls Dual-Modus)
+                        if dual_mode:
+                            self.esp32.led_off("ir")
+                            logger.debug("[LED OFF] IR turned off (White stays on – continuous)")
+                        else:
+                            # White-only: White bleibt an, nichts abschalten
+                            logger.debug("[LED OFF] White stays on (continuous mode)")
                     else:
-                        self.esp32.led_off(led_type)
-                        logger.debug(f"[LED OFF] {led_type.upper()} LED turned off after capture")
+                        # Normaler Modus: alle LEDs abschalten
+                        if target_led_config == "dual":
+                            self.esp32.led_dual_off()
+                            logger.debug("[LED OFF] Both LEDs turned off after capture")
+                        else:
+                            self.esp32.led_off(led_type)
+                            logger.debug(
+                                f"[LED OFF] {led_type.upper()} LED turned off after capture"
+                            )
 
-                    # Mark LED as off, but keep config type for next frame
                     self._led_is_on = False
 
                 except Exception as e:
@@ -287,10 +304,10 @@ class FrameCaptureService:
         This only resets the cache variables - it does NOT physically turn off the LED.
         """
         logger.info("Resetting LED state cache (LED remains physically unchanged)")
-        # Only reset cache variables - don't physically turn off LED
         self._current_led_type = None
         self._led_is_on = False
         self._pending_sync_complete = False
+        self._white_led_continuous = False
 
     def turn_off_led(self):
         """
@@ -302,8 +319,12 @@ class FrameCaptureService:
         Call this at the end of recording to save power.
         """
         try:
-            # CRITICAL: Don't check self._led_is_on - always try to turn off!
-            # The cached state may not match physical state if an error occurred
+            # White LED kontinuierlich? Explizit abschalten
+            if self._white_led_continuous:
+                self.esp32.led_off("white")
+                logger.info("Continuous White LED turned off after recording")
+                self._white_led_continuous = False
+            # Sonstige LEDs abschalten (immer versuchen, unabhängig vom Cache)
             if self._current_led_type == "dual":
                 self.esp32.led_dual_off()
                 logger.info("Both LEDs turned off after recording")
@@ -311,15 +332,38 @@ class FrameCaptureService:
                 self.esp32.led_off(self._current_led_type)
                 logger.info(f"{self._current_led_type.upper()} LED turned off after recording")
             else:
-                # Fallback: turn off both to be safe (we don't know which LED was on)
                 self.esp32.led_dual_off()
                 logger.info("LEDs turned off after recording (fallback - no LED type cached)")
         except Exception as e:
             logger.warning(f"Failed to turn off LED: {e}")
         finally:
-            # Always reset cached state
             self._led_is_on = False
             self._current_led_type = None
+            self._white_led_continuous = False
+
+    def set_white_continuous(self, enabled: bool):
+        """
+        Schaltet die White LED dauerhaft an oder aus (für Tagphase-Modus).
+
+        Wird von RecordingManager bei Phasenübergängen aufgerufen:
+        - enabled=True  → Tagphase beginnt: White LED dauerhaft AN
+        - enabled=False → Nachtphase beginnt: White LED AUS
+        """
+        if enabled and not self._white_led_continuous:
+            try:
+                self.esp32.select_led_type("white")
+                self.esp32.led_on()
+                self._white_led_continuous = True
+                logger.info("[WHITE CONTINUOUS] White LED turned ON (day phase start)")
+            except Exception as e:
+                logger.warning(f"[WHITE CONTINUOUS] Failed to turn on White LED: {e}")
+        elif not enabled and self._white_led_continuous:
+            try:
+                self.esp32.led_off("white")
+                self._white_led_continuous = False
+                logger.info("[WHITE CONTINUOUS] White LED turned OFF (night phase start)")
+            except Exception as e:
+                logger.warning(f"[WHITE CONTINUOUS] Failed to turn off White LED: {e}")
 
     def query_sensors_if_needed(self) -> bool:
         """

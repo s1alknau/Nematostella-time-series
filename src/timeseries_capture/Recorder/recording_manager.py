@@ -767,30 +767,35 @@ class RecordingManager(QObject):
 
         # Determine which LED powers to set based on current phase
         if phase_info.phase == PhaseType.DARK:
-            # Dark phase: Use dark_phase_ir_power for IR LED
+            # Nachtphase: nur IR, White LED dauerhaft aus
             ir_power = config.dark_phase_ir_power
-            white_power = 0  # White LED not used in dark phase
 
             logger.debug(f"[PHASE POWER] Dark phase: Setting IR={ir_power}%")
             self.frame_capture.esp32.set_led_power(ir_power, "ir")
 
+            # White LED kontinuierlichen Modus beenden (Phasenübergang → Nacht)
+            if phase_transition:
+                self.frame_capture.set_white_continuous(False)
+
         else:
-            # Light phase: Use light_phase powers
+            # Tagphase: LED-Powers setzen
             ir_power = config.light_phase_ir_power
             white_power = config.light_phase_white_power
 
             if dual_mode:
-                # Dual LED mode: Set both powers
                 logger.debug(
                     f"[PHASE POWER] Light phase (dual): Setting IR={ir_power}%, White={white_power}%"
                 )
                 self.frame_capture.esp32.set_led_power(ir_power, "ir")
-                time.sleep(0.01)  # Small delay between commands
+                time.sleep(0.01)
                 self.frame_capture.esp32.set_led_power(white_power, "white")
             else:
-                # White-only light phase
                 logger.debug(f"[PHASE POWER] Light phase (white): Setting White={white_power}%")
                 self.frame_capture.esp32.set_led_power(white_power, "white")
+
+            # White LED dauerhaft einschalten (Phasenübergang → Tag)
+            if phase_transition:
+                self.frame_capture.set_white_continuous(True)
 
         return phase_transition
 
