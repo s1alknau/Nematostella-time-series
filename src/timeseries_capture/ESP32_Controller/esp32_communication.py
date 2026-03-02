@@ -144,7 +144,7 @@ class ESP32Communication:
                 try:
                     self.serial_connection.close()
                     logger.debug("Closed existing connection")
-                except:
+                except Exception:
                     pass
 
             # Determine port
@@ -191,12 +191,12 @@ class ESP32Communication:
 
                     self.serial_connection = serial.Serial(**serial_kwargs)
 
-                    # WICHTIG: Längerer Delay für ESP32 Boot
-                    logger.debug("Waiting for ESP32 to boot...")
-                    time.sleep(2.0)  # ERHÖHT von 0.5 auf 2.0 Sekunden
+                    # WICHTIG: ESP32 braucht ~3.5s für Boot + DHT22 Warmup
+                    logger.debug("Waiting for ESP32 to boot (3.5s for DHT22 warmup)...")
+                    time.sleep(3.5)
 
-                    # Clear any boot messages in buffer
-                    self.clear_buffers()
+                    # Clear boot messages aggressively
+                    self.clear_buffers(aggressive=True)
 
                     # Test if ESP32 responds
                     logger.debug("Testing ESP32 response...")
@@ -229,33 +229,47 @@ class ESP32Communication:
 
     def _test_connection(self) -> bool:
         """
-        Testet ob ESP32 antwortet (NEU)
+        Testet ob ESP32 antwortet mit Retry-Logik.
 
         Returns:
             True wenn ESP32 antwortet
         """
-        try:
-            # Send STATUS command (0x02)
-            self.serial_connection.write(bytes([0x02]))
-            self.serial_connection.flush()
+        for attempt in range(3):
+            try:
+                # Clear any leftover data before test
+                if self.serial_connection.in_waiting > 0:
+                    self.serial_connection.read(self.serial_connection.in_waiting)
+                    time.sleep(0.1)
 
-            # Wait for response (increased to 300ms for reliability)
-            time.sleep(0.3)
+                # Send STATUS command (0x02) - expects 5 bytes back
+                self.serial_connection.write(bytes([0x02]))
+                self.serial_connection.flush()
 
-            if self.serial_connection.in_waiting > 0:
-                response = self.serial_connection.read(self.serial_connection.in_waiting)
-                logger.debug(f"Test response: {response.hex()}")
-                # Valid responses are 0x10 (OFF) or 0x11 (ON)
-                if response and (response[0] == 0x10 or response[0] == 0x11):
-                    logger.debug("ESP32 responded correctly to STATUS")
-                    return True
+                # Wait for response with increasing timeout
+                wait_time = 0.5 + (attempt * 0.5)
+                time.sleep(wait_time)
 
-            logger.debug("No valid response from ESP32")
-            return False
+                if self.serial_connection.in_waiting > 0:
+                    response = self.serial_connection.read(self.serial_connection.in_waiting)
+                    logger.debug(f"Test response (attempt {attempt+1}): {response.hex()}")
 
-        except Exception as e:
-            logger.debug(f"Connection test failed: {e}")
-            return False
+                    # STATUS response is 5 bytes: [status][temp_h][temp_l][hum_h][hum_l]
+                    # Check if any byte is a valid status (0x10=OFF or 0x11=ON)
+                    for byte in response:
+                        if byte in (0x10, 0x11):
+                            logger.debug("ESP32 responded correctly to STATUS")
+                            return True
+
+                logger.debug(f"No valid response (attempt {attempt+1}/{3})")
+
+            except Exception as e:
+                logger.debug(f"Connection test attempt {attempt+1} failed: {e}")
+
+            if attempt < 2:
+                time.sleep(0.5)
+
+        logger.debug("No valid response from ESP32 after all attempts")
+        return False
 
     def disconnect(self):
         """Trennt Verbindung zum ESP32"""
@@ -295,7 +309,7 @@ class ESP32Communication:
                 _ = self.serial_connection.in_waiting
                 self.connected = True
                 return True
-            except:
+            except Exception:
                 self.connected = False
                 return False
 
@@ -551,8 +565,6 @@ class ESP32Communication:
                 else -1
             ),
             "uptime_seconds": (
-                time.time() - self._connection_start_time
-                if self._connection_start_time > 0
-                else 0
+                time.time() - self._connection_start_time if self._connection_start_time > 0 else 0
             ),
         }

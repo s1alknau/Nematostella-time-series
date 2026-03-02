@@ -49,10 +49,10 @@ class FrameCaptureService:
         self._pending_sync_complete = False  # Track if we need to read sync response
 
         # Sensor data caching - query periodically to avoid delays
-        self._last_temperature = 0.0
-        self._last_humidity = 0.0
+        self._last_temperature = None  # None = not yet queried
+        self._last_humidity = None  # None = not yet queried
         self._sensor_query_interval = 5  # Query every N frames
-        self._frames_since_sensor_query = 0
+        self._frames_since_sensor_query = 5  # Force query on first call
 
         logger.info(
             f"FrameCaptureService initialized (stab={stabilization_ms}ms, exp={exposure_ms}ms)"
@@ -170,9 +170,9 @@ class FrameCaptureService:
             # to avoid timing interference with frame capture
             # This ensures sensors are queried after frame save, not during capture
 
-            # Use current cached sensor values
-            temperature = self._last_temperature
-            humidity = self._last_humidity
+            # Use current cached sensor values (use -1 if not yet queried)
+            temperature = self._last_temperature if self._last_temperature is not None else -1.0
+            humidity = self._last_humidity if self._last_humidity is not None else -1.0
 
             # Increment counter (actual query happens in recording_manager between frames)
             self._frames_since_sensor_query += 1
@@ -336,11 +336,29 @@ class FrameCaptureService:
         if should_query:
             try:
                 sensor_data = self.esp32.get_sensor_data()
+                print(f"[SENSOR] Raw data from ESP32: {sensor_data}")
                 if sensor_data:
-                    self._last_temperature = sensor_data.get("temperature", 0.0)
-                    self._last_humidity = sensor_data.get("humidity", 0.0)
+                    # Only update if we got valid values (not None, not 0)
+                    temp = sensor_data.get("temperature")
+                    hum = sensor_data.get("humidity")
+
+                    # Validate temperature (5 to 40°C is realistic range for lab environment)
+                    # Note: 0°C is rejected as it's typically a sensor error value
+                    if temp is not None and 5 <= temp <= 40:
+                        self._last_temperature = temp
+                    else:
+                        logger.debug(
+                            f"[SENSOR] Invalid temperature value: {temp}, keeping previous"
+                        )
+
+                    # Validate humidity (0-100% is valid range)
+                    if hum is not None and 0 <= hum <= 100:
+                        self._last_humidity = hum
+                    else:
+                        logger.debug(f"[SENSOR] Invalid humidity value: {hum}, keeping previous")
+
                     logger.debug(
-                        f"[SENSOR] T={self._last_temperature:.1f}°C, H={self._last_humidity:.1f}% (queried between frames)"
+                        f"[SENSOR] T={self._last_temperature}°C, H={self._last_humidity}% (queried between frames)"
                     )
                 else:
                     # Sensor read failed, keep previous values

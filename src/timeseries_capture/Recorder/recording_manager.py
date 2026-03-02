@@ -9,6 +9,8 @@ Verantwortlich für:
 """
 
 import logging
+import os
+import sys
 import threading
 import time
 from typing import Optional
@@ -22,37 +24,34 @@ from .recording_state import RecordingConfig, RecordingState
 try:
     from qtpy.QtCore import QObject
     from qtpy.QtCore import Signal as pyqtSignal
-except:
-    try:
-        from PyQt5.QtCore import QObject, pyqtSignal
-    except:
+except ImportError:
 
-        class QObject:
-            pass
+    class QObject:  # type: ignore[no-redef]
+        pass
 
-        class _SignalShim:
-            def __init__(self, *_a, **_k):
-                self._subs = []
+    class _SignalShim:
+        def __init__(self, *_a, **_k):
+            self._subs = []
 
-            def connect(self, slot):
-                if callable(slot):
-                    self._subs.append(slot)
+        def connect(self, slot):
+            if callable(slot):
+                self._subs.append(slot)
 
-            def emit(self, *args, **kwargs):
-                for fn in list(self._subs):
-                    try:
-                        fn(*args, **kwargs)
-                    except:
-                        pass
+        def emit(self, *args, **kwargs):
+            for fn in list(self._subs):
+                try:
+                    fn(*args, **kwargs)
+                except Exception:
+                    pass
 
-            def disconnect(self, slot=None):
-                if slot is None:
-                    self._subs.clear()
-                else:
-                    self._subs = [f for f in self._subs if f is not slot]
+        def disconnect(self, slot=None):
+            if slot is None:
+                self._subs.clear()
+            else:
+                self._subs = [f for f in self._subs if f is not slot]
 
-        def pyqtSignal(*_a, **_k):
-            return _SignalShim()
+    def pyqtSignal(*_a, **_k):  # type: ignore[no-redef]
+        return _SignalShim()
 
 
 logger = logging.getLogger(__name__)
@@ -261,6 +260,20 @@ class RecordingManager(QObject):
                     )
 
             logger.info("=" * 60)
+
+            # ================================================================
+            # Initial sensor query before recording starts
+            # ================================================================
+            # This ensures we have valid temperature/humidity values for frame 0
+            if self.frame_capture:
+                logger.info("Querying initial sensor values...")
+                self.frame_capture.query_sensors_if_needed()
+                logger.info("Initial sensor query complete")
+
+            # ================================================================
+            # Set process priority to HIGH for stable timing
+            # ================================================================
+            self._set_high_priority()
 
             # Start recording state
             self.state.start_recording()
@@ -637,9 +650,45 @@ class RecordingManager(QObject):
             logger.error(f"Error capturing frame: {e}")
             self.error_occurred.emit(f"Capture error: {e}")
 
+    def _set_high_priority(self):
+        """Set process priority to HIGH for stable frame timing"""
+        try:
+            if sys.platform == "win32":
+                import ctypes
+
+                # Get current process handle
+                handle = ctypes.windll.kernel32.GetCurrentProcess()
+                # HIGH_PRIORITY_CLASS = 0x00000080
+                ctypes.windll.kernel32.SetPriorityClass(handle, 0x00000080)
+                logger.info("✅ Process priority set to HIGH for stable timing")
+                print("✅ Process priority set to HIGH for stable timing")
+            else:
+                # Linux/macOS: use nice
+                os.nice(-10)  # Higher priority (requires root on Linux)
+                logger.info("✅ Process nice value set to -10")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not set high priority: {e}")
+            print(f"⚠️ Could not set high priority: {e}")
+
+    def _restore_normal_priority(self):
+        """Restore normal process priority after recording"""
+        try:
+            if sys.platform == "win32":
+                import ctypes
+
+                handle = ctypes.windll.kernel32.GetCurrentProcess()
+                # NORMAL_PRIORITY_CLASS = 0x00000020
+                ctypes.windll.kernel32.SetPriorityClass(handle, 0x00000020)
+                logger.info("Process priority restored to NORMAL")
+        except Exception as e:
+            logger.warning(f"Could not restore priority: {e}")
+
     def _finalize_recording(self):
         """Finalisiert Recording"""
         logger.info("Finalizing recording...")
+
+        # Restore normal priority
+        self._restore_normal_priority()
 
         try:
             # Turn off LED to save power
