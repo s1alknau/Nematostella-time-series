@@ -54,12 +54,12 @@ class PhaseConfigPanel(QWidget):
         self.phase_enabled_check.toggled.connect(self._emit_config_changed)
         enable_layout.addWidget(self.phase_enabled_check)
 
-        self.phase_recording_check = QCheckBox("Aktiviere Day/Night Zyklus für nächste Aufnahme")
+        self.phase_recording_check = QCheckBox("Enable Day/Night Cycle for recording")
         self.phase_recording_check.setChecked(False)
         self.phase_recording_check.setEnabled(False)
         self.phase_recording_check.setToolTip(
-            "Aktiviert den Tag/Nacht-Phasenwechsel für die nächste Aufnahme.\n"
-            "Erfordert dass 'Enable Day/Night Phase Recording' gesetzt ist."
+            "Enables Day/Night phase switching for the next recording.\n"
+            "Requires 'Enable Day/Night Phase Recording' to be checked."
         )
         self.phase_recording_check.toggled.connect(self._on_phase_recording_toggled)
         self.phase_recording_check.toggled.connect(self._emit_config_changed)
