@@ -88,7 +88,7 @@ v2.0.0 (2024) - Refactored Architecture:
 # PACKAGE METADATA
 # ============================================================================
 
-__version__ = "2.4.1-black-frame-fix"
+__version__ = "2.4.3"
 __author__ = "Nematostella Timelapse Team"
 __description__ = "Modular timelapse recording system for Nematostella experiments"
 
@@ -336,7 +336,7 @@ def validate_installation() -> dict:
             ports = find_esp32_ports()
             results["hardware"]["esp32_ports_found"] = len(ports)
             results["hardware"]["esp32_ports"] = [p["device"] for p in ports]
-        except:
+        except Exception:
             results["hardware"]["esp32_ports_found"] = 0
 
     return results

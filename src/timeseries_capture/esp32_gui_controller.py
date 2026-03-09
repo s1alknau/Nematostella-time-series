@@ -219,7 +219,7 @@ class ESP32GUIController(QObject):
 
             # Build hardware info dict
             hw_info = {
-                "firmware": "ESP32 v2.2",  # Updated version
+                "firmware": "ESP32 v2.3",
                 "temperature": sensor_data["temperature"] if sensor_data else None,
                 "humidity": sensor_data["humidity"] if sensor_data else None,
                 "uptime": stats.get("uptime_seconds", 0),  # Fixed: use actual uptime
@@ -496,7 +496,7 @@ class ESP32GUIController(QObject):
         if self.esp32:
             try:
                 self.esp32.cleanup()
-            except:
+            except Exception:
                 pass
             self.esp32 = None
 
