@@ -9,9 +9,12 @@
 // ========================================================================
 // NEMATOSTELLA ESP32 FIRMWARE - PYTHON-COMPATIBLE VERSION
 // ========================================================================
-// Version: 2.3 - Multi-Board Auto-Detection
-// Date: 2025-12-15
-// NEW IN v2.3:
+// Version: 2.4 - Sensor improvements
+// Date: 2026-02-19
+// NEW IN v2.4:
+// - CMD_STATUS now reads fresh sensor values directly (not cached averages)
+// - Filtered values used only as fallback when sensor read fails
+// PREVIOUS (v2.3):
 // - Automatic board detection (ESP32 vs ESP32-S3)
 // - Auto-configured pin assignments based on detected board
 // - Single firmware for both ESP32 DevKit and ESP32-S3-BOX-3
@@ -175,7 +178,7 @@ void setup() {
 
   // Always print this first message (regardless of DEBUG_ENABLED)
   Serial.println("\n\n========================================");
-  Serial.println("ESP32 Nematostella Controller v2.3 STARTING");
+  Serial.println("ESP32 Nematostella Controller v2.4 STARTING");
   Serial.print("Board Type: ");
   Serial.println(BOARD_TYPE);
   Serial.println("========================================\n");
@@ -183,7 +186,7 @@ void setup() {
 
   // Display board information
   debugPrintln("========================================");
-  debugPrint("ESP32 Nematostella Controller v2.3");
+  debugPrint("ESP32 Nematostella Controller v2.4");
   debugPrintln("");
   debugPrint("Detected Board: ");
   debugPrintln(BOARD_TYPE);
