@@ -584,15 +584,7 @@ class DataManager:
 
             try:
                 # Create HDF5 file
-                # rdcc_nbytes: 256MB chunk cache (default 1MB is too small for 8MB frames)
-                # rdcc_nslots: prime number ~2x expected frames in cache (256MB/8MB=32 -> 67)
-                self.hdf5_file = h5py.File(
-                    self.current_filepath,
-                    "w",
-                    rdcc_nbytes=256 * 1024 * 1024,
-                    rdcc_nslots=67,
-                    libver="latest",
-                )
+                self.hdf5_file = h5py.File(self.current_filepath, "w")
 
                 # Create groups
                 self.hdf5_file.create_group("images")
