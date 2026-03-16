@@ -134,7 +134,9 @@ class RecordingManager(QObject):
             # Setup Data Manager
             from ..Datamanager import TelemetryMode
 
-            self.data_manager = DataManager(telemetry_mode=TelemetryMode.STANDARD, chunk_size=512)
+            self.data_manager = DataManager(
+                telemetry_mode=TelemetryMode.STANDARD, chunk_size=512, flush_interval=100
+            )
 
             # Create recording file
             recording_file = self.data_manager.create_recording_file(
