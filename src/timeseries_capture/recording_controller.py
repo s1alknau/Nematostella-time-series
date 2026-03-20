@@ -175,6 +175,8 @@ class RecordingController(QObject):
                     "use_full_frame_for_validation", True
                 ),
                 roi_fraction=config_dict.get("roi_fraction", 0.75),
+                # Output format
+                output_format=config_dict.get("output_format", "hdf5"),
             )
 
             # Start recording

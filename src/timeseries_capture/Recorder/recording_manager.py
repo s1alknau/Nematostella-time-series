@@ -93,7 +93,7 @@ class RecordingManager(QObject):
         self.frame_capture = frame_capture_service
         self.state = RecordingState()
         self.phase_manager: Optional[PhaseManager] = None
-        self.data_manager: Optional[DataManager] = None
+        self.data_manager: Optional[DataManager] = None  # also assigned DataManagerZarr at runtime
 
         # Recording thread
         self._recording_thread: Optional[threading.Thread] = None
@@ -134,10 +134,22 @@ class RecordingManager(QObject):
             # Setup Data Manager
             from ..Datamanager import TelemetryMode
 
-            self.data_manager = DataManager(telemetry_mode=TelemetryMode.STANDARD, chunk_size=512)
+            if getattr(config, "output_format", "hdf5") == "zarr":
+                from ..Datamanager.data_manager_zarr import DataManagerZarr
+                from ..Datamanager.data_manager_zarr import TelemetryMode as ZarrTelemetryMode
+
+                self.data_manager = DataManagerZarr(  # type: ignore[assignment]
+                    telemetry_mode=ZarrTelemetryMode.STANDARD, chunk_size=512
+                )
+                logger.info("Using Zarr data manager")
+            else:
+                self.data_manager = DataManager(
+                    telemetry_mode=TelemetryMode.STANDARD, chunk_size=512
+                )
+                logger.info("Using HDF5 data manager")
 
             # Create recording file
-            recording_file = self.data_manager.create_recording_file(
+            recording_file = self.data_manager.create_recording_file(  # type: ignore[union-attr]
                 output_dir=config.output_dir,
                 experiment_name=config.experiment_name,
                 timestamped=True,
@@ -147,7 +159,7 @@ class RecordingManager(QObject):
                 raise RuntimeError("Failed to create recording file")
 
             # Set recording configuration
-            self.data_manager.set_recording_config(
+            self.data_manager.set_recording_config(  # type: ignore[union-attr]
                 {
                     "duration_minutes": config.duration_min,
                     "interval_seconds": config.interval_sec,
@@ -284,7 +296,7 @@ class RecordingManager(QObject):
             # The Data Manager's recording_start_time was set earlier during
             # create_recording_file(), but we need it to match the actual
             # recording start time for proper timestamp calculation
-            self.data_manager.recording_start_time = self.state.start_time
+            self.data_manager.recording_start_time = self.state.start_time  # type: ignore[union-attr]
             logger.info(f"Data Manager start time synchronized: {self.state.start_time:.3f}")
 
             # Start phase recording

@@ -29,6 +29,7 @@ dependencies = [
     "magicgui",
     "qtpy>=2.0",
     "h5py>=3.0",          # For HDF5 data storage
+    "zarr>=2.10",         # For Zarr data storage (optional format)
     "pyserial>=3.5",      # For ESP32 communication
     "Pillow>=9.0",        # For image I/O (TIFF, PNG)
 ]
