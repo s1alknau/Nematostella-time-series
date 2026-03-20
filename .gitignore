@@ -123,3 +123,5 @@ Firmware/LED_Nematostella/CHANGELOG_v2.3.md
 # Claude working directories
 Firmware/LED_Nematostella/.claude/
 .claude/settings.local.json
+scripts/timing_simulation.py
+scripts/timing_simulation_result.png
