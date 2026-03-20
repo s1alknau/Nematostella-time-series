@@ -646,3 +646,47 @@ class DataManagerZarr:
         if self.current_filepath:
             return str(self.current_filepath.parent)
         return None
+
+    def save_roi_masks(self, masks: list[np.ndarray]) -> bool:
+        """
+        Save ROI masks to the Zarr store under rois/masks (N, H, W) uint8.
+
+        Called once after ROI detection, before or during recording.
+        Compatible with napari-hdf5-activity: masks are binary (0/255) uint8 arrays.
+
+        Args:
+            masks: List of binary uint8 masks, each shape (H, W)
+
+        Returns:
+            True on success
+        """
+        if self._root is None:
+            logger.error("save_roi_masks: no Zarr store open")
+            return False
+        if not masks:
+            logger.warning("save_roi_masks: empty masks list, skipping")
+            return True
+        try:
+            mask_array = np.stack(masks, axis=0)  # (N, H, W) uint8
+            rois_group = self._root.require_group("rois")
+            if "masks" in rois_group:
+                del rois_group["masks"]
+            rois_group.create_array(
+                "masks",
+                data=mask_array,
+                dtype=np.uint8,
+                chunks=(1, mask_array.shape[1], mask_array.shape[2]),
+            )
+            rois_group.attrs["n_rois"] = len(masks)
+            rois_group.attrs["mask_shape"] = list(mask_array.shape[1:])
+            logger.info(f"Saved {len(masks)} ROI masks to Zarr store")
+            return True
+        except Exception as exc:
+            logger.error(f"save_roi_masks failed: {exc}")
+            return False
+
+    def get_zarr_path(self) -> str | None:
+        """Return the path to the current Zarr store, or None if not open."""
+        if self.current_filepath:
+            return str(self.current_filepath)
+        return None

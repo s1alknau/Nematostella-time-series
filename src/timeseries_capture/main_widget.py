@@ -23,6 +23,7 @@ from .camera_adapters import create_camera_adapter
 from .esp32_gui_controller import ESP32GUIController
 from .GUI.esp32_connection_panel import ESP32ConnectionPanel
 from .GUI.led_control_panel import LEDControlPanel
+from .GUI.live_analysis_panel import LiveAnalysisPanel
 from .GUI.log_panel import LogPanel
 from .GUI.phase_panel import PhaseConfigPanel
 from .GUI.recording_panel import RecordingControlPanel
@@ -66,6 +67,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.multi_camera_controller = None
         self.camera_system_config = None
         self._multi_camera_mode = False
+
+        # Live analysis worker (started when Zarr recording begins)
+        self._live_analysis_worker = None
 
         # Calibration results storage (for per-phase LED power)
         # These are set by calibration and used when starting phase recordings
@@ -111,6 +115,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.recording_panel = RecordingControlPanel()
         self.phase_panel = PhaseConfigPanel()
         self.led_panel = LEDControlPanel()
+        self.live_analysis_panel = LiveAnalysisPanel()
         self.log_panel = LogPanel()
 
         # Add tabs
@@ -118,6 +123,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.tabs.addTab(self.recording_panel, "📹 Recording")
         self.tabs.addTab(self.phase_panel, "🌓 Phase Config")
         self.tabs.addTab(self.led_panel, "💡 LED Control")
+        self.tabs.addTab(self.live_analysis_panel, "📊 Live Analysis")
         self.tabs.addTab(self.log_panel, "📋 System Log")
 
         # Multi-camera panels (will be populated after config is loaded)
@@ -147,6 +153,10 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.led_panel.led_off_requested.connect(self._on_led_off_requested)
         self.led_panel.led_power_changed.connect(self._on_led_power_changed)
         self.led_panel.calibration_requested.connect(self._on_calibration_requested)
+
+        # Live Analysis Panel
+        self.live_analysis_panel.capture_frame_requested.connect(self._on_capture_preview_frame)
+        self.live_analysis_panel.rois_detected.connect(self._on_rois_detected)
 
     def _load_camera_system_config(self):
         """Load camera system configuration if available"""
@@ -346,6 +356,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
         # Recording errors
         self.recording_controller.error_occurred.connect(self._on_recording_error)
+
+        # Zarr path ready → start live analysis worker
+        self.recording_controller.zarr_path_ready.connect(self._on_zarr_path_ready)
 
     def _start_status_updates(self):
         """Start periodic status updates"""
@@ -726,6 +739,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             # Update recording panel
             self.recording_panel.update_status(status)
 
+            # Stop live analysis worker when recording finishes
+            if not status.get("recording", False) and self._live_analysis_worker is not None:
+                self._stop_live_analysis_worker()
+                self.log_panel.add_log("📊 Live analysis worker stopped", "INFO")
+
             # Update status panel
             rec_status = {
                 "recording": status.get("recording", False),
@@ -748,6 +766,69 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         """Handle recording error from controller"""
         self.log_panel.add_log(f"❌ Recording error: {error_msg}", "ERROR")
         self._show_error("Recording Error", error_msg)
+
+    # ========================================================================
+    # LIVE ANALYSIS (GUI Signals)
+    # ========================================================================
+
+    def _on_capture_preview_frame(self):
+        """Grab a live frame from the camera and send it to the live analysis panel."""
+        if not self.camera_adapter or not self.camera_adapter.is_available():
+            self.log_panel.add_log("⚠️ Camera not available for preview frame", "WARNING")
+            return
+        try:
+            frame = self.camera_adapter.get_frame()
+            if frame is not None:
+                self.live_analysis_panel.set_preview_frame(frame)
+                self.log_panel.add_log("📷 Preview frame captured for ROI detection", "INFO")
+            else:
+                self.log_panel.add_log("⚠️ Camera returned no frame", "WARNING")
+        except Exception as exc:
+            self.log_panel.add_log(f"❌ Preview frame capture failed: {exc}", "ERROR")
+            logger.error(f"Preview frame capture failed: {exc}")
+
+    def _on_rois_detected(self, masks: list):
+        """ROI masks detected in live analysis panel — forward to recording controller."""
+        if self.recording_controller:
+            self.recording_controller.set_roi_masks(masks)
+            self.log_panel.add_log(f"✅ {len(masks)} ROI mask(s) stored for recording", "INFO")
+
+    def _on_zarr_path_ready(self, zarr_path: str):
+        """Zarr store is open — start live analysis worker."""
+        masks = self.live_analysis_panel.get_masks()
+        if not masks:
+            self.log_panel.add_log(
+                "⚠️ Live analysis skipped: no ROIs detected. Use the Live Analysis tab first.",
+                "WARNING",
+            )
+            return
+
+        # Stop any existing worker
+        self._stop_live_analysis_worker()
+
+        from .Analysis.live_analysis_worker import LiveAnalysisWorker
+
+        self._live_analysis_worker = LiveAnalysisWorker(
+            zarr_path=zarr_path, masks=masks, interval_sec=20
+        )
+        self._live_analysis_worker.results_ready.connect(
+            self.live_analysis_panel.update_activity_plot
+        )
+        self._live_analysis_worker.start()
+        self.log_panel.add_log(
+            f"📊 Live analysis started ({len(masks)} ROIs, updating every 20s)", "INFO"
+        )
+        # Switch to live analysis tab
+        live_tab_index = self.tabs.indexOf(self.live_analysis_panel)
+        if live_tab_index >= 0:
+            self.tabs.setCurrentIndex(live_tab_index)
+
+    def _stop_live_analysis_worker(self):
+        """Stop and clean up the live analysis worker if running."""
+        if self._live_analysis_worker is not None:
+            self._live_analysis_worker.stop()
+            self._live_analysis_worker.wait(3000)
+            self._live_analysis_worker = None
 
     # ========================================================================
     # LED CONTROL (GUI Signals)
@@ -1231,6 +1312,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 self.multi_camera_controller.disconnect_all()
             except Exception as e:
                 logger.error(f"Multi-camera controller cleanup error: {e}")
+
+        # Stop live analysis worker
+        self._stop_live_analysis_worker()
 
         # Cleanup recording controller
         if self.recording_controller:

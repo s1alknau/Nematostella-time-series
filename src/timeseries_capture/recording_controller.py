@@ -11,6 +11,7 @@ Verantwortlich für:
 import logging
 from typing import Optional
 
+import numpy as np
 from qtpy.QtCore import QObject
 from qtpy.QtCore import Signal as pyqtSignal
 
@@ -33,6 +34,7 @@ class RecordingController(QObject):
     # Signals für GUI Updates
     status_updated = pyqtSignal(dict)  # Recording status
     error_occurred = pyqtSignal(str)  # Error message
+    zarr_path_ready = pyqtSignal(str)  # Emitted when Zarr store is open (path for live analysis)
 
     def __init__(
         self,
@@ -52,6 +54,9 @@ class RecordingController(QObject):
         # Recording components (initialized when needed)
         self.frame_capture_service: Optional[FrameCaptureService] = None
         self.recording_manager: Optional[RecordingManager] = None
+
+        # ROI masks for live analysis (set before starting recording)
+        self._roi_masks: list[np.ndarray] = []
 
         logger.info("RecordingController initialized")
 
@@ -184,6 +189,9 @@ class RecordingController(QObject):
 
             if success:
                 logger.info("Recording started successfully")
+                # Save ROI masks and emit Zarr path for live analysis (Zarr format only)
+                if config.output_format == "zarr" and self._roi_masks:
+                    self._save_roi_masks_and_notify()
             else:
                 logger.error("Failed to start recording")
                 self.error_occurred.emit("Failed to start recording")
@@ -194,6 +202,34 @@ class RecordingController(QObject):
             logger.error(f"Error starting recording: {e}")
             self.error_occurred.emit(f"Start error: {e}")
             return False
+
+    # ========================================================================
+    # ROI MASK SUPPORT
+    # ========================================================================
+
+    def set_roi_masks(self, masks: list[np.ndarray]):
+        """
+        Store ROI masks detected by the live analysis panel.
+        Called before start_recording(); masks are saved to Zarr on recording start.
+        """
+        self._roi_masks = masks
+        logger.info(f"RecordingController: {len(masks)} ROI mask(s) stored")
+
+    def _save_roi_masks_and_notify(self):
+        """Save ROI masks to active Zarr store and emit zarr_path_ready signal."""
+        try:
+            dm = self.recording_manager.data_manager  # type: ignore[union-attr]
+            zarr_path = getattr(dm, "get_zarr_path", lambda: None)()
+            if zarr_path is None:
+                logger.warning("_save_roi_masks_and_notify: zarr path not available yet")
+                return
+            save_masks = getattr(dm, "save_roi_masks", None)
+            if save_masks:
+                save_masks(self._roi_masks)
+            self.zarr_path_ready.emit(zarr_path)
+            logger.info(f"Zarr path emitted for live analysis: {zarr_path}")
+        except Exception as exc:
+            logger.error(f"_save_roi_masks_and_notify failed: {exc}")
 
     def stop_recording(self):
         """Stoppt Recording"""
