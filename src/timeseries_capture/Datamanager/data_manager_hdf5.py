@@ -26,77 +26,221 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# ASYNC HDF5 FLUSH HELPER (v2.4 Optimization)
+# ASYNC HDF5 WRITE-BEHIND QUEUE (v2.5 Optimization)
 # ============================================================================
 
 
-class AsyncHDF5Flusher:
+class AsyncHDF5Writer:
     """
-    Background thread that flushes HDF5 files asynchronously.
-    Prevents blocking the main recording thread during disk sync operations.
+    Write-behind queue that completely decouples HDF5 disk I/O from the
+    recording thread, eliminating timing spikes caused by synchronous writes.
 
-    Usage:
-        flusher = AsyncHDF5Flusher(hdf5_file, ts_writer)
-        flusher.request_flush()  # Non-blocking
-        flusher.shutdown()       # At end of recording
+    The recording thread calls enqueue() and returns in microseconds.
+    A single background worker drains the queue and performs all HDF5 I/O
+    (frame write + 17 timeseries datasets + periodic flush).
+
+    Memory usage is bounded:
+        max RAM overhead = max_queue_size × frame_bytes
+        e.g. 32 × 2 MB (1024² uint16) = 64 MB
+
+    Thread safety model:
+        - Recording thread: timing/counter updates + enqueue() only
+        - Writer thread: all HDF5 I/O (no shared HDF5 state with other threads)
     """
 
-    def __init__(self, hdf5_file: h5py.File, ts_writer):
-        self.hdf5_file = hdf5_file
-        self.ts_writer = ts_writer
-        self._flush_queue: queue.Queue = queue.Queue(maxsize=10)
-        self._shutdown = threading.Event()
-        self._thread = threading.Thread(target=self._flush_worker, daemon=True)
+    _SENTINEL = object()  # signals graceful shutdown
+
+    def __init__(
+        self,
+        ts_writer,
+        hdf5_file: h5py.File,
+        flush_interval: int = 50,
+        max_queue_size: int = 32,
+    ):
+        """
+        Args:
+            ts_writer: ChunkedTimeseriesWriter instance
+            hdf5_file: Open h5py.File (for flush)
+            flush_interval: Flush HDF5 buffers every N frames (default 50)
+            max_queue_size: Max frames held in RAM queue (default 32).
+                Increase only if disk is consistently slower than capture rate.
+        """
+        self._ts_writer = ts_writer
+        self._hdf5_file = hdf5_file
+        self._flush_interval = flush_interval
+
+        self._queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        self._shutdown_event = threading.Event()
+
+        # Stats (read by recording thread — only written by worker, so no lock needed
+        # for approximate values; finalize reads after join so exact)
+        self.frames_written = 0
+        self.write_errors = 0
+        self._max_queue_depth = 0
+
+        self._thread = threading.Thread(target=self._worker, daemon=True, name="HDF5-WriteWorker")
         self._thread.start()
-        logger.info("Async HDF5 flusher started")
+        logger.info(
+            f"AsyncHDF5Writer started (queue={max_queue_size}, flush_every={flush_interval})"
+        )
 
-    def request_flush(self):
-        """Request async flush (non-blocking)"""
+    # ------------------------------------------------------------------
+    # Recording-thread API
+    # ------------------------------------------------------------------
+
+    def enqueue(
+        self,
+        frame_data: np.ndarray,
+        frame_index: int,
+        frame_number: int,
+        images_dataset: h5py.Dataset,
+        image_shape: tuple,
+        images_max_frames: int,
+        frame_metadata: dict,
+        esp32_timing: dict,
+        python_timing: dict,
+    ) -> None:
+        """
+        Enqueue a frame write. Returns immediately unless queue is full.
+
+        frame_data is copied here so the camera buffer can be reused
+        immediately after this call returns.
+
+        If queue is full (disk slower than capture rate), this blocks
+        until space is available (back-pressure, no frame loss).
+        """
+        depth = self._queue.qsize()
+        if depth > self._max_queue_depth:
+            self._max_queue_depth = depth
+            if depth > self._queue.maxsize // 2:
+                logger.warning(
+                    f"HDF5 write queue at {depth}/{self._queue.maxsize} — disk may be slow"
+                )
+
+        item = {
+            "frame_data": frame_data.copy(),  # decouple from camera buffer
+            "frame_index": frame_index,
+            "frame_number": frame_number,
+            "img_ds": images_dataset,
+            "img_shape": image_shape,
+            "img_max_frames": images_max_frames,
+            "frame_metadata": frame_metadata,
+            "esp32_timing": esp32_timing,
+            "python_timing": python_timing,
+        }
+
+        # Block if queue full — prevents unbounded RAM growth.
+        # Timeout is generous (60 s); if disk is this slow, something is wrong.
         try:
-            # Put flush request in queue (with timeout to prevent blocking)
-            self._flush_queue.put("FLUSH", timeout=0.1)
+            self._queue.put(item, timeout=60.0)
         except queue.Full:
-            logger.warning("Flush queue full, skipping this flush request")
+            logger.error(
+                "HDF5 write queue full after 60s timeout — frame dropped! "
+                "Disk is too slow for the configured capture rate."
+            )
+            self.write_errors += 1
 
-    def _flush_worker(self):
-        """Background worker thread that performs actual flushes"""
-        while not self._shutdown.is_set():
-            try:
-                # Wait for flush request (with timeout for responsive shutdown)
-                request = self._flush_queue.get(timeout=0.5)
+    # ------------------------------------------------------------------
+    # Shutdown
+    # ------------------------------------------------------------------
 
-                if request == "FLUSH":
-                    flush_start = time.time()
+    def drain_and_shutdown(self, timeout: float = 300.0) -> None:
+        """
+        Wait for all queued writes to complete, then stop worker.
+        Must be called before finalize_recording().
 
-                    # Perform flush operations
-                    self.ts_writer.flush()
-                    self.hdf5_file.flush()
-
-                    flush_duration = (time.time() - flush_start) * 1000
-                    logger.debug(f"Async HDF5 flush completed in {flush_duration:.1f}ms")
-
-            except queue.Empty:
-                # Timeout - check shutdown flag and continue
-                continue
-            except Exception as e:
-                logger.error(f"Async flush worker error: {e}")
-
-    def shutdown(self):
-        """Shutdown flush worker and ensure final flush"""
-        logger.info("Shutting down async HDF5 flusher...")
-        self._shutdown.set()
-
-        # Perform final synchronous flush to ensure all data is written
+        Args:
+            timeout: Max seconds to wait (default 5 min — safe for large queues).
+        """
+        pending = self._queue.qsize()
+        if pending:
+            logger.info(f"AsyncHDF5Writer: draining {pending} queued frame(s)...")
+        self._shutdown_event.set()
         try:
-            self.ts_writer.flush()
-            self.hdf5_file.flush()
-            logger.info("Final HDF5 flush completed")
-        except Exception as e:
-            logger.error(f"Final flush error: {e}")
+            self._queue.put(self._SENTINEL, timeout=5.0)
+        except queue.Full:
+            logger.error("Could not send shutdown sentinel — queue full")
+        self._thread.join(timeout=timeout)
+        if self._thread.is_alive():
+            logger.error(f"AsyncHDF5Writer drain timed out after {timeout}s!")
+        else:
+            logger.info(
+                f"AsyncHDF5Writer stopped (written={self.frames_written}, "
+                f"errors={self.write_errors}, peak_queue={self._max_queue_depth})"
+            )
 
-        # Wait for worker thread to exit
-        self._thread.join(timeout=2.0)
-        logger.info("Async HDF5 flusher stopped")
+    # ------------------------------------------------------------------
+    # Worker thread
+    # ------------------------------------------------------------------
+
+    def _worker(self) -> None:
+        logger.debug("AsyncHDF5Writer worker thread started")
+        frames_since_flush = 0
+
+        while True:
+            # Block until item available (500 ms timeout for shutdown check)
+            try:
+                item = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                if self._shutdown_event.is_set():
+                    break
+                continue
+
+            if item is self._SENTINEL:
+                self._queue.task_done()
+                break
+
+            try:
+                img_ds: h5py.Dataset = item["img_ds"]
+                frame_index: int = item["frame_index"]
+
+                # Grow pre-allocated dataset if needed (rare edge case)
+                if frame_index >= img_ds.shape[0]:
+                    new_size = frame_index + item["img_max_frames"]
+                    img_ds.resize((new_size,) + item["img_shape"])
+                    logger.warning(f"Images dataset extended to {new_size} frames")
+
+                # Write frame (O(1) — pre-allocated slot)
+                img_ds[frame_index] = item["frame_data"]
+
+                # Write 17 timeseries datasets
+                self._ts_writer.append(
+                    frame_index=frame_index,
+                    frame_metadata=item["frame_metadata"],
+                    esp32_timing=item["esp32_timing"],
+                    python_timing=item["python_timing"],
+                )
+
+                self.frames_written += 1
+                frames_since_flush += 1
+
+                # Periodic flush (every flush_interval frames)
+                if frames_since_flush >= self._flush_interval:
+                    try:
+                        self._ts_writer.flush()
+                        self._hdf5_file.flush()
+                        frames_since_flush = 0
+                        logger.debug(f"HDF5 flushed (total written: {self.frames_written})")
+                    except Exception as flush_exc:
+                        logger.warning(f"HDF5 periodic flush error: {flush_exc}")
+
+            except Exception as exc:
+                logger.error(
+                    f"AsyncHDF5Writer: write error frame {item.get('frame_number', '?')}: {exc}"
+                )
+                self.write_errors += 1
+            finally:
+                self._queue.task_done()
+
+        # Final flush after queue drained
+        try:
+            self._ts_writer.flush()
+            self._hdf5_file.flush()
+            logger.info(f"AsyncHDF5Writer: final flush ({self.frames_written} frames total)")
+        except Exception as exc:
+            logger.error(f"AsyncHDF5Writer: final flush error: {exc}")
+
+        logger.debug("AsyncHDF5Writer worker thread stopped")
 
 
 # ============================================================================
@@ -526,8 +670,8 @@ class DataManager:
         # Timeseries writer
         self._ts_writer: Optional[ChunkedTimeseriesWriter] = None
 
-        # Async flusher (v2.4 optimization)
-        self._async_flusher: Optional[AsyncHDF5Flusher] = None
+        # Write-behind queue (v2.5): decouples HDF5 I/O from recording thread
+        self._async_writer: Optional[AsyncHDF5Writer] = None
 
         # Pre-allocated 3D image dataset (v5.1 optimization)
         # Eliminates per-frame B-tree insertions that cause exponential write slowdown
@@ -535,9 +679,8 @@ class DataManager:
         self._images_max_frames: int = 100_000  # Pre-allocated rows
         self._image_shape: Optional[tuple] = None  # (H, W) determined on first frame
 
-        # Counters
+        # Counters (updated in recording thread for accurate timing)
         self.frame_count = 0
-        self._frames_since_flush = 0
 
         # Phase tracking (for transition detection)
         self._current_phase = None
@@ -620,11 +763,6 @@ class DataManager:
                     "telemetry_mode": self.telemetry_mode.name,
                 }
 
-                # Initialize async flusher (v2.4 optimization)
-                # Wait until ts_writer is created in set_recording_config()
-                # to avoid initialization errors
-                self._async_flusher = None
-
                 logger.info(f"HDF5 file created: {self.current_filepath}")
 
                 return str(self.current_filepath)
@@ -634,81 +772,70 @@ class DataManager:
                 raise
 
     def set_recording_config(self, config: dict):
-        """Store recording configuration and initialize async flusher"""
+        """Store recording configuration."""
         self.recording_metadata.update(config)
         logger.debug(f"Recording config updated: {config}")
 
-        # Initialize async flusher now that ts_writer is ready (v2.4 optimization)
-        if self._ts_writer and not self._async_flusher:
-            self._async_flusher = AsyncHDF5Flusher(self.hdf5_file, self._ts_writer)
-            logger.info("Async HDF5 flusher initialized")
-
     def save_frame(self, frame: np.ndarray, frame_number: int, metadata: dict) -> bool:
         """
-        Save frame with comprehensive metadata.
+        Enqueue a frame for background write (v2.5 write-behind queue).
 
-        Args:
-            frame: Frame as numpy array
-            frame_number: Frame number (1-based for display, but stored as 0-based index)
-            metadata: Metadata dictionary
+        The recording thread captures the timestamp, computes all metadata,
+        updates timing counters, and enqueues the frame — all without any disk I/O.
+        The actual HDF5 writes (frame + 17 timeseries) happen in a background
+        worker thread, fully decoupled from the capture timing loop.
 
-        Returns:
-            True if successful
+        Returns True immediately after enqueue (before disk write completes).
         """
         if not self.hdf5_file:
             logger.error("No HDF5 file open")
             return False
 
         frame_index = frame_number - 1  # Convert to 0-based
+
+        # ================================================================
+        # ALL OF THE FOLLOWING RUNS IN THE RECORDING THREAD (no disk I/O)
+        # ================================================================
+
+        # Capture wall-clock time immediately — this is the authoritative
+        # timestamp used for actual_interval and recording_elapsed_sec.
         current_time = time.time()
 
         with self._hdf5_lock:
             try:
-                # Calculate timing metrics
-                timing_metrics = self._calculate_timing_metrics(
-                    frame_number, current_time, metadata
-                )
-
-                # Calculate frame statistics
-                frame_stats = self._calculate_frame_statistics(frame)
-
-                # Detect phase transition
-                phase_metadata = self._process_phase_info(frame_number, metadata)
-
-                # ============================================================
-                # 1. SAVE IMAGE into pre-allocated 3D dataset (v5.1)
-                # Eliminates per-frame B-tree insertions -> O(1) write per frame
-                # All per-frame metadata (timestamp, phase, etc.) is in /timeseries
-                # ============================================================
-
-                # Initialize on first frame (shape/dtype determined here)
+                # Lazy init of HDF5 structures on first frame
                 if self._images_dataset is None:
-                    # Re-attach if file was reopened
                     if "frames" in self.hdf5_file["images"]:
                         self._images_dataset = self.hdf5_file["images"]["frames"]
                         self._image_shape = self._images_dataset.shape[1:]
                         logger.info(
-                            f"Re-attached existing images dataset, shape={self._images_dataset.shape}"
+                            f"Re-attached images dataset, shape={self._images_dataset.shape}"
                         )
                     else:
                         self._initialize_images_dataset(frame)
 
-                # Grow dataset if index exceeds pre-allocated size
-                if frame_index >= self._images_dataset.shape[0]:
-                    new_size = frame_index + self._images_max_frames
-                    self._images_dataset.resize((new_size,) + self._image_shape)  # type: ignore[operator]
-                    logger.warning(f"Images dataset extended to {new_size} frames")
-
-                # Write by index - O(1), no B-tree modification
-                self._images_dataset[frame_index] = frame
-
-                # ============================================================
-                # 2. SAVE TIMESERIES DATA
-                # ============================================================
                 if self._ts_writer is None:
                     self._create_timeseries_writer()
 
-                # Prepare comprehensive metadata dict
+                # Start async writer on first frame (needs both dataset + ts_writer ready)
+                if self._async_writer is None:
+                    self._async_writer = AsyncHDF5Writer(
+                        ts_writer=self._ts_writer,  # type: ignore[arg-type]
+                        hdf5_file=self.hdf5_file,
+                        flush_interval=self.flush_interval,
+                        max_queue_size=32,
+                    )
+
+                # ----------------------------------------------------------
+                # Compute all metadata in recording thread (pure Python/numpy,
+                # no I/O) so timing fields reflect actual capture timestamps.
+                # ----------------------------------------------------------
+                timing_metrics = self._calculate_timing_metrics(
+                    frame_number, current_time, metadata
+                )
+                frame_stats = self._calculate_frame_statistics(frame)
+                phase_metadata = self._process_phase_info(frame_number, metadata)
+
                 frame_metadata = {
                     **metadata,
                     **frame_stats,
@@ -718,7 +845,6 @@ class DataManager:
                     "timestamp": current_time,
                 }
 
-                # Split into categories for writer
                 esp32_timing = {
                     "exposure_ms": metadata.get("exposure_ms", 10),
                     "led_stabilization_ms": metadata.get("led_stabilization_ms", 1000),
@@ -734,40 +860,35 @@ class DataManager:
                     "camera_trigger_latency_ms": metadata.get("camera_trigger_latency_ms", 20),
                 }
 
-                python_timing = timing_metrics
-
-                # Append to timeseries
-                self._ts_writer.append(  # type: ignore[union-attr]
-                    frame_index=frame_index,
-                    frame_metadata=frame_metadata,
-                    esp32_timing=esp32_timing,
-                    python_timing=python_timing,
-                )
-
-                # Update counters
+                # ----------------------------------------------------------
+                # Update timing counters NOW (before enqueue) so next frame's
+                # actual_interval is measured from the correct reference point.
+                # ----------------------------------------------------------
                 self.frame_count += 1
                 self.last_frame_time = current_time
-                self._frames_since_flush += 1
 
-                # Periodic flush to reduce timing spikes (v2.4: async non-blocking)
-                if self._frames_since_flush >= self.flush_interval:
-                    if self._async_flusher:
-                        # Request async flush (non-blocking)
-                        self._async_flusher.request_flush()
-                        logger.debug(f"Async HDF5 flush requested at frame {frame_number}")
-                    else:
-                        # Fallback to synchronous flush if async flusher not available
-                        self._ts_writer.flush()  # type: ignore[union-attr]
-                        self.hdf5_file.flush()
-                        logger.debug(f"HDF5 buffers flushed (sync) at frame {frame_number}")
-                    self._frames_since_flush = 0
+                # ----------------------------------------------------------
+                # Enqueue for background write — returns in microseconds.
+                # Frame data is copied inside enqueue() so camera buffer
+                # can be reused immediately after this call returns.
+                # ----------------------------------------------------------
+                self._async_writer.enqueue(
+                    frame_data=frame,
+                    frame_index=frame_index,
+                    frame_number=frame_number,
+                    images_dataset=self._images_dataset,  # type: ignore[arg-type]
+                    image_shape=self._image_shape,  # type: ignore[arg-type]
+                    images_max_frames=self._images_max_frames,
+                    frame_metadata=frame_metadata,
+                    esp32_timing=esp32_timing,
+                    python_timing=timing_metrics,
+                )
 
-                logger.debug(f"Frame {frame_number} saved (index={frame_index})")
-
+                logger.debug(f"Frame {frame_number} enqueued for write")
                 return True
 
             except Exception as e:
-                logger.error(f"Failed to save frame {frame_number}: {e}")
+                logger.error(f"Failed to enqueue frame {frame_number}: {e}")
                 return False
 
     def _create_timeseries_writer(self):
@@ -982,6 +1103,12 @@ class DataManager:
         """
         logger.info("Finalizing HDF5 recording...")
 
+        # Drain the write-behind queue first — all enqueued frames must be
+        # written to disk before we trim datasets or close the file.
+        if self._async_writer is not None:
+            self._async_writer.drain_and_shutdown()
+            self._async_writer = None
+
         try:
             with self._hdf5_lock:
                 if not self.hdf5_file:
@@ -1055,22 +1182,18 @@ class DataManager:
             return False
 
     def close_file(self):
-        """Close HDF5 file"""
+        """Close HDF5 file (drains write queue first)."""
         try:
-            with self._hdf5_lock:
-                # Shutdown async flusher first (v2.4 optimization)
-                # This ensures final flush is performed synchronously
-                if self._async_flusher:
-                    self._async_flusher.shutdown()
-                    self._async_flusher = None
-                    logger.info("Async HDF5 flusher shut down")
+            # Drain write-behind queue before closing
+            if self._async_writer is not None:
+                self._async_writer.drain_and_shutdown()
+                self._async_writer = None
 
-                # Flush timeseries writer (redundant after async flusher shutdown, but safe)
+            with self._hdf5_lock:
                 if self._ts_writer:
                     self._ts_writer.flush()
                     self._ts_writer = None
 
-                # Close HDF5 file
                 if self.hdf5_file:
                     self.hdf5_file.flush()
                     self.hdf5_file.close()
@@ -1110,6 +1233,14 @@ class DataManager:
 
         if self._ts_writer:
             stats["timeseries"] = self._ts_writer.get_stats()  # type: ignore[assignment]
+
+        if self._async_writer is not None:
+            stats["write_queue"] = {  # type: ignore[assignment]
+                "frames_written_to_disk": self._async_writer.frames_written,
+                "queue_depth": self._async_writer._queue.qsize(),
+                "peak_queue_depth": self._async_writer._max_queue_depth,
+                "write_errors": self._async_writer.write_errors,
+            }
 
         return stats
 
