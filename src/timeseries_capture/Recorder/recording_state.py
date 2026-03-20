@@ -71,6 +71,9 @@ class RecordingConfig:
     )
     roi_fraction: float = 0.75  # Fraction of frame for ROI (e.g., 0.75 = 75% x 75% center)
 
+    # Output format: "hdf5" or "zarr"
+    output_format: str = "hdf5"
+
 
 @dataclass
 class PhaseInfo:
