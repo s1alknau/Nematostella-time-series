@@ -16,6 +16,7 @@ import numpy as np
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtGui import QImage, QPixmap
 from qtpy.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -66,6 +67,7 @@ class LiveAnalysisPanel(QWidget):
         super().__init__(parent)
         self._masks: list[np.ndarray] = []
         self._result: RoiDetectionResult | None = None
+        self._last_results: dict = {}
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -158,6 +160,17 @@ class LiveAnalysisPanel(QWidget):
         plot_group = QGroupBox("Live Activity Plot (updates every 20s during recording)")
         plot_layout = QVBoxLayout()
 
+        # ROI selector
+        selector_row = QHBoxLayout()
+        selector_row.addWidget(QLabel("Show:"))
+        self.roi_selector = QComboBox()
+        self.roi_selector.addItem("All ROIs")
+        self.roi_selector.setToolTip("Select which ROI(s) to display in the activity plot")
+        self.roi_selector.currentIndexChanged.connect(self._on_roi_selector_changed)
+        selector_row.addWidget(self.roi_selector)
+        selector_row.addStretch()
+        plot_layout.addLayout(selector_row)
+
         if MATPLOTLIB_AVAILABLE:
             self._figure = Figure(figsize=(6, 3), tight_layout=True)
             self._canvas = FigureCanvas(self._figure)
@@ -248,8 +261,52 @@ class LiveAnalysisPanel(QWidget):
         if not results:
             return
 
+        self._last_results = results
+
+        # Sync dropdown with available ROIs (only when count changes)
+        roi_keys = sorted(k for k in results if k.startswith("roi_"))
+        n_rois = len(roi_keys)
+        # +1 because index 0 is "All ROIs"
+        if self.roi_selector.count() != n_rois + 1:
+            current_text = self.roi_selector.currentText()
+            self.roi_selector.blockSignals(True)
+            self.roi_selector.clear()
+            self.roi_selector.addItem("All ROIs")
+            for i in range(n_rois):
+                self.roi_selector.addItem(f"ROI {i + 1}")
+            # Restore previous selection if still valid
+            idx = self.roi_selector.findText(current_text)
+            self.roi_selector.setCurrentIndex(idx if idx >= 0 else 0)
+            self.roi_selector.blockSignals(False)
+
+        self._render_plot()
+
+    def _on_roi_selector_changed(self):
+        """Re-render the plot when the user changes the dropdown selection."""
+        if self._last_results:
+            self._render_plot()
+
+    def _render_plot(self):
+        """Draw the activity plot for the currently selected ROI(s)."""
+        if not MATPLOTLIB_AVAILABLE or not self._last_results:
+            return
+
+        results = self._last_results
         timestamps = results.get("timestamps", None)
         n_frames = results.get("n_frames", 0)
+        roi_keys = sorted(k for k in results if k.startswith("roi_"))
+        all_colors = _roi_colors(len(roi_keys))
+
+        selection = self.roi_selector.currentText()
+        if selection == "All ROIs":
+            keys_to_plot = roi_keys
+            colors_to_plot = all_colors
+        else:
+            # "ROI N" → index N-1
+            roi_idx = int(selection.split()[1]) - 1
+            key = f"roi_{roi_idx}"
+            keys_to_plot = [key] if key in results else []
+            colors_to_plot = [all_colors[roi_idx]] if keys_to_plot else []
 
         self._ax.clear()
         self._ax.set_xlabel("Time (min)")
@@ -257,24 +314,22 @@ class LiveAnalysisPanel(QWidget):
         self._ax.set_title(f"Live Activity — {n_frames} frames recorded")
         self._ax.grid(True, alpha=0.3)
 
-        roi_keys = sorted(k for k in results if k.startswith("roi_"))
-        colors = _roi_colors(len(roi_keys))
-
-        for idx, key in enumerate(roi_keys):
+        for key, color in zip(keys_to_plot, colors_to_plot):
             activity = results[key]
             if timestamps is not None and len(timestamps) == len(activity):
-                x = timestamps / 60.0  # seconds → minutes
+                x = timestamps / 60.0
             else:
                 x = np.arange(len(activity))
             roi_num = int(key.split("_")[1]) + 1
-            self._ax.plot(x, activity, color=colors[idx], label=f"ROI {roi_num}", linewidth=1.2)
+            self._ax.plot(x, activity, color=color, label=f"ROI {roi_num}", linewidth=1.2)
 
-        if roi_keys:
+        if keys_to_plot:
             self._ax.legend(loc="upper right", fontsize=8)
 
         self._canvas.draw()
+        n_shown = len(keys_to_plot)
         self.plot_status_label.setText(
-            f"Last update: {n_frames} frames | {len(roi_keys)} ROI(s) | updating every 20s"
+            f"Last update: {n_frames} frames | showing {n_shown}/{len(roi_keys)} ROI(s) | updating every 20s"
         )
         self.plot_status_label.setStyleSheet("color: #27ae60;")
 
