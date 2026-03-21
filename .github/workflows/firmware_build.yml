@@ -1,0 +1,66 @@
+name: Build Firmware & Update Web Installer
+
+on:
+  push:
+    branches:
+      - Nematostella-time-series-IR
+    paths:
+      - "Firmware/**"
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ hashFiles('Firmware/LED_Nematostella/platformio.ini') }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build esp32dev
+        run: |
+          cd Firmware/LED_Nematostella
+          pio run -e esp32dev
+
+      - name: Build esp32-s3-box-3
+        run: |
+          cd Firmware/LED_Nematostella
+          pio run -e esp32-s3-box-3
+
+      - name: Copy firmware binaries to docs/
+        run: |
+          BOOT_APP0=$(find ~/.platformio -name boot_app0.bin | head -1)
+
+          mkdir -p docs/firmware/esp32dev
+          cp Firmware/LED_Nematostella/.pio/build/esp32dev/firmware.bin   docs/firmware/esp32dev/
+          cp Firmware/LED_Nematostella/.pio/build/esp32dev/bootloader.bin docs/firmware/esp32dev/
+          cp Firmware/LED_Nematostella/.pio/build/esp32dev/partitions.bin docs/firmware/esp32dev/
+          cp "$BOOT_APP0" docs/firmware/esp32dev/boot_app0.bin
+
+          mkdir -p docs/firmware/esp32-s3-box-3
+          cp Firmware/LED_Nematostella/.pio/build/esp32-s3-box-3/firmware.bin   docs/firmware/esp32-s3-box-3/
+          cp Firmware/LED_Nematostella/.pio/build/esp32-s3-box-3/bootloader.bin docs/firmware/esp32-s3-box-3/
+          cp Firmware/LED_Nematostella/.pio/build/esp32-s3-box-3/partitions.bin docs/firmware/esp32-s3-box-3/
+          cp "$BOOT_APP0" docs/firmware/esp32-s3-box-3/boot_app0.bin
+
+      - name: Commit updated firmware binaries
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/firmware/
+          git diff --staged --quiet || git commit -m "ci: update firmware binaries ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+          git push
