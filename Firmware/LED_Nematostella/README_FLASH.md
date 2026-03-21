@@ -21,7 +21,21 @@ Diese Firmware ist für den **ESP32-S3-BOX-3** mit DOCK konfiguriert.
 
 ## Firmware flashen
 
-### Methode 1: PlatformIO (empfohlen)
+### Methode 0: Web Installer (Einfachste Methode)
+
+Keine Installation von PlatformIO oder Arduino IDE nötig — nur ein USB-Kabel und ein moderner Browser.
+
+1. Verbinde das ESP32-Board per USB mit dem Computer.
+2. Öffne **Chrome** oder **Edge** (Firefox wird nicht unterstützt).
+3. Navigiere zu: **https://s1alknau.github.io/Nematostella-time-series/**
+4. Wähle dein Board (ESP32 DevKit oder ESP32-S3-BOX-3) aus dem Dropdown-Menü.
+5. Klicke auf **Connect & Flash** — der Browser übernimmt den Rest.
+
+> **Hinweis:** Nur Chromium-basierte Browser unterstützen die Web Serial API, die für den Web Installer erforderlich ist. Firefox und Safari werden nicht unterstützt.
+
+---
+
+### Methode 1: PlatformIO (empfohlen für Entwickler)
 
 #### 1. PlatformIO installieren
 ```bash

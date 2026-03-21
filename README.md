@@ -9,6 +9,19 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 
 ---
 
+## Recent Updates (v2.5.0 - 2026-03-21)
+
+### v2.5.0 - Zarr Recording, Live Analysis & Web Firmware Installer
+- ✅ **Zarr Recording Format**: Save recordings as Zarr in addition to HDF5. Zarr allows concurrent read-while-write, enabling live analysis during an ongoing recording.
+- ✅ **Live Analysis Tab**: New "📊 Live Analysis" GUI tab — capture a preview frame, auto-detect ROIs via HoughCircles, then watch an activity plot update every 20 s while recording. Requires optional dependency `opencv-python`.
+- ✅ **HDF5 Timing Fix**: Replaced synchronous HDF5 writes with a write-behind queue (`AsyncHDF5Writer`). Recording thread enqueues in ~0.8 ms instead of blocking on 18 sequential I/O ops; prevents `actual_interval` spikes from 5 s → 10 s+ in multi-day recordings.
+- ✅ **Web Firmware Installer**: Flash ESP32 firmware directly from the browser at https://s1alknau.github.io/Nematostella-time-series/ — no PlatformIO or Arduino IDE needed. Supports both boards (ESP32 DevKit and ESP32-S3-BOX-3). Chrome/Edge only.
+- ✅ **GitHub Actions CI**: New workflow `.github/workflows/firmware_build.yml` auto-builds firmware for both boards on every push and publishes binaries to `docs/firmware/`.
+
+See [CHANGELOG.md](CHANGELOG.md) for complete details.
+
+---
+
 ## Recent Updates (v2.4.1 - 2026-01-05)
 
 🎉 **Black Frame Prevention & ESP32-S3 Support!**
@@ -40,7 +53,10 @@ See [CHANGELOG.md](CHANGELOG.md) for complete details.
 - **Drift-Compensated Timing**: Frame timing measured from absolute recording start, preventing cumulative drift
 - **Environmental Monitoring**: Real-time temperature and humidity tracking via DHT22 sensor
 - **LED Calibration**: Interactive calibration system to normalize LED intensities across channels
-- **HDF5 Data Storage**: Efficient chunked storage with comprehensive metadata and timeseries data
+- **HDF5 Data Storage**: Efficient chunked storage with comprehensive metadata and timeseries data; write-behind queue (`AsyncHDF5Writer`) prevents I/O-induced interval spikes
+- **Zarr Recording Format**: Alternative to HDF5 with concurrent read-while-write support, enabling live analysis during recording
+- **Live Analysis Tab**: Auto-detect ROIs via HoughCircles on a preview frame and plot per-ROI activity every 20 s while recording (requires `opencv-python`)
+- **Web Firmware Installer**: Flash ESP32 firmware from the browser — no toolchain required. Visit https://s1alknau.github.io/Nematostella-time-series/ in Chrome/Edge
 - **Real-Time Visualization**: Live frame display with recording statistics
 
 ---
@@ -91,6 +107,10 @@ Core dependencies:
 - pyserial
 - qtpy
 - pymmcore-plus (for camera control)
+
+Optional dependencies:
+- `zarr` — required for Zarr recording format and live-analysis read-while-write
+- `opencv-python` — required for the Live Analysis tab (HoughCircles ROI detection)
 
 ---
 
@@ -144,6 +164,16 @@ Core dependencies:
 
 #### Step 1: ESP32 Firmware Installation
 
+**Easiest method — Web Installer (no software required):**
+
+1. Open **Chrome** or **Edge** (Firefox is not supported)
+2. Visit **https://s1alknau.github.io/Nematostella-time-series/**
+3. Plug in your ESP32 via USB
+4. Select your board (ESP32 DevKit or ESP32-S3-BOX-3) and click **Connect & Flash**
+5. Done — the page guides you through the rest
+
+**Alternative — PlatformIO (for developers):**
+
 1. **Download Firmware**
    - Firmware located in: `Firmware/LED_Nematostella/`
    - Required version: v2.2 or higher
@@ -151,9 +181,12 @@ Core dependencies:
 
 2. **Flash Firmware to ESP32**
    ```bash
-   # Using PlatformIO
+   # Using PlatformIO (ESP32 DevKit)
    cd Firmware/LED_Nematostella
-   pio run --target upload
+   pio run -e esp32dev --target upload
+
+   # For ESP32-S3-BOX-3:
+   pio run -e esp32-s3-box-3 --target upload
 
    # Or using Arduino IDE
    # Open src/main.cpp and upload to ESP32 board
@@ -1339,6 +1372,35 @@ with h5py.File('recording.h5', 'r') as f:
     plt.grid(True, alpha=0.3)
     plt.show()
 ```
+
+---
+
+## Live Analysis During Recording
+
+The plugin supports live activity analysis while a recording is running, provided you save in **Zarr format** (Zarr allows concurrent read-while-write, unlike HDF5 which locks the file).
+
+### Requirements
+
+Install the optional dependencies:
+```bash
+pip install zarr opencv-python
+```
+
+### Workflow
+
+1. **Start the plugin** and open the **📊 Live Analysis** tab.
+2. **Capture a preview frame** — click "Capture Preview" to grab a single frame from the camera without starting a recording.
+3. **Run ROI detection** — click "Detect ROIs" to run HoughCircles on the preview frame (the same algorithm used by `napari-hdf5-activity`). Detected ROI circles are overlaid on the preview image. Adjust the HoughCircles parameters (min/max radius, sensitivity) if detection results are poor.
+4. **Select recording format** — in the Recording Settings tab, choose **Zarr** as the output format. The ROI masks will be saved into the Zarr store alongside the image frames.
+5. **Start recording** — click Start Recording as normal. The Live Analysis tab will begin updating the per-ROI activity plot approximately every 20 seconds by reading frames from the live Zarr store.
+6. **Use the ROI dropdown** to display all ROI traces at once or isolate a single ROI for closer inspection.
+
+### Notes
+
+- The activity plot is updated every 20 s; this period is configurable in the plugin settings.
+- For HDF5 recordings, live analysis is not available because HDF5 files are locked during writing. Switch to Zarr format to enable it.
+- Zarr stores are written to a `.zarr` directory alongside the HDF5 file (or instead of it, depending on format selection).
+- ROI masks are stored under `rois/` inside the Zarr store and can be read by `napari-hdf5-activity` for post-hoc analysis.
 
 ---
 
