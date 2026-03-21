@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nematostella LED Controller — Firmware Installer</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 640px;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      color: #58a6ff;
+      margin-bottom: 6px;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      color: #8b949e;
+      font-weight: normal;
+      margin-bottom: 24px;
+    }
+
+    .section-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8b949e;
+      margin-bottom: 10px;
+    }
+
+    .requirements {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .requirements .tag {
+      display: inline-block;
+      background: #1f6feb;
+      color: #fff;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 0.8rem;
+      margin-right: 4px;
+    }
+
+    .requirements .warn {
+      background: #9e6a03;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      color: #8b949e;
+      margin-bottom: 6px;
+    }
+
+    select {
+      width: 100%;
+      background: #0d1117;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.95rem;
+      margin-bottom: 20px;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #58a6ff;
+    }
+
+    .pin-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-bottom: 24px;
+    }
+
+    .pin-table th {
+      text-align: left;
+      color: #8b949e;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .pin-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .pin-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .gpio {
+      display: inline-block;
+      background: #1f6feb22;
+      color: #58a6ff;
+      border: 1px solid #1f6feb55;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+
+    .install-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    esp-web-install-button::part(button) {
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 22px;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+
+    esp-web-install-button::part(button):hover {
+      background: #2ea043;
+    }
+
+    .install-hint {
+      font-size: 0.85rem;
+      color: #8b949e;
+      line-height: 1.5;
+    }
+
+    .troubleshoot {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px 32px;
+      max-width: 640px;
+      width: 100%;
+    }
+
+    .troubleshoot h3 {
+      font-size: 1rem;
+      color: #e3b341;
+      margin-bottom: 12px;
+    }
+
+    .troubleshoot ol {
+      padding-left: 20px;
+      font-size: 0.9rem;
+      line-height: 1.8;
+      color: #8b949e;
+    }
+
+    .troubleshoot code {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: monospace;
+      color: #c9d1d9;
+      font-size: 0.85rem;
+    }
+
+    footer {
+      margin-top: 32px;
+      font-size: 0.8rem;
+      color: #484f58;
+      text-align: center;
+    }
+
+    footer a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>Nematostella LED Controller</h1>
+    <h2>Firmware Web Installer</h2>
+
+    <div class="requirements">
+      <span class="tag">Chrome</span>
+      <span class="tag">Edge</span>
+      <span class="tag warn">Firefox not supported</span>
+      &nbsp; Connect your ESP32 via <strong>USB</strong> before clicking Install.
+    </div>
+
+    <p class="section-title">1 — Select your board</p>
+    <select id="board-select">
+      <option value="esp32dev">ESP32 DevKit (classic ESP32)</option>
+      <option value="esp32-s3-box-3">ESP32-S3-BOX-3</option>
+    </select>
+
+    <p class="section-title">Pin assignment</p>
+    <table class="pin-table" id="pin-table">
+      <thead>
+        <tr><th>Function</th><th>GPIO</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p class="section-title">2 — Flash firmware</p>
+    <div class="install-row">
+      <esp-web-install-button id="install-btn" manifest="firmware/manifest_esp32dev.json">
+        <button slot="activate">⚡ Connect &amp; Install</button>
+      </esp-web-install-button>
+      <p class="install-hint">
+        Browser will ask you to select a COM port.<br>
+        Flashing takes ~30 seconds.
+      </p>
+    </div>
+  </div>
+
+  <div class="troubleshoot" id="troubleshoot-s3" style="display:none;">
+    <h3>ESP32-S3 — Manual Bootloader Mode</h3>
+    <p style="font-size:0.9rem; color:#8b949e; margin-bottom:10px;">
+      If the flash fails, put the board into bootloader mode manually:
+    </p>
+    <ol>
+      <li>Hold the <code>BOOT</code> button</li>
+      <li>Press and release <code>RESET</code></li>
+      <li>Release <code>BOOT</code></li>
+      <li>Click <strong>Connect &amp; Install</strong> again</li>
+    </ol>
+  </div>
+
+  <footer>
+    Firmware is auto-built from
+    <a href="https://github.com/s1alknau/Nematostella-time-series" target="_blank">
+      github.com/s1alknau/Nematostella-time-series
+    </a>
+    on every push to the main branch.
+  </footer>
+
+  <script>
+    const BOARDS = {
+      "esp32dev": {
+        manifest: "firmware/manifest_esp32dev.json",
+        pins: [
+          ["IR LED",    "GPIO 4"],
+          ["White LED", "GPIO 15"],
+          ["DHT22",     "GPIO 14"],
+        ]
+      },
+      "esp32-s3-box-3": {
+        manifest: "firmware/manifest_esp32-s3-box-3.json",
+        pins: [
+          ["IR LED",    "GPIO 10"],
+          ["White LED", "GPIO 11"],
+          ["DHT22",     "GPIO 12"],
+        ]
+      }
+    };
+
+    const select   = document.getElementById("board-select");
+    const installBtn = document.getElementById("install-btn");
+    const tbody    = document.querySelector("#pin-table tbody");
+    const s3hint   = document.getElementById("troubleshoot-s3");
+
+    function updateBoard() {
+      const key   = select.value;
+      const board = BOARDS[key];
+
+      installBtn.setAttribute("manifest", board.manifest);
+
+      tbody.innerHTML = board.pins
+        .map(([fn, gpio]) =>
+          `<tr><td>${fn}</td><td><span class="gpio">${gpio}</span></td></tr>`)
+        .join("");
+
+      s3hint.style.display = key === "esp32-s3-box-3" ? "block" : "none";
+    }
+
+    select.addEventListener("change", updateBoard);
+    updateBoard();
+  </script>
+
+</body>
+</html>
