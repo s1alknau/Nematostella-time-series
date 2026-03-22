@@ -74,7 +74,7 @@ class CameraAdapter(ABC):
             if "parameters" in info and "exposure" in info["parameters"]:
                 # Exposure is typically in milliseconds
                 return float(info["parameters"]["exposure"])
-        except:
+        except Exception:
             pass
         return 10.0  # Default fallback
 
@@ -109,7 +109,7 @@ class HikGigECameraAdapter(CameraAdapter):
                 if detectors:
                     self.detector_name = detectors[0]
                     logger.info(f"Auto-selected detector: {self.detector_name}")
-            except:
+            except Exception:
                 pass
 
         logger.info(f"HIK GigE Camera Adapter initialized (detector={self.detector_name})")
@@ -211,7 +211,7 @@ class HikGigECameraAdapter(CameraAdapter):
                             "exposure": detector.getParameter("exposure"),
                             "gain": detector.getParameter("gain"),
                         }
-                    except:
+                    except Exception:
                         pass
 
             except Exception as e:
@@ -358,7 +358,7 @@ class NapariViewerCameraAdapter(CameraAdapter):
                 try:
                     info["shape"] = layer.data.shape
                     info["dtype"] = str(layer.data.dtype)
-                except:
+                except Exception:
                     pass
 
         return info
@@ -377,7 +377,7 @@ class NapariViewerCameraAdapter(CameraAdapter):
                 else:
                     logger.warning("Cached layer no longer in viewer, searching again...")
                     self._cached_layer = None
-            except:
+            except Exception:
                 self._cached_layer = None
 
         if not self.viewer:
@@ -527,6 +527,220 @@ class DummyCameraAdapter(CameraAdapter):
 
 
 # ============================================================================
+# HIK DIRECT CAMERA ADAPTER (standalone, no ImSwitch)
+# ============================================================================
+
+try:
+    import ctypes
+    from ctypes import POINTER, c_uint, cast, create_string_buffer
+
+    from .MvImport.CameraParams_const import MV_GIGE_DEVICE, MV_USB_DEVICE
+    from .MvImport.CameraParams_header import MV_FRAME_OUT_INFO_EX
+    from .MvImport.MvCameraControl_class import MV_CC_DEVICE_INFO, MV_CC_DEVICE_INFO_LIST, MvCamera
+    from .MvImport.MvErrorDefine_const import MV_OK
+    from .MvImport.PixelType_header import (
+        PixelType_Gvsp_Mono10,
+        PixelType_Gvsp_Mono12,
+        PixelType_Gvsp_Mono16,
+    )
+
+    MVS_SDK_AVAILABLE = True
+except Exception as _mvs_err:
+    MVS_SDK_AVAILABLE = False
+    logger.debug(f"MVS SDK not available: {_mvs_err}")
+
+
+def enumerate_hik_cameras() -> list[dict]:
+    """
+    Enumerate all connected HIK GigE and USB cameras.
+
+    Returns list of dicts with keys: index, name, type, ip (GigE) or serial (USB).
+    Returns empty list if SDK not available or no cameras found.
+    """
+    if not MVS_SDK_AVAILABLE:
+        return []
+    try:
+        MvCamera.MV_CC_Initialize()
+        device_list = MV_CC_DEVICE_INFO_LIST()
+        ret = MvCamera.MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, device_list)
+        if ret != MV_OK or device_list.nDeviceNum == 0:
+            return []
+        cameras = []
+        for i in range(device_list.nDeviceNum):
+            info = cast(device_list.pDeviceInfo[i], POINTER(MV_CC_DEVICE_INFO)).contents
+            if info.nTLayerType == MV_GIGE_DEVICE:
+                gi = info.SpecialInfo.stGigEInfo
+                ip = gi.nCurrentIp
+                ip_str = f"{(ip>>24)&0xff}.{(ip>>16)&0xff}.{(ip>>8)&0xff}.{ip&0xff}"
+                model = bytes(gi.chModelName).rstrip(b"\x00").decode("utf-8", errors="replace")
+                name = bytes(gi.chUserDefinedName).rstrip(b"\x00").decode("utf-8", errors="replace")
+                cameras.append(
+                    {
+                        "index": i,
+                        "name": f"[{i}] GigE: {model} {name} ({ip_str})",
+                        "type": "GigE",
+                        "ip": ip_str,
+                        "device_list": device_list,
+                    }
+                )
+            elif info.nTLayerType == MV_USB_DEVICE:
+                ui = info.SpecialInfo.stUsb3VInfo
+                model = bytes(ui.chModelName).rstrip(b"\x00").decode("utf-8", errors="replace")
+                serial = "".join(chr(c) for c in ui.chSerialNumber if c != 0)
+                cameras.append(
+                    {
+                        "index": i,
+                        "name": f"[{i}] USB: {model} ({serial})",
+                        "type": "USB",
+                        "serial": serial,
+                        "device_list": device_list,
+                    }
+                )
+        return cameras
+    except Exception as exc:
+        logger.error(f"Camera enumeration failed: {exc}")
+        return []
+
+
+class HikDirectCameraAdapter(CameraAdapter):
+    """
+    Direct HIK camera adapter using the MVS SDK — no ImSwitch required.
+
+    Usage:
+        cameras = enumerate_hik_cameras()
+        adapter = HikDirectCameraAdapter(cameras[0])
+        adapter.open()
+        frame = adapter.capture_frame()
+        adapter.close()
+    """
+
+    def __init__(self, camera_info: dict):
+        if not MVS_SDK_AVAILABLE:
+            raise RuntimeError("MVS SDK not available. Install Hikrobotics MVS software.")
+        self._info = camera_info
+        self._cam = MvCamera()
+        self._open = False
+        self._buf: bytes | None = None
+        self._buf_size = 0
+        self._frame_info = MV_FRAME_OUT_INFO_EX()
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def open(self) -> bool:
+        """Open and start the camera. Returns True on success."""
+        if self._open:
+            return True
+        try:
+            device_list = self._info["device_list"]
+            idx = self._info["index"]
+            stDevInfo = cast(device_list.pDeviceInfo[idx], POINTER(MV_CC_DEVICE_INFO)).contents
+            ret = self._cam.MV_CC_CreateHandle(stDevInfo)
+            if ret != MV_OK:
+                logger.error(f"CreateHandle failed: {ret:#x}")
+                return False
+            ret = self._cam.MV_CC_OpenDevice()
+            if ret != MV_OK:
+                self._cam.MV_CC_DestroyHandle()
+                logger.error(f"OpenDevice failed: {ret:#x}")
+                return False
+            # Continuous acquisition mode
+            self._cam.MV_CC_SetEnumValue("TriggerMode", 0)
+            ret = self._cam.MV_CC_StartGrabbing()
+            if ret != MV_OK:
+                self._cam.MV_CC_CloseDevice()
+                self._cam.MV_CC_DestroyHandle()
+                logger.error(f"StartGrabbing failed: {ret:#x}")
+                return False
+            # Allocate frame buffer
+            payload = c_uint(0)
+            self._cam.MV_CC_GetIntValueEx("PayloadSize", payload)
+            self._buf_size = payload.value or (1224 * 1024 * 2)
+            self._buf = create_string_buffer(self._buf_size)
+            self._open = True
+            logger.info(f"Camera opened: {self._info['name']}")
+            return True
+        except Exception as exc:
+            logger.error(f"Camera open error: {exc}")
+            return False
+
+    def close(self):
+        """Stop grabbing and close the camera."""
+        if not self._open:
+            return
+        try:
+            self._cam.MV_CC_StopGrabbing()
+            self._cam.MV_CC_CloseDevice()
+            self._cam.MV_CC_DestroyHandle()
+        except Exception as exc:
+            logger.warning(f"Camera close error: {exc}")
+        self._open = False
+
+    # ------------------------------------------------------------------
+    # CameraAdapter interface
+    # ------------------------------------------------------------------
+
+    def capture_frame(self) -> Optional[np.ndarray]:
+        if not self._open:
+            return None
+        try:
+            ret = self._cam.MV_CC_GetOneFrameTimeout(
+                self._buf, self._buf_size, self._frame_info, 1000
+            )
+            if ret != MV_OK:
+                return None
+            h = self._frame_info.nHeight
+            w = self._frame_info.nWidth
+            pf = self._frame_info.enPixelType
+            raw = np.frombuffer(self._buf.raw[: h * w * 2], dtype=np.uint8)
+            if pf in (PixelType_Gvsp_Mono10, PixelType_Gvsp_Mono12, PixelType_Gvsp_Mono16):
+                frame = raw.view(np.uint16).reshape(h, w)
+            else:
+                frame = raw[: h * w].reshape(h, w).astype(np.uint16)
+            return frame
+        except Exception as exc:
+            logger.error(f"capture_frame error: {exc}")
+            return None
+
+    def is_available(self) -> bool:
+        return self._open
+
+    def get_camera_info(self) -> dict:
+        info = {
+            "name": self._info.get("name", "HIK Direct"),
+            "type": self._info.get("type", "GigE"),
+        }
+        if self._open:
+            try:
+                exp = ctypes.c_float(0)
+                self._cam.MV_CC_GetFloatValue("ExposureTime", exp)
+                info["parameters"] = {"exposure": exp.value / 1000.0}  # µs → ms
+            except Exception:
+                pass
+        return info
+
+    def get_exposure_ms(self) -> float:
+        if not self._open:
+            return 10.0
+        try:
+            exp = ctypes.c_float(0)
+            self._cam.MV_CC_GetFloatValue("ExposureTime", exp)
+            return exp.value / 1000.0
+        except Exception:
+            return 10.0
+
+    def set_exposure_ms(self, exposure_ms: float):
+        """Set camera exposure time in milliseconds."""
+        if not self._open:
+            return
+        try:
+            self._cam.MV_CC_SetFloatValue("ExposureTime", exposure_ms * 1000.0)
+        except Exception as exc:
+            logger.warning(f"set_exposure_ms failed: {exc}")
+
+
+# ============================================================================
 # FACTORY FUNCTION
 # ============================================================================
 
@@ -553,7 +767,16 @@ def create_camera_adapter(
     Returns:
         CameraAdapter instance
     """
-    if camera_type.lower() == "hik":
+    if camera_type.lower() == "hik_direct":
+        camera_info = kwargs.get("camera_info")
+        if not camera_info:
+            logger.warning("No camera_info provided for hik_direct, falling back to dummy")
+            return DummyCameraAdapter()
+        adapter = HikDirectCameraAdapter(camera_info)
+        adapter.open()
+        return adapter
+
+    elif camera_type.lower() == "hik":
         if not camera_manager:
             logger.warning("No camera manager provided, falling back to dummy")
             return DummyCameraAdapter(**kwargs)

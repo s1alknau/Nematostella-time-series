@@ -179,7 +179,13 @@ exclude = [
     "Backup_2",
     "Backup3",
     "tests",
+    "src/timeseries_capture/MvImport",
 ]
+
+# Bundled vendor SDK — not our code, skip all checks
+[[tool.mypy.overrides]]
+module = ["timeseries_capture.MvImport", "timeseries_capture.MvImport.*"]
+ignore_errors = true
 
 # Pre-existing errors in GUI and adapter files - suppressed until fixed
 [[tool.mypy.overrides]]

@@ -21,6 +21,7 @@ from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
 # Import controllers and adapters
 from .camera_adapters import create_camera_adapter
 from .esp32_gui_controller import ESP32GUIController
+from .GUI.camera_connection_panel import CameraConnectionPanel
 from .GUI.esp32_connection_panel import ESP32ConnectionPanel
 from .GUI.led_control_panel import LEDControlPanel
 from .GUI.live_analysis_panel import LiveAnalysisPanel
@@ -125,6 +126,18 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.tabs.addTab(self.led_panel, "💡 LED Control")
         self.tabs.addTab(self.live_analysis_panel, "📊 Live Analysis")
         self.tabs.addTab(self.log_panel, "📋 System Log")
+
+        # Camera connection tab — shown only in standalone mode (no ImSwitch)
+        if not self.camera_manager:
+            self.camera_connection_panel = CameraConnectionPanel()
+            self.camera_connection_panel.camera_connected.connect(self._on_direct_camera_connected)
+            self.camera_connection_panel.camera_disconnected.connect(
+                self._on_direct_camera_disconnected
+            )
+            self.tabs.insertTab(0, self.camera_connection_panel, "📷 Camera")
+            self.tabs.setCurrentIndex(0)
+        else:
+            self.camera_connection_panel = None
 
         # Multi-camera panels (will be populated after config is loaded)
         self.camera_selection_panel = None
@@ -829,6 +842,20 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self._live_analysis_worker.stop()
             self._live_analysis_worker.wait(3000)
             self._live_analysis_worker = None
+
+    # ========================================================================
+    # STANDALONE CAMERA (direct HIK SDK, no ImSwitch)
+    # ========================================================================
+
+    def _on_direct_camera_connected(self, adapter):
+        """Called when the user connects a camera via CameraConnectionPanel."""
+        self.camera_adapter = adapter
+        logger.info("Direct HIK camera connected, adapter ready.")
+
+    def _on_direct_camera_disconnected(self):
+        """Called when the user disconnects the camera."""
+        self.camera_adapter = None
+        logger.info("Direct HIK camera disconnected.")
 
     # ========================================================================
     # LED CONTROL (GUI Signals)
