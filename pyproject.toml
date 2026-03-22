@@ -66,6 +66,11 @@ opencv = [
     "opencv-python>=4.5",
 ]
 
+# Optional: standalone camera support via GenTL (no vendor SDK needed)
+standalone = [
+    "harvesters>=1.4",
+]
+
 # Optional: IMSwitch integration
 imswitch = [
     "imswitch",
@@ -74,6 +79,7 @@ imswitch = [
 # All optional dependencies
 all = [
     "opencv-python>=4.5",
+    "harvesters>=1.4",
     "imswitch",
 ]
 

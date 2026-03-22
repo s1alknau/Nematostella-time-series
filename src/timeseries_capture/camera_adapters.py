@@ -527,154 +527,133 @@ class DummyCameraAdapter(CameraAdapter):
 
 
 # ============================================================================
-# HIK DIRECT CAMERA ADAPTER (standalone, no ImSwitch)
+# HARVESTERS CAMERA ADAPTER (standalone, no vendor SDK required)
 # ============================================================================
 
 try:
-    import ctypes
-    from ctypes import POINTER, c_uint, cast, create_string_buffer
+    from harvesters.core import Harvester  # type: ignore[import-untyped]
 
-    from .MvImport.CameraParams_const import MV_GIGE_DEVICE, MV_USB_DEVICE
-    from .MvImport.CameraParams_header import MV_FRAME_OUT_INFO_EX
-    from .MvImport.MvCameraControl_class import MV_CC_DEVICE_INFO, MV_CC_DEVICE_INFO_LIST, MvCamera
-    from .MvImport.MvErrorDefine_const import MV_OK
-    from .MvImport.PixelType_header import (
-        PixelType_Gvsp_Mono10,
-        PixelType_Gvsp_Mono12,
-        PixelType_Gvsp_Mono16,
-    )
+    HARVESTERS_AVAILABLE = True
+except ImportError:
+    HARVESTERS_AVAILABLE = False
+    logger.debug("harvesters not installed. Run: pip install harvesters")
 
-    MVS_SDK_AVAILABLE = True
-except Exception as _mvs_err:
-    MVS_SDK_AVAILABLE = False
-    logger.debug(f"MVS SDK not available: {_mvs_err}")
+# Known CTI search paths — checked in order during auto-detection
+_CTI_SEARCH_PATHS = [
+    # Daheng Imaging (free, no registration)
+    r"C:\Program Files\Daheng Imaging\GalaxySDK\GenTL\Win64\GxGVTL.cti",
+    r"C:\Program Files\Daheng Imaging\GalaxySDK\GenTL\Win64\GxU3VTL.cti",
+    # Hikrobotics MVS (if installed)
+    r"C:\Program Files (x86)\Common Files\MVS\Runtime\Win64_x64\MvProducerGEV.cti",
+    r"C:\Program Files (x86)\Common Files\MVS\Runtime\Win64_x64\MvProducerU3V.cti",
+    # Allied Vision Vimba X
+    r"C:\Program Files\Allied Vision\Vimba X\cti\VimbaGigETL.cti",
+    # Matrix Vision mvIMPACT Acquire (free)
+    r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\bin\x64\mvGenTLProducer.cti",
+    # Baumer BGAPI2
+    r"C:\Program Files\Baumer\Baumer GAPI SDK\Components\BGAPI2_GENICAM\x64\BaumerGigE.cti",
+]
 
 
-def enumerate_hik_cameras() -> list[dict]:
+def find_cti_files() -> list[str]:
     """
-    Enumerate all connected HIK GigE and USB cameras.
-
-    Returns list of dicts with keys: index, name, type, ip (GigE) or serial (USB).
-    Returns empty list if SDK not available or no cameras found.
+    Return all CTI files found in known SDK locations and GENICAM_GENTL64_PATH.
+    Returns a list of absolute paths that exist on this machine.
     """
-    if not MVS_SDK_AVAILABLE:
-        return []
-    try:
-        MvCamera.MV_CC_Initialize()
-        device_list = MV_CC_DEVICE_INFO_LIST()
-        ret = MvCamera.MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, device_list)
-        if ret != MV_OK or device_list.nDeviceNum == 0:
-            return []
-        cameras = []
-        for i in range(device_list.nDeviceNum):
-            info = cast(device_list.pDeviceInfo[i], POINTER(MV_CC_DEVICE_INFO)).contents
-            if info.nTLayerType == MV_GIGE_DEVICE:
-                gi = info.SpecialInfo.stGigEInfo
-                ip = gi.nCurrentIp
-                ip_str = f"{(ip>>24)&0xff}.{(ip>>16)&0xff}.{(ip>>8)&0xff}.{ip&0xff}"
-                model = bytes(gi.chModelName).rstrip(b"\x00").decode("utf-8", errors="replace")
-                name = bytes(gi.chUserDefinedName).rstrip(b"\x00").decode("utf-8", errors="replace")
-                cameras.append(
-                    {
-                        "index": i,
-                        "name": f"[{i}] GigE: {model} {name} ({ip_str})",
-                        "type": "GigE",
-                        "ip": ip_str,
-                        "device_list": device_list,
-                    }
-                )
-            elif info.nTLayerType == MV_USB_DEVICE:
-                ui = info.SpecialInfo.stUsb3VInfo
-                model = bytes(ui.chModelName).rstrip(b"\x00").decode("utf-8", errors="replace")
-                serial = "".join(chr(c) for c in ui.chSerialNumber if c != 0)
-                cameras.append(
-                    {
-                        "index": i,
-                        "name": f"[{i}] USB: {model} ({serial})",
-                        "type": "USB",
-                        "serial": serial,
-                        "device_list": device_list,
-                    }
-                )
-        return cameras
-    except Exception as exc:
-        logger.error(f"Camera enumeration failed: {exc}")
-        return []
+    import os
+
+    found = []
+    # Standard GenTL env variable (set by most SDKs automatically)
+    gentl_path = os.environ.get("GENICAM_GENTL64_PATH", "")
+    for directory in gentl_path.split(os.pathsep):
+        if directory:
+            import glob
+
+            for cti in glob.glob(os.path.join(directory, "*.cti")):
+                if cti not in found:
+                    found.append(cti)
+    # Known fixed paths
+    for path in _CTI_SEARCH_PATHS:
+        if os.path.exists(path) and path not in found:
+            found.append(path)
+    return found
 
 
-class HikDirectCameraAdapter(CameraAdapter):
+class HarvestersCameraAdapter(CameraAdapter):
     """
-    Direct HIK camera adapter using the MVS SDK — no ImSwitch required.
+    GenTL / GenICam camera adapter via the harvesters library.
+
+    Works with any GigE Vision or USB3 Vision camera via a free GenTL
+    producer (.cti file) — no vendor SDK installation required.
+
+    Install: pip install harvesters
+    CTI:     Daheng GxGVTL.cti, MVS MvProducerGEV.cti, or any GenTL producer
 
     Usage:
-        cameras = enumerate_hik_cameras()
-        adapter = HikDirectCameraAdapter(cameras[0])
+        h = Harvester()
+        h.add_file('/path/to/producer.cti')
+        h.update()
+        adapter = HarvestersCameraAdapter(h, device_index=0)
         adapter.open()
         frame = adapter.capture_frame()
         adapter.close()
     """
 
-    def __init__(self, camera_info: dict):
-        if not MVS_SDK_AVAILABLE:
-            raise RuntimeError("MVS SDK not available. Install Hikrobotics MVS software.")
-        self._info = camera_info
-        self._cam = MvCamera()
+    def __init__(self, harvester: "Harvester", device_index: int = 0):
+        if not HARVESTERS_AVAILABLE:
+            raise RuntimeError("harvesters not installed. Run: pip install harvesters")
+        self._harvester = harvester
+        self._device_index = device_index
+        self._ia = None  # ImageAcquirer
         self._open = False
-        self._buf: bytes | None = None
-        self._buf_size = 0
-        self._frame_info = MV_FRAME_OUT_INFO_EX()
+        self._name = "GenTL Camera"
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def open(self) -> bool:
-        """Open and start the camera. Returns True on success."""
+        """Create ImageAcquirer and start grabbing. Returns True on success."""
         if self._open:
             return True
         try:
-            device_list = self._info["device_list"]
-            idx = self._info["index"]
-            stDevInfo = cast(device_list.pDeviceInfo[idx], POINTER(MV_CC_DEVICE_INFO)).contents
-            ret = self._cam.MV_CC_CreateHandle(stDevInfo)
-            if ret != MV_OK:
-                logger.error(f"CreateHandle failed: {ret:#x}")
-                return False
-            ret = self._cam.MV_CC_OpenDevice()
-            if ret != MV_OK:
-                self._cam.MV_CC_DestroyHandle()
-                logger.error(f"OpenDevice failed: {ret:#x}")
-                return False
-            # Continuous acquisition mode
-            self._cam.MV_CC_SetEnumValue("TriggerMode", 0)
-            ret = self._cam.MV_CC_StartGrabbing()
-            if ret != MV_OK:
-                self._cam.MV_CC_CloseDevice()
-                self._cam.MV_CC_DestroyHandle()
-                logger.error(f"StartGrabbing failed: {ret:#x}")
-                return False
-            # Allocate frame buffer
-            payload = c_uint(0)
-            self._cam.MV_CC_GetIntValueEx("PayloadSize", payload)
-            self._buf_size = payload.value or (1224 * 1024 * 2)
-            self._buf = create_string_buffer(self._buf_size)
+            self._ia = self._harvester.create(self._device_index)
+            # Continuous (free-run) mode
+            nm = self._ia.remote_device.node_map
+            try:
+                nm.TriggerMode.value = "Off"
+            except Exception:
+                pass
+            self._ia.start()
             self._open = True
-            logger.info(f"Camera opened: {self._info['name']}")
+            try:
+                vendor = nm.DeviceVendorName.value
+                model = nm.DeviceModelName.value
+                self._name = f"{vendor} {model}"
+            except Exception:
+                pass
+            logger.info(f"Camera opened via harvesters: {self._name}")
             return True
         except Exception as exc:
-            logger.error(f"Camera open error: {exc}")
+            logger.error(f"Harvesters open error: {exc}")
+            if self._ia is not None:
+                try:
+                    self._ia.destroy()
+                except Exception:
+                    pass
+                self._ia = None
             return False
 
     def close(self):
-        """Stop grabbing and close the camera."""
-        if not self._open:
+        """Stop grabbing and release the ImageAcquirer."""
+        if not self._open or self._ia is None:
             return
         try:
-            self._cam.MV_CC_StopGrabbing()
-            self._cam.MV_CC_CloseDevice()
-            self._cam.MV_CC_DestroyHandle()
+            self._ia.stop()
+            self._ia.destroy()
         except Exception as exc:
-            logger.warning(f"Camera close error: {exc}")
+            logger.warning(f"Harvesters close error: {exc}")
+        self._ia = None
         self._open = False
 
     # ------------------------------------------------------------------
@@ -682,23 +661,25 @@ class HikDirectCameraAdapter(CameraAdapter):
     # ------------------------------------------------------------------
 
     def capture_frame(self) -> Optional[np.ndarray]:
-        if not self._open:
+        if not self._open or self._ia is None:
             return None
         try:
-            ret = self._cam.MV_CC_GetOneFrameTimeout(
-                self._buf, self._buf_size, self._frame_info, 1000
-            )
-            if ret != MV_OK:
+            buffer = self._ia.try_fetch(timeout=2.0)
+            if buffer is None:
                 return None
-            h = self._frame_info.nHeight
-            w = self._frame_info.nWidth
-            pf = self._frame_info.enPixelType
-            raw = np.frombuffer(self._buf.raw[: h * w * 2], dtype=np.uint8)
-            if pf in (PixelType_Gvsp_Mono10, PixelType_Gvsp_Mono12, PixelType_Gvsp_Mono16):
-                frame = raw.view(np.uint16).reshape(h, w)
-            else:
-                frame = raw[: h * w].reshape(h, w).astype(np.uint16)
-            return frame
+            try:
+                comp = buffer.payload.components[0]
+                h, w = comp.height, comp.width
+                data = comp.data.copy()
+                fmt = getattr(comp, "data_format", "")
+                if "Mono8" in fmt:
+                    frame = data.reshape(h, w).astype(np.uint16)
+                else:
+                    # Mono10 / Mono12 / Mono16 — already uint16
+                    frame = data.view(np.uint16).reshape(h, w)
+                return frame
+            finally:
+                buffer.queue()
         except Exception as exc:
             logger.error(f"capture_frame error: {exc}")
             return None
@@ -707,35 +688,28 @@ class HikDirectCameraAdapter(CameraAdapter):
         return self._open
 
     def get_camera_info(self) -> dict:
-        info = {
-            "name": self._info.get("name", "HIK Direct"),
-            "type": self._info.get("type", "GigE"),
-        }
-        if self._open:
+        info: dict = {"name": self._name, "type": "GigE Vision (GenTL)"}
+        if self._open and self._ia is not None:
             try:
-                exp = ctypes.c_float(0)
-                self._cam.MV_CC_GetFloatValue("ExposureTime", exp)
-                info["parameters"] = {"exposure": exp.value / 1000.0}  # µs → ms
+                info["parameters"] = {"exposure": self.get_exposure_ms()}
             except Exception:
                 pass
         return info
 
     def get_exposure_ms(self) -> float:
-        if not self._open:
+        if not self._open or self._ia is None:
             return 10.0
         try:
-            exp = ctypes.c_float(0)
-            self._cam.MV_CC_GetFloatValue("ExposureTime", exp)
-            return exp.value / 1000.0
+            return self._ia.remote_device.node_map.ExposureTime.value / 1000.0
         except Exception:
             return 10.0
 
     def set_exposure_ms(self, exposure_ms: float):
-        """Set camera exposure time in milliseconds."""
-        if not self._open:
+        """Set exposure time in milliseconds."""
+        if not self._open or self._ia is None:
             return
         try:
-            self._cam.MV_CC_SetFloatValue("ExposureTime", exposure_ms * 1000.0)
+            self._ia.remote_device.node_map.ExposureTime.value = exposure_ms * 1000.0
         except Exception as exc:
             logger.warning(f"set_exposure_ms failed: {exc}")
 
@@ -757,22 +731,23 @@ def create_camera_adapter(
     Factory function to create camera adapter.
 
     Args:
-        camera_type: 'hik', 'napari', or 'dummy'
+        camera_type: 'hik', 'napari', 'harvesters', or 'dummy'
         camera_manager: ImSwitch camera manager (for HIK)
         napari_viewer: Napari viewer (for Napari adapter)
         detector_name: Detector name (for HIK)
         layer_name: Layer name (for Napari)
-        **kwargs: Additional args for adapters
+        **kwargs: Additional args; for 'harvesters': harvester=<Harvester>, device_index=<int>
 
     Returns:
         CameraAdapter instance
     """
-    if camera_type.lower() == "hik_direct":
-        camera_info = kwargs.get("camera_info")
-        if not camera_info:
-            logger.warning("No camera_info provided for hik_direct, falling back to dummy")
+    if camera_type.lower() == "harvesters":
+        harvester = kwargs.get("harvester")
+        device_index = int(kwargs.get("device_index", 0))
+        if harvester is None:
+            logger.warning("No harvester provided for harvesters adapter, falling back to dummy")
             return DummyCameraAdapter()
-        adapter = HikDirectCameraAdapter(camera_info)
+        adapter = HarvestersCameraAdapter(harvester, device_index)
         adapter.open()
         return adapter
 
