@@ -69,11 +69,10 @@ class ZarrTimeseriesWriter:
             "temperature_celsius": np.float32,
             "humidity_percent": np.float32,
             "led_type_str": str,
-            "led_power": np.int16,
-            "ir_led_power": np.int16,
-            "white_led_power": np.int16,
+            "ir_led_power": np.uint8,
+            "white_led_power": np.uint8,
             "phase_str": str,
-            "cycle_number": np.int32,
+            "cycle_number": np.int16,
             "frame_mean_intensity": np.float32,
             "sync_success": np.int8,
         }
@@ -92,12 +91,12 @@ class ZarrTimeseriesWriter:
             "capture_overhead_sec": np.float32,
             "capture_delay_sec": np.float32,
             "stabilization_ms": np.float32,
-            "capture_delay_ms": np.int16,
-            "camera_trigger_latency_ms": np.int16,
+            "capture_delay_ms": np.uint8,
+            "camera_trigger_latency_ms": np.uint8,
             "temperature": np.float32,
             "humidity": np.float32,
             "led_sync_success": np.int8,
-            "transition_count": np.int32,
+            "transition_count": np.int16,
             "frame_mean": np.float32,
             "sync_quality": str,
         }
@@ -175,11 +174,9 @@ class ZarrTimeseriesWriter:
             s("temperature_celsius", temp)
             s("humidity_percent", humidity)
 
-            led_power = int(et.get("led_power_actual") or fm.get("led_power", -1))
             led_type_str = str(et.get("led_type_used") or fm.get("led_type", ""))
             ir_led_power = int(fm.get("ir_led_power", -1))
             white_led_power = int(fm.get("white_led_power", -1))
-            s("led_power", led_power)
             s("ir_led_power", ir_led_power)
             s("white_led_power", white_led_power)
             s("led_type_str", led_type_str)
@@ -259,10 +256,12 @@ class DataManagerZarr:
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
         chunk_size: int = 10,
         flush_interval: int = 10,
+        save_as_uint8: bool = False,
     ):
         self.telemetry_mode = telemetry_mode
         self.chunk_size = chunk_size
         self.flush_interval = flush_interval
+        self.save_as_uint8 = save_as_uint8
 
         self._store: Any = None
         self._root: Any = None
@@ -385,6 +384,8 @@ class DataManagerZarr:
                     self._frames_array.resize((new_size,) + self._image_shape)
                     logger.warning(f"Zarr frames array extended to {new_size}")
 
+                if self.save_as_uint8 and frame.dtype != np.uint8:
+                    frame = (frame.astype(np.uint16) >> 8).astype(np.uint8)
                 self._frames_array[frame_index] = frame
 
                 # ---- Timeseries ----
@@ -408,9 +409,6 @@ class DataManagerZarr:
                     "sync_timing_ms": metadata.get("led_timing_ms", 0),
                     "temperature_celsius": metadata.get("temperature", 0.0),
                     "humidity_percent": metadata.get("humidity", 0.0),
-                    "led_power_actual": metadata.get(
-                        "led_power_actual", metadata.get("led_power", -1)
-                    ),
                     "led_type_used": metadata.get("led_type", "unknown"),
                     "sync_success": metadata.get("success", True),
                     "camera_trigger_latency_ms": metadata.get("camera_trigger_latency_ms", 20),
@@ -452,7 +450,7 @@ class DataManagerZarr:
     def _initialize_images_array(self, frame: np.ndarray) -> None:
         h, w = frame.shape[0], frame.shape[1]
         self._image_shape = (h, w)
-        dtype = frame.dtype
+        dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
         self._frames_array = self._root["images"].create_dataset(
             "frames",

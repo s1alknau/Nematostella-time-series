@@ -302,11 +302,10 @@ class ChunkedTimeseriesWriter:
             "temperature_celsius": np.float32,
             "humidity_percent": np.float32,
             "led_type_str": str_vlen,
-            "led_power": np.int16,
-            "ir_led_power": np.int16,  # IR LED power (0-100%)
-            "white_led_power": np.int16,  # White LED power (0-100%)
+            "ir_led_power": np.uint8,  # IR LED power (0-100%)
+            "white_led_power": np.uint8,  # White LED power (0-100%)
             "phase_str": str_vlen,
-            "cycle_number": np.int32,
+            "cycle_number": np.int16,
             "frame_mean_intensity": np.float32,
             "sync_success": np.int8,
         }
@@ -351,12 +350,12 @@ class ChunkedTimeseriesWriter:
             "capture_overhead_sec": np.float32,
             "capture_delay_sec": np.float32,
             "stabilization_ms": np.float32,
-            "capture_delay_ms": np.int16,
-            "camera_trigger_latency_ms": np.int16,
+            "capture_delay_ms": np.uint8,
+            "camera_trigger_latency_ms": np.uint8,
             "temperature": np.float32,
             "humidity": np.float32,
             "led_sync_success": np.int8,
-            "transition_count": np.int32,
+            "transition_count": np.int16,
             "frame_mean": np.float32,
             "sync_quality": str_vlen,
         }
@@ -518,14 +517,11 @@ class ChunkedTimeseriesWriter:
             # ============================================================
             # LED STATE
             # ============================================================
-            led_power = int(et.get("led_power_actual") or fm.get("led_power", -1))
             led_type_str = str(et.get("led_type_used") or fm.get("led_type", ""))
 
-            # Per-LED powers (for phase-based recordings with per-phase calibration)
             ir_led_power = int(fm.get("ir_led_power", -1))
             white_led_power = int(fm.get("white_led_power", -1))
 
-            set_value("led_power", led_power)
             set_value("ir_led_power", ir_led_power)
             set_value("white_led_power", white_led_power)
             set_value("led_type_str", led_type_str)  # Keep only string version, removed enum
@@ -651,16 +647,19 @@ class DataManager:
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
         chunk_size: int = 10,
         flush_interval: int = 10,
+        save_as_uint8: bool = False,
     ):
         """
         Args:
             telemetry_mode: Level of telemetry detail
             chunk_size: Chunk size for timeseries datasets
             flush_interval: Flush HDF5 buffers every N frames (default: 10)
+            save_as_uint8: Convert frames to uint8 before saving (halves file size)
         """
         self.telemetry_mode = telemetry_mode
         self.chunk_size = chunk_size
         self.flush_interval = flush_interval
+        self.save_as_uint8 = save_as_uint8
 
         # HDF5 file
         self.hdf5_file: Optional[h5py.File] = None
@@ -852,9 +851,6 @@ class DataManager:
                     "sync_timing_ms": metadata.get("led_timing_ms", 0),
                     "temperature_celsius": metadata.get("temperature", 0.0),
                     "humidity_percent": metadata.get("humidity", 0.0),
-                    "led_power_actual": metadata.get(
-                        "led_power_actual", metadata.get("led_power", -1)
-                    ),
                     "led_type_used": metadata.get("led_type", "unknown"),
                     "sync_success": metadata.get("success", True),
                     "camera_trigger_latency_ms": metadata.get("camera_trigger_latency_ms", 20),
@@ -872,6 +868,8 @@ class DataManager:
                 # Frame data is copied inside enqueue() so camera buffer
                 # can be reused immediately after this call returns.
                 # ----------------------------------------------------------
+                if self.save_as_uint8 and frame.dtype != np.uint8:
+                    frame = (frame.astype(np.uint16) >> 8).astype(np.uint8)
                 self._async_writer.enqueue(
                     frame_data=frame,
                     frame_index=frame_index,
@@ -1050,7 +1048,7 @@ class DataManager:
         """
         h, w = frame.shape[0], frame.shape[1]
         self._image_shape = (h, w)
-        dtype = frame.dtype
+        dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
         # One full frame per chunk = O(1) random access per frame
         chunk_shape = (1, h, w)

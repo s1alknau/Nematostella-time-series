@@ -139,12 +139,16 @@ class RecordingManager(QObject):
                 from ..Datamanager.data_manager_zarr import TelemetryMode as ZarrTelemetryMode
 
                 self.data_manager = DataManagerZarr(  # type: ignore[assignment]
-                    telemetry_mode=ZarrTelemetryMode.STANDARD, chunk_size=512
+                    telemetry_mode=ZarrTelemetryMode.STANDARD,
+                    chunk_size=512,
+                    save_as_uint8=getattr(config, "save_as_uint8", False),
                 )
                 logger.info("Using Zarr data manager")
             else:
                 self.data_manager = DataManager(
-                    telemetry_mode=TelemetryMode.STANDARD, chunk_size=512
+                    telemetry_mode=TelemetryMode.STANDARD,
+                    chunk_size=512,
+                    save_as_uint8=getattr(config, "save_as_uint8", False),
                 )
                 logger.info("Using HDF5 data manager")
 
@@ -212,6 +216,11 @@ class RecordingManager(QObject):
             self.frame_capture.reset_led_state()
             logger.info("LED state cache reset for new recording")
 
+            # Reset phase tracking so the first frame always triggers a phase
+            # transition — ensuring set_white_continuous() is called even if
+            # this recording starts in the same phase the previous one ended in.
+            self._last_phase = None
+
             # ================================================================
             # Initialize LED powers for dual mode (CRITICAL FIX)
             # ================================================================
@@ -276,8 +285,10 @@ class RecordingManager(QObject):
             # ================================================================
             # Initial sensor query before recording starts
             # ================================================================
-            # This ensures we have valid temperature/humidity values for frame 0
+            # Force the counter so query_sensors_if_needed() always fires here,
+            # even if the previous recording ended mid-cycle.
             if self.frame_capture:
+                self.frame_capture.reset_led_state()
                 logger.info("Querying initial sensor values...")
                 self.frame_capture.query_sensors_if_needed()
                 logger.info("Initial sensor query complete")
@@ -591,37 +602,28 @@ class RecordingManager(QObject):
                 from .recording_state import PhaseType
 
                 if phase_info.phase == PhaseType.DARK:
-                    metadata["led_power"] = config.dark_phase_ir_power
                     metadata["ir_led_power"] = config.dark_phase_ir_power
                     metadata["white_led_power"] = 0
                 else:
                     # Light phase
                     if dual_mode:
-                        metadata["led_power"] = (
-                            config.light_phase_ir_power
-                        )  # Store IR power in legacy field
                         metadata["ir_led_power"] = config.light_phase_ir_power
                         metadata["white_led_power"] = config.light_phase_white_power
                     else:
-                        metadata["led_power"] = config.light_phase_white_power
                         metadata["ir_led_power"] = 0
                         metadata["white_led_power"] = config.light_phase_white_power
             elif config:
-                # Continuous recording: Use legacy single powers
+                # Continuous recording: Use single powers
                 if led_type == "ir" or dual_mode:
-                    metadata["led_power"] = config.ir_led_power
                     metadata["ir_led_power"] = config.ir_led_power
                     metadata["white_led_power"] = config.white_led_power if dual_mode else 0
                 elif led_type == "white":
-                    metadata["led_power"] = config.white_led_power
                     metadata["ir_led_power"] = 0
                     metadata["white_led_power"] = config.white_led_power
                 else:
-                    metadata["led_power"] = -1
                     metadata["ir_led_power"] = -1
                     metadata["white_led_power"] = -1
             else:
-                metadata["led_power"] = -1
                 metadata["ir_led_power"] = -1
                 metadata["white_led_power"] = -1
 
@@ -777,36 +779,38 @@ class RecordingManager(QObject):
             logger.info(f"🔄 Phase transition: {self._last_phase} → {current_phase}")
             self._last_phase = current_phase
 
+        # LED powers are only updated on phase transitions.
+        # Calling set_led_power() every frame causes a PWM glitch on the ESP32
+        # (analogWrite re-arms the timer, briefly outputting 0) which is visible
+        # as a short LED flicker during the continuous light phase.
+        if not phase_transition:
+            return False
+
         # Determine which LED powers to set based on current phase
         if phase_info.phase == PhaseType.DARK:
-            # Nachtphase: nur IR, White LED dauerhaft aus
             ir_power = config.dark_phase_ir_power
-
-            logger.debug(f"[PHASE POWER] Dark phase: Setting IR={ir_power}%")
+            logger.info(f"[PHASE POWER] Dark phase transition: Setting IR={ir_power}%")
             self.frame_capture.esp32.set_led_power(ir_power, "ir")
 
-            # White LED ausschalten bei Nachtphasen-Übergang (nur wenn Dauerbetrieb aktiv)
-            if phase_transition and config.white_led_continuous:
+            if config.white_led_continuous:
                 self.frame_capture.set_white_continuous(False)
 
         else:
-            # Tagphase: LED-Powers setzen
             ir_power = config.light_phase_ir_power
             white_power = config.light_phase_white_power
 
             if dual_mode:
-                logger.debug(
-                    f"[PHASE POWER] Light phase (dual): Setting IR={ir_power}%, White={white_power}%"
+                logger.info(
+                    f"[PHASE POWER] Light phase transition (dual): IR={ir_power}%, White={white_power}%"
                 )
                 self.frame_capture.esp32.set_led_power(ir_power, "ir")
                 time.sleep(0.01)
                 self.frame_capture.esp32.set_led_power(white_power, "white")
             else:
-                logger.debug(f"[PHASE POWER] Light phase (white): Setting White={white_power}%")
+                logger.info(f"[PHASE POWER] Light phase transition (white): White={white_power}%")
                 self.frame_capture.esp32.set_led_power(white_power, "white")
 
-            # White LED dauerhaft einschalten (nur wenn Dauerbetrieb konfiguriert)
-            if phase_transition and config.white_led_continuous:
+            if config.white_led_continuous:
                 self.frame_capture.set_white_continuous(True)
 
         return phase_transition
