@@ -182,6 +182,7 @@ class RecordingController(QObject):
                 roi_fraction=config_dict.get("roi_fraction", 0.75),
                 # Output format
                 output_format=config_dict.get("output_format", "hdf5"),
+                save_as_uint8=config_dict.get("save_as_uint8", False),
             )
 
             # Start recording

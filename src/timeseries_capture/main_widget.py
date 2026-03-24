@@ -158,6 +158,15 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.live_analysis_panel.capture_frame_requested.connect(self._on_capture_preview_frame)
         self.live_analysis_panel.rois_detected.connect(self._on_rois_detected)
 
+        # Keep live analysis panel in sync with format selector
+        self.recording_panel.format_combo.currentIndexChanged.connect(
+            lambda: self.live_analysis_panel.set_output_format(
+                self.recording_panel.format_combo.currentData()
+            )
+        )
+        # Set initial state
+        self.live_analysis_panel.set_output_format(self.recording_panel.format_combo.currentData())
+
     def _load_camera_system_config(self):
         """Load camera system configuration if available"""
         from .Config import load_camera_system_config
@@ -612,11 +621,14 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
             phase_active = phase_config.get("enabled", False)
 
+            self._recording_duration_min = recording_config["duration_min"]
             full_config = RecordingConfig(
                 duration_min=recording_config["duration_min"],
                 interval_sec=recording_config["interval_sec"],
                 experiment_name=recording_config["experiment_name"],
                 output_dir=recording_config["output_dir"],
+                output_format=recording_config.get("output_format", "hdf5"),
+                save_as_uint8=recording_config.get("save_as_uint8", False),
                 phase_enabled=phase_active,
                 white_led_continuous=phase_active
                 and phase_config.get("white_led_continuous", False),
@@ -777,7 +789,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.log_panel.add_log("⚠️ Camera not available for preview frame", "WARNING")
             return
         try:
-            frame = self.camera_adapter.get_frame()
+            frame = self.camera_adapter.capture_frame()
             if frame is not None:
                 self.live_analysis_panel.set_preview_frame(frame)
                 self.log_panel.add_log("📷 Preview frame captured for ROI detection", "INFO")
@@ -795,6 +807,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
     def _on_zarr_path_ready(self, zarr_path: str):
         """Zarr store is open — start live analysis worker."""
+        # Tell the panel the full recording duration so x-axis is fixed immediately
+        duration_min = getattr(self, "_recording_duration_min", None)
+        if duration_min is not None:
+            self.live_analysis_panel.set_recording_duration(duration_min)
+
         masks = self.live_analysis_panel.get_masks()
         if not masks:
             self.log_panel.add_log(
