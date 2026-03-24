@@ -647,16 +647,19 @@ class DataManager:
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
         chunk_size: int = 10,
         flush_interval: int = 10,
+        save_as_uint8: bool = False,
     ):
         """
         Args:
             telemetry_mode: Level of telemetry detail
             chunk_size: Chunk size for timeseries datasets
             flush_interval: Flush HDF5 buffers every N frames (default: 10)
+            save_as_uint8: Convert 12-bit HIK frames to uint8 before saving
         """
         self.telemetry_mode = telemetry_mode
         self.chunk_size = chunk_size
         self.flush_interval = flush_interval
+        self.save_as_uint8 = save_as_uint8
 
         # HDF5 file
         self.hdf5_file: Optional[h5py.File] = None
@@ -674,6 +677,7 @@ class DataManager:
         self._images_dataset: Optional[h5py.Dataset] = None
         self._images_max_frames: int = 100_000  # Pre-allocated rows
         self._image_shape: Optional[tuple] = None  # (H, W) determined on first frame
+        self._uint8_shift: Optional[int] = None  # Detected on first uint8 frame
 
         # Counters (updated in recording thread for accurate timing)
         self.frame_count = 0
@@ -865,6 +869,26 @@ class DataManager:
                 # Frame data is copied inside enqueue() so camera buffer
                 # can be reused immediately after this call returns.
                 # ----------------------------------------------------------
+                if self.save_as_uint8 and frame.dtype != np.uint8:
+                    if frame.dtype.kind == "f":
+                        # Float data (e.g., ImSwitch normalized [0, 1]) → scale to uint8
+                        frame = (frame * 255.0).clip(0, 255).astype(np.uint8)
+                        if self._uint8_shift is None:
+                            self._uint8_shift = -1  # sentinel: float path used
+                            logger.info("uint8 conversion: float [0,1] → scaled to [0,255]")
+                    else:
+                        if self._uint8_shift is None:
+                            max_val = int(frame.max())
+                            if max_val > 4095:
+                                self._uint8_shift = 8  # 16-bit camera
+                            elif max_val > 255:
+                                self._uint8_shift = 4  # 12-bit camera
+                            else:
+                                self._uint8_shift = 0  # 8-bit data in uint16 container
+                            logger.info(
+                                f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
+                            )
+                        frame = (frame >> self._uint8_shift).astype(np.uint8)
                 self._async_writer.enqueue(
                     frame_data=frame,
                     frame_index=frame_index,
@@ -1043,7 +1067,7 @@ class DataManager:
         """
         h, w = frame.shape[0], frame.shape[1]
         self._image_shape = (h, w)
-        dtype = frame.dtype
+        dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
         # One full frame per chunk = O(1) random access per frame
         chunk_shape = (1, h, w)

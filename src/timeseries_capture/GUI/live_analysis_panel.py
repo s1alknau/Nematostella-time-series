@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from qtpy.QtCore import QSettings
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtGui import QImage, QPixmap
 from qtpy.QtWidgets import (
@@ -63,12 +64,16 @@ class LiveAnalysisPanel(QWidget):
     rois_detected = pyqtSignal(list)  # list[np.ndarray]
     capture_frame_requested = pyqtSignal()
 
+    _SETTINGS_KEY = "LiveAnalysisPanel/roi_detection"
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._masks: list[np.ndarray] = []
         self._result: RoiDetectionResult | None = None
         self._last_results: dict = {}
+        self._total_duration_min: float | None = None
         self._setup_ui()
+        self._load_settings()
 
     # ------------------------------------------------------------------
     # UI
@@ -111,14 +116,49 @@ class LiveAnalysisPanel(QWidget):
         self.min_dist_spin.setSuffix(" px")
         params_layout.addRow("Min Distance:", self.min_dist_spin)
 
+        self.dp_spin = QDoubleSpinBox()
+        self.dp_spin.setRange(0.1, 5.0)
+        self.dp_spin.setValue(0.5)
+        self.dp_spin.setSingleStep(0.1)
+        self.dp_spin.setDecimals(1)
+        self.dp_spin.setToolTip(
+            "Inverse ratio of accumulator resolution to image resolution.\n"
+            "dp=1 → same resolution; dp=2 → half resolution (faster, less precise)."
+        )
+        params_layout.addRow("dp Ratio:", self.dp_spin)
+
+        self.param1_spin = QDoubleSpinBox()
+        self.param1_spin.setRange(1.0, 500.0)
+        self.param1_spin.setValue(50.0)
+        self.param1_spin.setDecimals(1)
+        self.param1_spin.setToolTip(
+            "Upper threshold for the Canny edge detector (param1).\n"
+            "Higher = fewer, stronger edges detected before circle fitting."
+        )
+        params_layout.addRow("param1 (Canny):", self.param1_spin)
+
         self.param2_spin = QDoubleSpinBox()
         self.param2_spin.setRange(1.0, 200.0)
         self.param2_spin.setValue(30.0)
         self.param2_spin.setDecimals(1)
-        self.param2_spin.setToolTip("Lower = more circles detected (higher sensitivity)")
-        params_layout.addRow("Sensitivity (param2):", self.param2_spin)
+        self.param2_spin.setToolTip(
+            "Accumulator threshold for circle detection (param2).\n"
+            "Lower = more circles detected (higher sensitivity)."
+        )
+        params_layout.addRow("param2 (Threshold):", self.param2_spin)
 
         roi_layout.addLayout(params_layout)
+
+        # Persist values whenever a spinbox changes
+        for w in (
+            self.min_radius_spin,
+            self.max_radius_spin,
+            self.min_dist_spin,
+            self.dp_spin,
+            self.param1_spin,
+            self.param2_spin,
+        ):
+            w.valueChanged.connect(self._save_settings)
 
         # Buttons
         btn_row = QHBoxLayout()
@@ -134,6 +174,17 @@ class LiveAnalysisPanel(QWidget):
         btn_row.addWidget(self.detect_btn)
 
         roi_layout.addLayout(btn_row)
+
+        # Format warning banner (shown when HDF5 is selected)
+        self.format_warning_label = QLabel(
+            "⚠️  Live analysis requires Zarr format. Switch to 'Zarr (.zarr)' in the Recording tab."
+        )
+        self.format_warning_label.setStyleSheet(
+            "background: #7f3f00; color: #ffcc80; padding: 6px; border-radius: 4px; font-weight: bold;"
+        )
+        self.format_warning_label.setWordWrap(True)
+        self.format_warning_label.setVisible(False)
+        roi_layout.addWidget(self.format_warning_label)
 
         # Status label
         self.roi_status_label = QLabel("No preview frame captured yet.")
@@ -199,6 +250,29 @@ class LiveAnalysisPanel(QWidget):
     # Slots
     # ------------------------------------------------------------------
 
+    def _save_settings(self):
+        s = QSettings()
+        s.beginGroup(self._SETTINGS_KEY)
+        s.setValue("min_radius", self.min_radius_spin.value())
+        s.setValue("max_radius", self.max_radius_spin.value())
+        s.setValue("min_dist", self.min_dist_spin.value())
+        s.setValue("dp", self.dp_spin.value())
+        s.setValue("param1", self.param1_spin.value())
+        s.setValue("param2", self.param2_spin.value())
+        s.endGroup()
+
+    def _load_settings(self):
+        s = QSettings()
+        s.beginGroup(self._SETTINGS_KEY)
+        if s.contains("min_radius"):
+            self.min_radius_spin.setValue(int(s.value("min_radius")))
+            self.max_radius_spin.setValue(int(s.value("max_radius")))
+            self.min_dist_spin.setValue(int(s.value("min_dist")))
+            self.dp_spin.setValue(float(s.value("dp")))
+            self.param1_spin.setValue(float(s.value("param1")))
+            self.param2_spin.setValue(float(s.value("param2")))
+        s.endGroup()
+
     def _on_capture_clicked(self):
         """Request a live frame from the camera via the main widget."""
         self.capture_frame_requested.emit()
@@ -218,6 +292,8 @@ class LiveAnalysisPanel(QWidget):
                 min_radius=self.min_radius_spin.value(),
                 max_radius=self.max_radius_spin.value(),
                 min_dist=self.min_dist_spin.value(),
+                dp=self.dp_spin.value(),
+                param1=self.param1_spin.value(),
                 param2=self.param2_spin.value(),
             )
             self._result = result
@@ -238,6 +314,26 @@ class LiveAnalysisPanel(QWidget):
     # ------------------------------------------------------------------
     # Public API (called by main_widget)
     # ------------------------------------------------------------------
+
+    def set_recording_duration(self, total_min: float):
+        """Called by main_widget when recording starts so x-axis can be fixed to full duration."""
+        self._total_duration_min = float(total_min)
+
+    def set_output_format(self, fmt: str):
+        """
+        Called by main_widget when the user changes the output format selector.
+        Shows/hides the HDF5 warning banner and updates the plot status accordingly.
+        """
+        is_hdf5 = fmt != "zarr"
+        self.format_warning_label.setVisible(is_hdf5)
+        if is_hdf5:
+            self.plot_status_label.setText(
+                "Live analysis not available — switch to Zarr format to enable."
+            )
+            self.plot_status_label.setStyleSheet("color: #e67e22;")
+        else:
+            self.plot_status_label.setText("Waiting for recording to start...")
+            self.plot_status_label.setStyleSheet("color: #7f8c8d;")
 
     def set_preview_frame(self, frame: np.ndarray):
         """
@@ -313,6 +409,8 @@ class LiveAnalysisPanel(QWidget):
         self._ax.set_ylabel("Activity (a.u.)")
         self._ax.set_title(f"Live Activity — {n_frames} frames recorded")
         self._ax.grid(True, alpha=0.3)
+        if self._total_duration_min is not None:
+            self._ax.set_xlim(0, self._total_duration_min)
 
         for key, color in zip(keys_to_plot, colors_to_plot):
             activity = results[key]

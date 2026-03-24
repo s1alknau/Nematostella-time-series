@@ -139,12 +139,16 @@ class RecordingManager(QObject):
                 from ..Datamanager.data_manager_zarr import TelemetryMode as ZarrTelemetryMode
 
                 self.data_manager = DataManagerZarr(  # type: ignore[assignment]
-                    telemetry_mode=ZarrTelemetryMode.STANDARD, chunk_size=512
+                    telemetry_mode=ZarrTelemetryMode.STANDARD,
+                    chunk_size=512,
+                    save_as_uint8=getattr(config, "save_as_uint8", False),
                 )
                 logger.info("Using Zarr data manager")
             else:
                 self.data_manager = DataManager(
-                    telemetry_mode=TelemetryMode.STANDARD, chunk_size=512
+                    telemetry_mode=TelemetryMode.STANDARD,
+                    chunk_size=512,
+                    save_as_uint8=getattr(config, "save_as_uint8", False),
                 )
                 logger.info("Using HDF5 data manager")
 
@@ -524,9 +528,18 @@ class RecordingManager(QObject):
                 import numpy as np
 
                 # Calculate mean intensity using same method as calibration
+                # Normalize to 0–255 scale to match calibration target_intensity
+                def _normalize_to_255(arr: np.ndarray) -> float:
+                    mean = float(np.mean(arr))
+                    if arr.dtype.kind == "u":
+                        return mean * 255.0 / float(np.iinfo(arr.dtype).max)
+                    elif arr.dtype.kind == "f":
+                        return mean * 255.0  # float assumed [0, 1]
+                    return mean
+
                 if self.state.config.use_full_frame_for_validation:
                     # Use entire frame
-                    frame_mean = float(np.mean(frame))
+                    frame_mean = _normalize_to_255(frame)
                 else:
                     # Use center ROI (same as calibration)
                     h, w = frame.shape[:2]
@@ -545,7 +558,7 @@ class RecordingManager(QObject):
 
                     # Extract ROI and calculate mean
                     roi_region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
-                    frame_mean = float(np.mean(roi_region))
+                    frame_mean = _normalize_to_255(roi_region)
 
                 # Check if frame is too dark (likely a timing issue)
                 if frame_mean < brightness_threshold:

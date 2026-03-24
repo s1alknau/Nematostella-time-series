@@ -256,10 +256,13 @@ class DataManagerZarr:
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
         chunk_size: int = 10,
         flush_interval: int = 10,
+        save_as_uint8: bool = False,
     ):
         self.telemetry_mode = telemetry_mode
         self.chunk_size = chunk_size
         self.flush_interval = flush_interval
+        self.save_as_uint8 = save_as_uint8
+        self._uint8_shift: int | None = None  # Detected on first frame
 
         self._store: Any = None
         self._root: Any = None
@@ -382,6 +385,26 @@ class DataManagerZarr:
                     self._frames_array.resize((new_size,) + self._image_shape)
                     logger.warning(f"Zarr frames array extended to {new_size}")
 
+                if self.save_as_uint8 and frame.dtype != np.uint8:
+                    if frame.dtype.kind == "f":
+                        # Float data (e.g., ImSwitch normalized [0, 1]) → scale to uint8
+                        frame = (frame * 255.0).clip(0, 255).astype(np.uint8)
+                        if self._uint8_shift is None:
+                            self._uint8_shift = -1  # sentinel: float path used
+                            logger.info("uint8 conversion: float [0,1] → scaled to [0,255]")
+                    else:
+                        if self._uint8_shift is None:
+                            max_val = int(frame.max())
+                            if max_val > 4095:
+                                self._uint8_shift = 8  # 16-bit camera
+                            elif max_val > 255:
+                                self._uint8_shift = 4  # 12-bit camera
+                            else:
+                                self._uint8_shift = 0  # 8-bit data in uint16 container
+                            logger.info(
+                                f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
+                            )
+                        frame = (frame >> self._uint8_shift).astype(np.uint8)
                 self._frames_array[frame_index] = frame
 
                 # ---- Timeseries ----
@@ -446,7 +469,7 @@ class DataManagerZarr:
     def _initialize_images_array(self, frame: np.ndarray) -> None:
         h, w = frame.shape[0], frame.shape[1]
         self._image_shape = (h, w)
-        dtype = frame.dtype
+        dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
         self._frames_array = self._root["images"].create_dataset(
             "frames",

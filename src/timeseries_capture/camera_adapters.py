@@ -74,7 +74,7 @@ class CameraAdapter(ABC):
             if "parameters" in info and "exposure" in info["parameters"]:
                 # Exposure is typically in milliseconds
                 return float(info["parameters"]["exposure"])
-        except:
+        except Exception:
             pass
         return 10.0  # Default fallback
 
@@ -109,7 +109,7 @@ class HikGigECameraAdapter(CameraAdapter):
                 if detectors:
                     self.detector_name = detectors[0]
                     logger.info(f"Auto-selected detector: {self.detector_name}")
-            except:
+            except Exception:
                 pass
 
         logger.info(f"HIK GigE Camera Adapter initialized (detector={self.detector_name})")
@@ -211,7 +211,7 @@ class HikGigECameraAdapter(CameraAdapter):
                             "exposure": detector.getParameter("exposure"),
                             "gain": detector.getParameter("gain"),
                         }
-                    except:
+                    except Exception:
                         pass
 
             except Exception as e:
@@ -297,9 +297,10 @@ class NapariViewerCameraAdapter(CameraAdapter):
             # Store as last frame
             self._last_frame = frame
 
-            # Ensure correct format
-            if frame.dtype != np.uint16:
-                frame = frame.astype(np.uint16)
+            logger.debug(
+                f"Captured frame: dtype={frame.dtype}, shape={frame.shape}, "
+                f"min={frame.min()}, max={frame.max()}, mean={frame.mean():.1f}"
+            )
 
             return frame
 
@@ -358,7 +359,7 @@ class NapariViewerCameraAdapter(CameraAdapter):
                 try:
                     info["shape"] = layer.data.shape
                     info["dtype"] = str(layer.data.dtype)
-                except:
+                except Exception:
                     pass
 
         return info
@@ -377,7 +378,7 @@ class NapariViewerCameraAdapter(CameraAdapter):
                 else:
                     logger.warning("Cached layer no longer in viewer, searching again...")
                     self._cached_layer = None
-            except:
+            except Exception:
                 self._cached_layer = None
 
         if not self.viewer:

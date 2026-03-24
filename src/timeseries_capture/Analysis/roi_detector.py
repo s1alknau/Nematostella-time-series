@@ -102,7 +102,9 @@ def detect_rois_hough(
         logger.warning("No circles detected. Try adjusting min_radius, max_radius, or param2.")
         return RoiDetectionResult(masks=[], labeled_frame=labeled_frame, circles=[])
 
-    circles_int = np.round(circles_raw[0, :]).astype(int)
+    # Sort circles in meandering (snake) order — identical to napari-hdf5-activity
+    circles_sorted = _sort_circles_meandering_auto(circles_raw[0])
+    circles_int = np.round(circles_sorted).astype(int)
     h, w = gray.shape
 
     masks: list[np.ndarray] = []
@@ -131,6 +133,53 @@ def detect_rois_hough(
 
     logger.info(f"Detected {len(masks)} ROIs via HoughCircles")
     return RoiDetectionResult(masks=masks, labeled_frame=labeled_frame, circles=circles_out)
+
+
+def _sort_circles_meandering_auto(circles: np.ndarray) -> np.ndarray:
+    """
+    Sort circles in meandering (snake/boustrophedon) order — identical to napari-hdf5-activity.
+
+    Auto-detects plate layout from circle count:
+      4→2×2, 6→2×3, 8→2×4, 12→3×4, 16→4×4, 24→4×6
+    Other counts fall back to simple left-to-right order.
+
+    Pattern (example 2×3):
+      Row 0:  1 → 2 → 3
+      Row 1:  6 ← 5 ← 4
+    """
+    if circles is None or len(circles) == 0:
+        return circles
+
+    n = len(circles)
+    layout = {4: (2, 2), 6: (2, 3), 8: (2, 4), 12: (3, 4), 16: (4, 4), 24: (4, 6)}
+
+    if n in layout:
+        rows, _ = layout[n]
+        row_groups = _group_into_rows(circles, rows)
+        ordered = []
+        for row_idx, row in enumerate(row_groups):
+            row_sorted = sorted(row, key=lambda c: c[0])
+            if row_idx % 2 == 1:
+                row_sorted = row_sorted[::-1]
+            ordered.extend(row_sorted)
+        return np.array(ordered, dtype=np.float32)
+    else:
+        # Fallback: sort by X coordinate
+        return circles[np.argsort(circles[:, 0])]
+
+
+def _group_into_rows(circles: np.ndarray, expected_rows: int) -> list:
+    """Group circles into rows based on Y coordinate."""
+    y_sorted = circles[np.argsort(circles[:, 1])]
+    if expected_rows == 1:
+        return [y_sorted.tolist()]
+    per_row = len(circles) // expected_rows
+    rows = []
+    for i in range(expected_rows):
+        start = i * per_row
+        end = len(y_sorted) if i == expected_rows - 1 else start + per_row
+        rows.append(y_sorted[start:end].tolist())
+    return rows
 
 
 def masks_to_array(masks: list[np.ndarray]) -> np.ndarray:

@@ -15,6 +15,63 @@ from qtpy.QtCore import Signal as pyqtSignal
 logger = logging.getLogger(__name__)
 
 
+def _apply_illumination_correction(
+    activity: np.ndarray,
+    led_power: np.ndarray,
+) -> np.ndarray:
+    """
+    Correct for baseline shifts between illumination phases.
+
+    Identical to equalize_signal_per_illumination_period() in napari-hdf5-activity:
+      1. Group contiguous frames with the same phase (light: power > 0, dark: power == 0)
+      2. Compute 15th-percentile floor per period
+      3. Global reference = median of all floors
+      4. Shift each period by (global_floor - period_floor), clamp to >= 0
+
+    Args:
+        activity: Per-ROI activity array of shape (N-1,) — one value per frame transition
+        led_power: white_led_power recorded for each frame, shape (N,)
+
+    Returns:
+        Corrected activity array of shape (N-1,), dtype float32
+    """
+    if len(activity) == 0:
+        return activity
+
+    # For diff[i] = |frame[i+1] - frame[i]|, assign to the phase of frame[i+1]
+    # so that the transition is attributed to the phase it "lands" in.
+    phase_per_diff = (led_power[1:] > 0).astype(np.int8)  # (N-1,) 1=light, 0=dark
+
+    # Find contiguous period boundaries
+    periods: list[tuple[int, int]] = []  # (start_idx, end_idx) inclusive, into activity
+    start = 0
+    for j in range(1, len(phase_per_diff)):
+        if phase_per_diff[j] != phase_per_diff[j - 1]:
+            periods.append((start, j - 1))
+            start = j
+    periods.append((start, len(phase_per_diff) - 1))
+
+    if len(periods) < 2:
+        # Only one phase present — no correction needed
+        return activity
+
+    # Compute 15th-percentile floor per period
+    floors = np.empty(len(periods), dtype=np.float32)
+    for k, (s, e) in enumerate(periods):
+        segment = activity[s : e + 1]
+        floors[k] = float(np.percentile(segment, 15)) if len(segment) > 0 else 0.0
+
+    global_floor = float(np.median(floors))
+
+    # Apply shift per period and clamp
+    corrected = activity.copy()
+    for k, (s, e) in enumerate(periods):
+        shift = global_floor - floors[k]
+        corrected[s : e + 1] = np.clip(corrected[s : e + 1] + shift, 0.0, None)
+
+    return corrected.astype(np.float32)
+
+
 class LiveAnalysisWorker(QThread):
     """
     Background thread for live activity analysis during Zarr recording.
@@ -87,19 +144,42 @@ class LiveAnalysisWorker(QThread):
 
             root = zarr.open_group(self.zarr_path, mode="r")
 
-            # Safety: frames array must exist and have at least 2 frames
+            # Safety: frames array must exist
             if "images" not in root or "frames" not in root["images"]:
                 return
             frames_arr = root["images"]["frames"]
-            n_frames = int(frames_arr.shape[0])
+
+            # Determine how many frames have actually been written.
+            # The images array is pre-allocated to its max capacity (e.g. 100 000),
+            # so frames_arr.shape[0] is NOT the written count.
+            # The timeseries datasets are appended incrementally and are therefore
+            # always exactly as long as the number of written frames.
+            ts_group = root.get("timeseries", None)
+            if ts_group is not None and "frame_index" in ts_group:
+                n_frames = int(ts_group["frame_index"].shape[0])
+            elif ts_group is not None and "recording_elapsed_sec" in ts_group:
+                n_frames = int(ts_group["recording_elapsed_sec"].shape[0])
+            else:
+                # Fallback: check .zattrs written_frames attribute
+                n_frames = int(root.attrs.get("written_frames", 0))
+
             if n_frames < 2:
                 return
 
-            # Read all frames written so far as float32 (copy into RAM once)
-            frame_data = frames_arr[:n_frames].astype(np.float32)  # (N, H, W)
+            # Read only the actually written frames (avoids loading the full
+            # pre-allocated array which can be hundreds of GiB).
+            # Normalize to [0, 1] — identical to napari-hdf5-activity (_reader.py:
+            # normalize_image_to_float32 divides uint16 by 65535.0).
+            dtype_max = float(np.iinfo(frames_arr.dtype).max)  # 255 for uint8, 65535 for uint16
+            frame_data = frames_arr[:n_frames].astype(np.float32) / dtype_max  # (N, H, W)
 
             # Compute frame-to-frame absolute differences
             diffs = np.abs(np.diff(frame_data, axis=0))  # (N-1, H, W)
+
+            # Read LED power for illumination phase correction (N,)
+            led_power: np.ndarray | None = None
+            if ts_group is not None and "white_led_power" in ts_group:
+                led_power = ts_group["white_led_power"][:n_frames].astype(np.float32)
 
             results: dict = {}
             for i, mask in enumerate(self.masks):
@@ -111,6 +191,11 @@ class LiveAnalysisWorker(QThread):
                 # Mean per-pixel activity per frame transition
                 roi_diffs = diffs[:, mask_bool]  # (N-1, n_pixels)
                 activity = roi_diffs.sum(axis=1) / n_pixels  # (N-1,)
+
+                # Illumination phase baseline correction (identical to analysis plugin)
+                if led_power is not None and len(led_power) == n_frames:
+                    activity = _apply_illumination_correction(activity, led_power)
+
                 results[f"roi_{i}"] = activity
 
             # Timestamps (seconds from start)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -98,6 +99,14 @@ class RecordingControlPanel(QWidget):
             "HDF5: classic format\nZarr: compatible with napari-hdf5-activity zarr branch"
         )
         config_layout.addRow("Format:", self.format_combo)
+
+        # Bit depth
+        self.uint8_checkbox = QCheckBox("Save as uint8 (half file size)")
+        self.uint8_checkbox.setToolTip(
+            "Convert 12-bit camera frames to 8-bit before saving.\n"
+            "Halves file size. ROI detection and analysis remain accurate."
+        )
+        config_layout.addRow("Bit Depth:", self.uint8_checkbox)
 
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
@@ -316,6 +325,7 @@ class RecordingControlPanel(QWidget):
             "experiment_name": self.experiment_name_edit.text(),
             "output_dir": self.output_dir_edit.text(),
             "output_format": self.format_combo.currentData(),
+            "save_as_uint8": self.uint8_checkbox.isChecked(),
         }
 
     def update_status(self, status: dict):

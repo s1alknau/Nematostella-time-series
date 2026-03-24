@@ -628,6 +628,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 experiment_name=recording_config["experiment_name"],
                 output_dir=recording_config["output_dir"],
                 output_format=recording_config.get("output_format", "hdf5"),
+                save_as_uint8=recording_config.get("save_as_uint8", False),
                 phase_enabled=phase_active,
                 white_led_continuous=phase_active
                 and phase_config.get("white_led_continuous", False),
@@ -923,11 +924,20 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             def run_calibration():
                 """Run calibration in background thread"""
                 try:
+                    # Create capture callback with buffer flush.
+                    # getLatestFrame() returns the most recent buffered frame which
+                    # may predate LED-on. Discard 2 frames so the measurement uses
+                    # a frame actually captured after the LED stabilized.
+                    import time as _time
+
                     from .Recorder.calibration_service import CalibrationService
 
-                    # Create capture callback
                     def capture_frame():
-                        """Capture frame from camera"""
+                        """Capture frame from camera.
+                        Wait long enough for ImSwitch to push a post-LED frame
+                        into the napari layer before reading it.
+                        """
+                        _time.sleep(0.5)
                         return self.camera_adapter.capture_frame()
 
                     # Create LED power callback

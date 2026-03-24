@@ -516,9 +516,24 @@ class CalibrationService:
                 region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
                 region_desc = f"ROI ({region.shape}, {self.roi_fraction*100:.0f}% center)"
 
-            intensity = float(np.mean(region))
+            raw_intensity = float(np.mean(region))
 
-            logger.debug(f"Measured intensity: {intensity:.1f} ({region_desc})")
+            # Normalize to 0–255 scale so target_intensity=200 is meaningful
+            # regardless of camera bit depth (uint8, 12-bit, uint16, float)
+            if region.dtype.kind == "u":
+                # Unsigned int: uint8 (max 255), uint16 (max 65535), etc.
+                dtype_max = float(np.iinfo(region.dtype).max)
+                intensity = raw_intensity * 255.0 / dtype_max
+            elif region.dtype.kind == "f":
+                # Float: assume ImSwitch normalizes to [0, 1]
+                intensity = raw_intensity * 255.0
+            else:
+                dtype_max = 255.0
+                intensity = raw_intensity * 255.0 / dtype_max
+
+            logger.debug(
+                f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, {region_desc})"
+            )
 
             return intensity
 

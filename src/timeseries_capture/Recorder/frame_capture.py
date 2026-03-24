@@ -144,6 +144,15 @@ class FrameCaptureService:
                         f"[LED STABLE] Stabilization complete after {stabilization_sec:.3f}s"
                     )
 
+                    # Flush stale pre-LED frames from camera buffer.
+                    # getLatestFrame() returns the most recent buffered frame which
+                    # may have been captured before LED-on. Discard 2 frames so the
+                    # actual capture gets a frame acquired after LED stabilization.
+                    for _ in range(2):
+                        self.camera.capture_frame()
+                        time.sleep(0.05)
+                    logger.debug("[BUFFER FLUSH] Stale pre-LED frames discarded")
+
                 self._current_led_type = target_led_config
                 self._led_is_on = True
                 stabilization_complete = time.time()
@@ -296,6 +305,17 @@ class FrameCaptureService:
             "retries_exhausted": True,
         }
 
+    def reset_sensor_state(self):
+        """
+        Force sensor query on the next call to query_sensors_if_needed().
+
+        Call this at the start of each recording so that frame 0 always gets
+        a fresh temperature/humidity reading, regardless of where the counter
+        was left at the end of the previous recording.
+        """
+        self._frames_since_sensor_query = self._sensor_query_interval
+        logger.info("Sensor query counter reset — next query will fetch fresh data")
+
     def reset_led_state(self):
         """
         Resets LED state cache without physically turning off the LED.
@@ -386,20 +406,17 @@ class FrameCaptureService:
                     temp = sensor_data.get("temperature")
                     hum = sensor_data.get("humidity")
 
-                    # Validate temperature (5 to 40°C is realistic range for lab environment)
-                    # Note: 0°C is rejected as it's typically a sensor error value
-                    if temp is not None and 5 <= temp <= 40:
+                    # Accept any non-None value — esp32_controller already validates and
+                    # clamps both readings to realistic sensor ranges before returning.
+                    if temp is not None:
                         self._last_temperature = temp
                     else:
-                        logger.debug(
-                            f"[SENSOR] Invalid temperature value: {temp}, keeping previous"
-                        )
+                        logger.debug("[SENSOR] Temperature is None, keeping previous")
 
-                    # Validate humidity (0-100% is valid range)
-                    if hum is not None and 0 <= hum <= 100:
+                    if hum is not None:
                         self._last_humidity = hum
                     else:
-                        logger.debug(f"[SENSOR] Invalid humidity value: {hum}, keeping previous")
+                        logger.debug("[SENSOR] Humidity is None, keeping previous")
 
                     logger.debug(
                         f"[SENSOR] T={self._last_temperature}°C, H={self._last_humidity}% (queried between frames)"
