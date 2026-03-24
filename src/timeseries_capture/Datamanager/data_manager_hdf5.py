@@ -869,7 +869,10 @@ class DataManager:
                 # can be reused immediately after this call returns.
                 # ----------------------------------------------------------
                 if self.save_as_uint8 and frame.dtype != np.uint8:
-                    frame = (frame.astype(np.uint16) >> 8).astype(np.uint8)
+                    # HIK cameras output 12-bit data in uint16 container (0–4095).
+                    # Shift by 4 to map 12-bit → 8-bit (0–255).
+                    # For true 16-bit cameras change to >> 8.
+                    frame = (frame.astype(np.uint16) >> 4).astype(np.uint8)
                 self._async_writer.enqueue(
                     frame_data=frame,
                     frame_index=frame_index,

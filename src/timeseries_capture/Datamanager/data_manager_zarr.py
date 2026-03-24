@@ -385,7 +385,10 @@ class DataManagerZarr:
                     logger.warning(f"Zarr frames array extended to {new_size}")
 
                 if self.save_as_uint8 and frame.dtype != np.uint8:
-                    frame = (frame.astype(np.uint16) >> 8).astype(np.uint8)
+                    # HIK cameras output 12-bit data in uint16 container (0–4095).
+                    # Shift by 4 to map 12-bit → 8-bit (0–255).
+                    # For true 16-bit cameras change to >> 8.
+                    frame = (frame.astype(np.uint16) >> 4).astype(np.uint8)
                 self._frames_array[frame_index] = frame
 
                 # ---- Timeseries ----
