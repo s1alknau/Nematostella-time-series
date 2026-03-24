@@ -74,9 +74,6 @@ class RecordingConfig:
     # Output format: "hdf5" or "zarr"
     output_format: str = "hdf5"
 
-    # Bit depth: convert frames to uint8 before saving (halves file size)
-    save_as_uint8: bool = False
-
 
 @dataclass
 class PhaseInfo:

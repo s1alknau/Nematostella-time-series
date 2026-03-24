@@ -628,7 +628,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 experiment_name=recording_config["experiment_name"],
                 output_dir=recording_config["output_dir"],
                 output_format=recording_config.get("output_format", "hdf5"),
-                save_as_uint8=recording_config.get("save_as_uint8", False),
                 phase_enabled=phase_active,
                 white_led_continuous=phase_active
                 and phase_config.get("white_led_continuous", False),

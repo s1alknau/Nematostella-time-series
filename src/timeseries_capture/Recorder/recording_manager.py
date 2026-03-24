@@ -139,16 +139,12 @@ class RecordingManager(QObject):
                 from ..Datamanager.data_manager_zarr import TelemetryMode as ZarrTelemetryMode
 
                 self.data_manager = DataManagerZarr(  # type: ignore[assignment]
-                    telemetry_mode=ZarrTelemetryMode.STANDARD,
-                    chunk_size=512,
-                    save_as_uint8=getattr(config, "save_as_uint8", False),
+                    telemetry_mode=ZarrTelemetryMode.STANDARD, chunk_size=512
                 )
                 logger.info("Using Zarr data manager")
             else:
                 self.data_manager = DataManager(
-                    telemetry_mode=TelemetryMode.STANDARD,
-                    chunk_size=512,
-                    save_as_uint8=getattr(config, "save_as_uint8", False),
+                    telemetry_mode=TelemetryMode.STANDARD, chunk_size=512
                 )
                 logger.info("Using HDF5 data manager")
 

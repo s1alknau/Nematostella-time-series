@@ -256,12 +256,10 @@ class DataManagerZarr:
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
         chunk_size: int = 10,
         flush_interval: int = 10,
-        save_as_uint8: bool = False,
     ):
         self.telemetry_mode = telemetry_mode
         self.chunk_size = chunk_size
         self.flush_interval = flush_interval
-        self.save_as_uint8 = save_as_uint8
 
         self._store: Any = None
         self._root: Any = None
@@ -384,11 +382,6 @@ class DataManagerZarr:
                     self._frames_array.resize((new_size,) + self._image_shape)
                     logger.warning(f"Zarr frames array extended to {new_size}")
 
-                if self.save_as_uint8 and frame.dtype != np.uint8:
-                    # HIK cameras output 12-bit data in uint16 container (0–4095).
-                    # Shift by 4 to map 12-bit → 8-bit (0–255).
-                    # For true 16-bit cameras change to >> 8.
-                    frame = (frame.astype(np.uint16) >> 4).astype(np.uint8)
                 self._frames_array[frame_index] = frame
 
                 # ---- Timeseries ----
@@ -453,7 +446,7 @@ class DataManagerZarr:
     def _initialize_images_array(self, frame: np.ndarray) -> None:
         h, w = frame.shape[0], frame.shape[1]
         self._image_shape = (h, w)
-        dtype = np.uint8 if self.save_as_uint8 else frame.dtype
+        dtype = frame.dtype
 
         self._frames_array = self._root["images"].create_dataset(
             "frames",
