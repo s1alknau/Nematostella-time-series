@@ -49,6 +49,13 @@ class ESP32Communication:
         self._last_successful_command = 0.0
         self._connection_start_time = 0.0  # Track connection uptime
 
+        # Background reconnect
+        self._reconnecting = False  # True while reconnect thread is running
+        self._reconnect_thread: Optional[threading.Thread] = None
+        self._reconnect_interval_sec = 10.0  # retry every 10s until success
+        # Optional callback: called with success=True/False after each attempt
+        self.on_reconnect: Optional[callable] = None
+
     def find_esp32_port(self) -> Optional[str]:
         """
         Findet ESP32 Port automatisch - VERBESSERT
@@ -532,19 +539,69 @@ class ESP32Communication:
                 logger.debug(f"Buffer clear failed: {e}")
                 return False
 
+    @property
+    def is_reconnecting(self) -> bool:
+        """True while a background reconnect attempt is in progress."""
+        return self._reconnecting
+
     def _check_reconnect(self):
-        """Prüft ob Reconnect nötig ist - VERBESSERT"""
-        if self._consecutive_failures >= self._max_failures_before_reconnect:
-            logger.warning(
-                f"⚠️ {self._consecutive_failures} consecutive failures, attempting reconnect..."
-            )
-            old_port = self.port
-            self.disconnect()
-            time.sleep(1.0)  # Längerer Delay vor Reconnect
-            if self.connect(port=old_port):
-                logger.info("✅ Reconnect successful")
-            else:
-                logger.error("❌ Reconnect failed")
+        """
+        Trigger a background reconnect after consecutive failures.
+
+        Runs in a daemon thread so the recording loop is never blocked.
+        Retries every _reconnect_interval_sec until the connection is restored.
+        """
+        if self._consecutive_failures < self._max_failures_before_reconnect:
+            return
+        if self._reconnecting:
+            return  # already running
+
+        old_port = self.port
+        self._reconnecting = True
+        logger.warning(
+            f"⚠️ {self._consecutive_failures} consecutive failures — "
+            "starting background reconnect thread"
+        )
+
+        def _reconnect_loop():
+            attempt = 0
+            while self._reconnecting:
+                attempt += 1
+                logger.info(f"🔄 ESP32 reconnect attempt {attempt} (port={old_port})...")
+                try:
+                    self.disconnect()
+                    time.sleep(1.0)
+                    success = self.connect(port=old_port)
+                except Exception as e:
+                    success = False
+                    logger.warning(f"Reconnect attempt {attempt} raised: {e}")
+
+                if success:
+                    logger.info(f"✅ ESP32 reconnected after {attempt} attempt(s)")
+                    self._reconnecting = False
+                    self._consecutive_failures = 0
+                    if self.on_reconnect:
+                        try:
+                            self.on_reconnect(True)
+                        except Exception:
+                            pass
+                    return
+
+                logger.warning(
+                    f"❌ Reconnect attempt {attempt} failed — "
+                    f"retrying in {self._reconnect_interval_sec:.0f}s"
+                )
+                if self.on_reconnect:
+                    try:
+                        self.on_reconnect(False)
+                    except Exception:
+                        pass
+                time.sleep(self._reconnect_interval_sec)
+
+        self._reconnect_thread = threading.Thread(
+            target=_reconnect_loop, daemon=True, name="ESP32-Reconnect"
+        )
+        self._reconnect_thread.start()
 
     def get_connection_stats(self) -> dict:
         """

@@ -56,11 +56,30 @@ class ESP32Controller:
         if auto_connect:
             self.connect()
 
+        # Re-initialize timing automatically after a background reconnect
+        self.comm.on_reconnect = self._on_background_reconnect
+
         logger.info("ESP32Controller initialized")
 
     # ========================================================================
     # CONNECTION MANAGEMENT
     # ========================================================================
+
+    @property
+    def is_reconnecting(self) -> bool:
+        """True while a background reconnect is in progress."""
+        return self.comm.is_reconnecting
+
+    def _on_background_reconnect(self, success: bool):
+        """Called by ESP32Communication after each background reconnect attempt."""
+        if success:
+            # Re-send timing config so the ESP32 is ready for the next capture
+            try:
+                self.set_timing(1000, 10)
+                self.set_camera_type(CameraTypes.HIK_GIGE)
+                logger.info("✅ ESP32 re-initialized after background reconnect")
+            except Exception as e:
+                logger.warning(f"Re-init after reconnect failed: {e}")
 
     def connect(self, port: Optional[str] = None) -> bool:
         """
@@ -84,7 +103,7 @@ class ESP32Controller:
             # Query initial LED status
             try:
                 self.get_led_status()
-            except:
+            except Exception:
                 pass
 
             logger.info("ESP32 connected and initialized")
@@ -96,7 +115,7 @@ class ESP32Controller:
         # Turn off all LEDs before disconnect
         try:
             self.led_off()
-        except:
+        except Exception:
             pass
 
         self.comm.disconnect()
@@ -650,7 +669,7 @@ class ESP32Controller:
         """Ensure cleanup on deletion"""
         try:
             self.cleanup()
-        except:
+        except Exception:
             pass
 
 

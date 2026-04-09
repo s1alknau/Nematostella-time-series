@@ -17,6 +17,7 @@ from qtpy.QtCore import Signal as pyqtSignal
 
 from .camera_adapters import CameraAdapter
 from .Recorder import FrameCaptureService, RecordingConfig, RecordingManager
+from .Recorder.recording_state import ExperimentSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,48 @@ class RecordingController(QObject):
         except Exception as e:
             logger.error(f"Error starting recording: {e}")
             self.error_occurred.emit(f"Start error: {e}")
+            return False
+
+    def start_schedule(self, schedule: ExperimentSchedule) -> bool:
+        """
+        Start a multi-segment experiment schedule.
+
+        Builds a RecordingConfig from the schedule (used for file creation /
+        LED init) and passes the full schedule to RecordingManager so it can
+        drive segment transitions automatically.
+        """
+        try:
+            error = schedule.validate()
+            if error:
+                logger.error(f"Invalid schedule: {error}")
+                self.error_occurred.emit(f"Invalid schedule: {error}")
+                return False
+
+            logger.info(
+                f"Starting schedule: {len(schedule.segments)} segment(s), "
+                f"total={schedule.total_duration_min()} min"
+            )
+
+            if not self.recording_manager:
+                if not self.initialize_recording_system():
+                    return False
+
+            config = schedule.to_recording_config()
+            success = self.recording_manager.start_recording(config, schedule=schedule)
+
+            if success:
+                logger.info("Schedule recording started successfully")
+                if config.output_format == "zarr" and self._roi_masks:
+                    self._save_roi_masks_and_notify()
+            else:
+                logger.error("Failed to start schedule recording")
+                self.error_occurred.emit("Failed to start schedule recording")
+
+            return success
+
+        except Exception as exc:
+            logger.error(f"Error starting schedule: {exc}")
+            self.error_occurred.emit(f"Schedule start error: {exc}")
             return False
 
     # ========================================================================

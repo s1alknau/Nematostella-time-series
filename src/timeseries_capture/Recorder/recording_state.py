@@ -6,12 +6,14 @@ WICHTIG: Drift darf sich NICHT aufsummieren!
 Lösung: Statt vom letzten Frame zu messen, vom Start-Zeitpunkt messen.
 """
 
+from __future__ import annotations
+
+import json
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,157 @@ class RecordingConfig:
     save_as_uint8: bool = False
 
 
+# ============================================================================
+# EXPERIMENT SCHEDULE  (optional, does not change RecordingConfig)
+# ============================================================================
+
+
+@dataclass
+class SegmentConfig:
+    """
+    One segment of an ExperimentSchedule.
+
+    Each segment runs its own independent LD/DD/LL cycle for a fixed duration
+    (or open-ended if duration_min is None — only valid for the last segment).
+    LED powers mirror the per-phase fields in RecordingConfig.
+    """
+
+    label: str = "Segment"
+
+    # --- Phase mode ---
+    phase_enabled: bool = True  # True = LD cycle, False = continuous
+    light_duration_min: int = 720  # 12 h default
+    dark_duration_min: int = 720
+    start_with_light: bool = True
+    dual_light_phase: bool = False
+    white_led_continuous: bool = False
+    camera_trigger_latency_ms: int = 20
+
+    # --- LED powers ---
+    dark_phase_ir_power: int = 100
+    light_phase_ir_power: int = 100
+    light_phase_white_power: int = 50
+    # Continuous mode (phase_enabled=False)
+    ir_led_power: int = 100
+    white_led_power: int = 50
+    continuous_led_type: str = "ir"  # "ir" | "white" | "dual"
+
+    # --- Duration ---
+    # None = open-ended; only allowed on the LAST segment of a schedule
+    duration_min: int | None = 1440  # 1 day default
+
+    def is_open_ended(self) -> bool:
+        return self.duration_min is None
+
+    def to_recording_config_fields(self) -> dict:
+        """Return a dict of fields compatible with RecordingConfig."""
+        return {
+            "phase_enabled": self.phase_enabled,
+            "light_duration_min": self.light_duration_min,
+            "dark_duration_min": self.dark_duration_min,
+            "start_with_light": self.start_with_light,
+            "dual_light_phase": self.dual_light_phase,
+            "white_led_continuous": self.white_led_continuous,
+            "camera_trigger_latency_ms": self.camera_trigger_latency_ms,
+            "dark_phase_ir_power": self.dark_phase_ir_power,
+            "light_phase_ir_power": self.light_phase_ir_power,
+            "light_phase_white_power": self.light_phase_white_power,
+            "ir_led_power": self.ir_led_power,
+            "white_led_power": self.white_led_power,
+        }
+
+
+@dataclass
+class ExperimentSchedule:
+    """
+    An ordered list of SegmentConfigs that drives a full multi-segment recording.
+
+    Rules:
+    - Only the LAST segment may have duration_min=None (open-ended).
+    - All other segments must have a positive duration_min.
+    - interval_sec, output settings, and experiment metadata apply globally.
+    """
+
+    segments: list[SegmentConfig] = field(default_factory=list)
+    interval_sec: int = 5
+    experiment_name: str = "nematostella_timelapse"
+    output_dir: str = ""
+    output_format: str = "hdf5"
+    save_as_uint8: bool = False
+    brightness_validation_threshold: float = 10.0
+    use_full_frame_for_validation: bool = True
+    roi_fraction: float = 0.75
+
+    def total_duration_min(self) -> int | None:
+        """Sum of all segment durations, or None if any segment is open-ended."""
+        total = 0
+        for seg in self.segments:
+            if seg.duration_min is None:
+                return None
+            total += seg.duration_min
+        return total
+
+    def validate(self) -> str | None:
+        """Return an error string, or None if valid."""
+        if not self.segments:
+            return "Schedule has no segments."
+        for i, seg in enumerate(self.segments[:-1]):
+            if seg.duration_min is None:
+                return f"Segment {i+1} ({seg.label!r}) is open-ended but is not the last segment."
+            if seg.duration_min <= 0:
+                return f"Segment {i+1} ({seg.label!r}) has duration_min <= 0."
+        return None
+
+    def to_recording_config(self) -> RecordingConfig:
+        """
+        Build a RecordingConfig for RecordingState/file-creation.
+        duration_min=0 signals open-ended to RecordingState.
+        First segment's LED/phase settings initialise the legacy fields.
+        """
+        first = self.segments[0]
+        total = self.total_duration_min() or 0  # 0 = open-ended sentinel
+        fields = first.to_recording_config_fields()
+        return RecordingConfig(
+            duration_min=total,
+            interval_sec=self.interval_sec,
+            experiment_name=self.experiment_name,
+            output_dir=self.output_dir,
+            output_format=self.output_format,
+            save_as_uint8=self.save_as_uint8,
+            brightness_validation_threshold=self.brightness_validation_threshold,
+            use_full_frame_for_validation=self.use_full_frame_for_validation,
+            roi_fraction=self.roi_fraction,
+            **fields,
+        )
+
+    # --- Serialization ---
+
+    def to_dict(self) -> dict:
+        return {
+            "segments": [asdict(s) for s in self.segments],
+            "interval_sec": self.interval_sec,
+            "experiment_name": self.experiment_name,
+            "output_dir": self.output_dir,
+            "output_format": self.output_format,
+            "save_as_uint8": self.save_as_uint8,
+            "brightness_validation_threshold": self.brightness_validation_threshold,
+            "use_full_frame_for_validation": self.use_full_frame_for_validation,
+            "roi_fraction": self.roi_fraction,
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ExperimentSchedule:
+        segs = [SegmentConfig(**s) for s in d.pop("segments", [])]
+        return cls(segments=segs, **d)
+
+    @classmethod
+    def from_json(cls, s: str) -> ExperimentSchedule:
+        return cls.from_dict(json.loads(s))
+
+
 @dataclass
 class PhaseInfo:
     """Current Phase Information"""
@@ -114,10 +267,10 @@ class RecordingState:
         self.last_frame_time = 0.0  # Nur für Statistik
 
         # Phase Info (optional)
-        self.current_phase: Optional[PhaseInfo] = None
+        self.current_phase: PhaseInfo | None = None
 
         # Config
-        self.config: Optional[RecordingConfig] = None
+        self.config: RecordingConfig | None = None
 
     # ========================================================================
     # RECORDING STATUS
@@ -167,14 +320,18 @@ class RecordingState:
             #   LIGHT (0-60s):  Frames 0-11  = 12 Frames (t=0, 5, ..., 55)
             #   DARK  (60-120s): Frames 12-23 = 12 Frames (t=60, 65, ..., 115)
             # → Gleiche Anzahl pro Phase!
-            total_sec = config.duration_min * 60
-            self.total_frames = int(total_sec / config.interval_sec)
+            if config.duration_min == 0:
+                # 0 is the open-ended sentinel used by ExperimentSchedule
+                self.total_frames = 0
+                logger.info(f"Config set: open-ended @ {config.interval_sec}s (runs until stopped)")
+            else:
+                total_sec = config.duration_min * 60
+                self.total_frames = int(total_sec / config.interval_sec)
+                logger.info(
+                    f"Config set: {config.duration_min}min @ {config.interval_sec}s = {self.total_frames} frames"
+                )
 
-            logger.info(
-                f"Config set: {config.duration_min}min @ {config.interval_sec}s = {self.total_frames} frames"
-            )
-
-    def get_config(self) -> Optional[RecordingConfig]:
+    def get_config(self) -> RecordingConfig | None:
         """Gibt Konfiguration zurück"""
         with self._lock:
             return self.config
@@ -210,6 +367,8 @@ class RecordingState:
     def is_complete(self) -> bool:
         """Prüft ob Recording fertig ist"""
         with self._lock:
+            if self.total_frames == 0:
+                return False  # open-ended: runs until manually stopped
             return self.current_frame >= self.total_frames
 
     # ========================================================================
@@ -315,8 +474,8 @@ class RecordingState:
             # Wie lange bis zum aktuellen Frame?
             time_until_next = expected_time_for_current_frame - elapsed
 
-            # Debug logging
-            if time_until_next < 0:
+            # Only log when drift exceeds 30 s to avoid log spam during catch-up
+            if time_until_next < -30:
                 logger.warning(
                     f"Behind schedule! Expected frame {self.current_frame} at {expected_time_for_current_frame:.1f}s, "
                     f"but currently at {elapsed:.1f}s (drift: {-time_until_next:.1f}s)"
@@ -360,7 +519,7 @@ class RecordingState:
                 f"Phase: {phase_info.phase.value} (cycle {phase_info.cycle_number}/{phase_info.total_cycles})"
             )
 
-    def get_phase(self) -> Optional[PhaseInfo]:
+    def get_phase(self) -> PhaseInfo | None:
         """Gibt aktuelle Phase zurück"""
         with self._lock:
             return self.current_phase

@@ -12,6 +12,7 @@ Combines the proven HDF5 storage approach with improved architecture:
 
 import json
 import logging
+import pickle
 import queue
 import threading
 import time
@@ -244,6 +245,194 @@ class AsyncHDF5Writer:
 
 
 # ============================================================================
+# TEMP FRAME BUFFER + CONSOLIDATION WORKER
+# ============================================================================
+
+
+class TempFrameBuffer:
+    """
+    Writes each frame packet as a raw pickle file in a temp subdirectory.
+
+    A single sequential binary write per frame — fast even on nearly-full drives
+    where HDF5's random B-tree updates become extremely slow.
+    The recording thread never blocks waiting for HDF5 I/O.
+    """
+
+    def __init__(self, temp_dir: Path):
+        self.temp_dir = Path(temp_dir)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.frames_written = 0
+        logger.info(f"TempFrameBuffer created: {self.temp_dir}")
+
+    def write(
+        self,
+        frame_number: int,
+        frame: np.ndarray,
+        frame_metadata: dict,
+        esp32_timing: dict,
+        python_timing: dict,
+        image_shape: tuple,
+        images_max_frames: int,
+    ) -> None:
+        """Write one frame packet. Returns after the file is flushed to OS cache."""
+        path = self.temp_dir / f"frame_{frame_number:07d}.pkl"
+        packet = {
+            "frame_number": frame_number,
+            "frame": frame.copy(),  # copy so caller can reuse the buffer immediately
+            "frame_metadata": frame_metadata,
+            "esp32_timing": esp32_timing,
+            "python_timing": python_timing,
+            "image_shape": image_shape,
+            "images_max_frames": images_max_frames,
+        }
+        with open(path, "wb") as f:
+            pickle.dump(packet, f, protocol=5)
+        self.frames_written += 1
+
+    def pending_paths(self) -> list:
+        """Return sorted list of unprocessed frame paths."""
+        return sorted(self.temp_dir.glob("frame_*.pkl"))
+
+    def cleanup(self) -> None:
+        """Remove temp dir when empty; warn if files remain."""
+        try:
+            remaining = list(self.temp_dir.iterdir())
+            if remaining:
+                logger.warning(
+                    f"TempFrameBuffer: {len(remaining)} files not cleaned up in {self.temp_dir}"
+                )
+            else:
+                self.temp_dir.rmdir()
+                logger.info("TempFrameBuffer: temp dir removed")
+        except Exception as e:
+            logger.warning(f"TempFrameBuffer cleanup error: {e}")
+
+
+class HDF5ConsolidationWorker(threading.Thread):
+    """
+    Background thread that reads temp frame files in order and writes them to HDF5.
+
+    Replaces AsyncHDF5Writer.  Key difference: no bounded in-memory queue, so the
+    recording thread is never blocked regardless of how slow HDF5 writes become.
+    """
+
+    def __init__(
+        self,
+        temp_buffer: TempFrameBuffer,
+        ts_writer,
+        hdf5_file: h5py.File,
+        images_dataset: h5py.Dataset,
+        flush_interval: int = 50,
+    ):
+        super().__init__(daemon=True, name="HDF5-Consolidator")
+        self._temp = temp_buffer
+        self._ts_writer = ts_writer
+        self._hdf5_file = hdf5_file
+        self._images_dataset = images_dataset
+        self._flush_interval = flush_interval
+        self._stop_event = threading.Event()
+        self._frames_since_flush = 0
+        self.frames_written = 0
+        self.write_errors = 0
+
+    # ------------------------------------------------------------------
+    # Thread entry point
+    # ------------------------------------------------------------------
+
+    def run(self) -> None:
+        logger.info("HDF5ConsolidationWorker started")
+        while not self._stop_event.is_set():
+            paths = self._temp.pending_paths()
+            if not paths:
+                self._stop_event.wait(timeout=0.05)  # idle — wait briefly
+                continue
+            for path in paths:
+                if self._stop_event.is_set():
+                    break
+                self._process(path)
+        logger.info(
+            f"HDF5ConsolidationWorker stopped "
+            f"(written={self.frames_written}, errors={self.write_errors})"
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _process(self, path: Path) -> None:
+        try:
+            with open(path, "rb") as f:
+                packet = pickle.load(f)
+            self._write_packet(packet)
+            path.unlink(missing_ok=True)
+            self.frames_written += 1
+            self._frames_since_flush += 1
+            if self._frames_since_flush >= self._flush_interval:
+                self._hdf5_file.flush()
+                self._frames_since_flush = 0
+        except Exception as e:
+            logger.error(f"Consolidation error for {path.name}: {e}")
+            self.write_errors += 1
+            # Rename to .err so it is not reprocessed in an infinite loop
+            try:
+                path.rename(path.with_suffix(".err"))
+            except Exception:
+                pass
+
+    def _write_packet(self, packet: dict) -> None:
+        frame_number = packet["frame_number"]
+        frame_index = frame_number - 1
+        image_shape = packet["image_shape"]
+
+        if frame_index >= self._images_dataset.shape[0]:
+            new_size = frame_index + packet["images_max_frames"]
+            self._images_dataset.resize((new_size,) + image_shape)
+            logger.warning(f"Images dataset extended to {new_size} frames")
+
+        self._images_dataset[frame_index] = packet["frame"]
+        self._ts_writer.append(
+            frame_index=frame_index,
+            frame_metadata=packet["frame_metadata"],
+            esp32_timing=packet["esp32_timing"],
+            python_timing=packet["python_timing"],
+        )
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def drain_and_shutdown(self) -> None:
+        """
+        Signal stop, wait for the worker thread to exit its current iteration,
+        then process all remaining temp files in the calling thread before returning.
+        """
+        logger.info("HDF5ConsolidationWorker: draining remaining frames...")
+        self._stop_event.set()
+        self.join(timeout=2.0)  # let the run() loop exit cleanly
+
+        # Process any files the worker didn't reach before stopping
+        for path in self._temp.pending_paths():
+            self._process(path)
+
+        # Final flush
+        try:
+            self._ts_writer.flush()
+            self._hdf5_file.flush()
+        except Exception as e:
+            logger.warning(f"HDF5ConsolidationWorker: final flush error: {e}")
+
+        self._temp.cleanup()
+        logger.info(f"HDF5ConsolidationWorker: drain complete ({self.frames_written} frames)")
+
+    def get_stats(self) -> dict:
+        return {
+            "frames_written": self.frames_written,
+            "write_errors": self.write_errors,
+            "pending_temp_files": len(self._temp.pending_paths()),
+        }
+
+
+# ============================================================================
 # ENUMS AND CONFIGURATION
 # ============================================================================
 
@@ -295,10 +484,10 @@ class ChunkedTimeseriesWriter:
 
         # Essential fields (MINIMAL mode)
         minimal_fields = {
-            "frame_index": np.int64,
-            "recording_elapsed_sec": np.float64,
-            "actual_intervals": np.float64,
-            "expected_intervals": np.float64,
+            "frame_index": np.int32,  # int32 handles >2B frames; int64 is overkill
+            "recording_elapsed_sec": np.float32,  # float32: ~40ms precision at 113h — fine for ≥1s intervals
+            "actual_intervals": np.float32,  # interval values ~5s; float32 is plenty
+            "expected_intervals": np.float32,  # constant config value; float32 is plenty
             "temperature_celsius": np.float32,
             "humidity_percent": np.float32,
             "led_type_str": str_vlen,
@@ -307,18 +496,22 @@ class ChunkedTimeseriesWriter:
             "phase_str": str_vlen,
             "cycle_number": np.int16,
             "frame_mean_intensity": np.float32,
-            "sync_success": np.int8,
+            "sync_success": np.bool_,  # binary flag
         }
 
         # Standard additional fields (STANDARD mode)
         # Streamlined: Keep only useful fields, remove redundant/debug data
         standard_fields = {
             # Phase tracking
-            "phase_transition": np.int8,  # Phase change indicator
+            "phase_transition": np.bool_,  # binary flag
             # Quality indicators
             "capture_method": str_vlen,  # How frame was captured
             # Timing drift tracking
             "cumulative_drift_sec": np.float32,  # Accumulated timing drift
+            "frame_drift_sec": np.float32,  # actual capture time minus scheduled deadline
+            # Experiment schedule fields (0 / "" when no schedule is used)
+            "segment_index": np.int16,
+            "segment_label": str_vlen,
         }
 
         # Removed redundant/debug fields:
@@ -344,7 +537,7 @@ class ChunkedTimeseriesWriter:
             "operation_end_absolute": np.float64,
             "expected_timestamps": np.float64,
             "capture_timestamps": np.float64,
-            "capture_elapsed_sec": np.float64,
+            "capture_elapsed_sec": np.float32,  # elapsed seconds; same precision as recording_elapsed_sec
             "frame_drift": np.float32,
             # Note: cumulative_drift_sec is inherited from standard_fields
             "capture_overhead_sec": np.float32,
@@ -354,7 +547,7 @@ class ChunkedTimeseriesWriter:
             "camera_trigger_latency_ms": np.uint8,
             "temperature": np.float32,
             "humidity": np.float32,
-            "led_sync_success": np.int8,
+            "led_sync_success": np.bool_,  # binary flag
             "transition_count": np.int16,
             "frame_mean": np.float32,
             "sync_quality": str_vlen,
@@ -481,6 +674,9 @@ class ChunkedTimeseriesWriter:
             if self.mode in [TelemetryMode.STANDARD, TelemetryMode.COMPREHENSIVE]:
                 cumulative_drift = float(pt.get("cumulative_drift_sec", 0.0))
                 set_value("cumulative_drift_sec", cumulative_drift)
+                set_value("frame_drift_sec", float(fm.get("frame_drift_sec", np.nan)))
+                set_value("segment_index", int(fm.get("segment_index", 0)))
+                set_value("segment_label", str(fm.get("segment_label", "")))
 
             # ============================================================
             # OPERATION METRICS (removed - not needed)
@@ -529,10 +725,10 @@ class ChunkedTimeseriesWriter:
             # Removed: led_mode (can infer from led_type: dual/ir/white)
 
             sync_success = bool(et.get("sync_success", True))
-            set_value("sync_success", 1 if sync_success else 0)
+            set_value("sync_success", sync_success)
 
             if self.mode == TelemetryMode.COMPREHENSIVE:
-                set_value("led_sync_success", 1 if sync_success else 0)
+                set_value("led_sync_success", sync_success)
 
             # Removed: timeout_occurred (sync_success is sufficient)
 
@@ -546,7 +742,7 @@ class ChunkedTimeseriesWriter:
 
             if self.mode >= TelemetryMode.STANDARD:
                 # Keep only phase_transition (as requested)
-                set_value("phase_transition", int(fm.get("phase_transition", False)))
+                set_value("phase_transition", bool(fm.get("phase_transition", False)))
 
             # Removed: phase_enabled, total_cycles, phase_elapsed_min, phase_remaining_min
             # These are either obvious from data or can be calculated
@@ -669,13 +865,14 @@ class DataManager:
         # Timeseries writer
         self._ts_writer: Optional[ChunkedTimeseriesWriter] = None
 
-        # Write-behind queue (v2.5): decouples HDF5 I/O from recording thread
-        self._async_writer: Optional[AsyncHDF5Writer] = None
+        # On-disk temp buffer + consolidation worker (replaces bounded in-memory queue)
+        self._temp_buffer: Optional[TempFrameBuffer] = None
+        self._consolidation_worker: Optional[HDF5ConsolidationWorker] = None
 
         # Pre-allocated 3D image dataset (v5.1 optimization)
         # Eliminates per-frame B-tree insertions that cause exponential write slowdown
         self._images_dataset: Optional[h5py.Dataset] = None
-        self._images_max_frames: int = 100_000  # Pre-allocated rows
+        self._images_max_frames: int = 200_000  # Pre-allocated rows (covers ~7 days @ 5s interval)
         self._image_shape: Optional[tuple] = None  # (H, W) determined on first frame
         self._uint8_shift: Optional[int] = None  # Detected on first uint8 frame
 
@@ -817,14 +1014,18 @@ class DataManager:
                 if self._ts_writer is None:
                     self._create_timeseries_writer()
 
-                # Start async writer on first frame (needs both dataset + ts_writer ready)
-                if self._async_writer is None:
-                    self._async_writer = AsyncHDF5Writer(
+                # Start temp buffer + consolidation worker on first frame
+                if self._temp_buffer is None:
+                    temp_dir = Path(self.current_filepath).parent / "temp_frames"  # type: ignore[arg-type]
+                    self._temp_buffer = TempFrameBuffer(temp_dir)
+                    self._consolidation_worker = HDF5ConsolidationWorker(
+                        temp_buffer=self._temp_buffer,
                         ts_writer=self._ts_writer,  # type: ignore[arg-type]
-                        hdf5_file=self.hdf5_file,
+                        hdf5_file=self.hdf5_file,  # type: ignore[arg-type]
+                        images_dataset=self._images_dataset,  # type: ignore[arg-type]
                         flush_interval=self.flush_interval,
-                        max_queue_size=32,
                     )
+                    self._consolidation_worker.start()
 
                 # ----------------------------------------------------------
                 # Compute all metadata in recording thread (pure Python/numpy,
@@ -860,9 +1061,11 @@ class DataManager:
                 # ----------------------------------------------------------
                 # Update timing counters NOW (before enqueue) so next frame's
                 # actual_interval is measured from the correct reference point.
+                # Use capture-based elapsed time, not save-time clock, so I/O
+                # latency does not inflate the measured inter-frame interval.
                 # ----------------------------------------------------------
                 self.frame_count += 1
-                self.last_frame_time = current_time
+                self.last_frame_time = timing_metrics["recording_elapsed_sec"]
 
                 # ----------------------------------------------------------
                 # Enqueue for background write — returns in microseconds.
@@ -889,19 +1092,17 @@ class DataManager:
                                 f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
                             )
                         frame = (frame >> self._uint8_shift).astype(np.uint8)
-                self._async_writer.enqueue(
-                    frame_data=frame,
-                    frame_index=frame_index,
+                self._temp_buffer.write(  # type: ignore[union-attr]
                     frame_number=frame_number,
-                    images_dataset=self._images_dataset,  # type: ignore[arg-type]
-                    image_shape=self._image_shape,  # type: ignore[arg-type]
-                    images_max_frames=self._images_max_frames,
+                    frame=frame,
                     frame_metadata=frame_metadata,
                     esp32_timing=esp32_timing,
                     python_timing=timing_metrics,
+                    image_shape=self._image_shape,  # type: ignore[arg-type]
+                    images_max_frames=self._images_max_frames,
                 )
 
-                logger.debug(f"Frame {frame_number} enqueued for write")
+                logger.debug(f"Frame {frame_number} written to temp buffer")
                 return True
 
             except Exception as e:
@@ -942,16 +1143,23 @@ class DataManager:
         # Get expected interval
         expected_interval = self.recording_metadata.get("interval_seconds", 5.0)
 
-        # Calculate elapsed times
-        recording_elapsed = current_time - self.recording_start_time
+        # Calculate elapsed times — prefer capture_elapsed_sec from metadata so
+        # recording_elapsed_sec reflects when the frame was captured, not when
+        # it arrived in the write-behind queue (the two can differ under I/O load).
+        capture_elapsed = metadata.get("capture_elapsed_sec")
+        if capture_elapsed is not None and capture_elapsed >= 0:
+            recording_elapsed = float(capture_elapsed)
+        else:
+            recording_elapsed = current_time - self.recording_start_time
         expected_elapsed = (frame_number - 1) * expected_interval
 
-        # Calculate intervals
+        # Calculate intervals using capture-based elapsed times so I/O jitter
+        # is excluded — both values are relative to recording start.
         if frame_number == 1 or self.last_frame_time == 0:
             actual_interval = 0.0
             interval_error = 0.0
         else:
-            actual_interval = current_time - self.last_frame_time
+            actual_interval = recording_elapsed - self.last_frame_time
             interval_error = actual_interval - expected_interval
 
         # Calculate timing error
@@ -1120,11 +1328,12 @@ class DataManager:
         """
         logger.info("Finalizing HDF5 recording...")
 
-        # Drain the write-behind queue first — all enqueued frames must be
-        # written to disk before we trim datasets or close the file.
-        if self._async_writer is not None:
-            self._async_writer.drain_and_shutdown()
-            self._async_writer = None
+        # Drain all pending temp files first — every frame must reach HDF5
+        # before we trim datasets or close the file.
+        if self._consolidation_worker is not None:
+            self._consolidation_worker.drain_and_shutdown()
+            self._consolidation_worker = None
+            self._temp_buffer = None
 
         try:
             with self._hdf5_lock:
@@ -1199,12 +1408,13 @@ class DataManager:
             return False
 
     def close_file(self):
-        """Close HDF5 file (drains write queue first)."""
+        """Close HDF5 file (drains consolidation worker first)."""
         try:
-            # Drain write-behind queue before closing
-            if self._async_writer is not None:
-                self._async_writer.drain_and_shutdown()
-                self._async_writer = None
+            # Drain on-disk temp buffer + consolidation worker
+            if self._consolidation_worker is not None:
+                self._consolidation_worker.drain_and_shutdown()
+                self._consolidation_worker = None
+                self._temp_buffer = None
 
             with self._hdf5_lock:
                 if self._ts_writer:
@@ -1251,12 +1461,13 @@ class DataManager:
         if self._ts_writer:
             stats["timeseries"] = self._ts_writer.get_stats()  # type: ignore[assignment]
 
-        if self._async_writer is not None:
+        if self._consolidation_worker is not None:
             stats["write_queue"] = {  # type: ignore[assignment]
-                "frames_written_to_disk": self._async_writer.frames_written,
-                "queue_depth": self._async_writer._queue.qsize(),
-                "peak_queue_depth": self._async_writer._max_queue_depth,
-                "write_errors": self._async_writer.write_errors,
+                "frames_written_to_disk": self._consolidation_worker.frames_written,
+                "pending_temp_files": (
+                    len(self._temp_buffer.pending_paths()) if self._temp_buffer else 0
+                ),
+                "write_errors": self._consolidation_worker.write_errors,
             }
 
         return stats

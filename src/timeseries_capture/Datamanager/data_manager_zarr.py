@@ -14,6 +14,13 @@ Zarr store structure:
     │   ├── actual_intervals
     │   ├── temperature_celsius
     │   ├── ...
+    ├── rois/
+    │   └── masks         (N_rois, H, W) uint8
+    ├── analysis/         written by finalize_recording() if ROI masks are present
+    │   ├── timestamps_sec  (N_frames-1,) float32  elapsed time of each diff
+    │   ├── roi_0_activity  (N_frames-1,) float32  mean |ΔPixel| per frame per ROI
+    │   ├── roi_1_activity  ...
+    │   └── .zattrs         n_rois, n_diffs, description
     └── .zattrs           root attributes (frame_interval, experiment_name, ...)
 """
 
@@ -62,10 +69,10 @@ class ZarrTimeseriesWriter:
         self.written_frames = 0
 
         minimal_fields = {
-            "frame_index": np.int64,
-            "recording_elapsed_sec": np.float64,
-            "actual_intervals": np.float64,
-            "expected_intervals": np.float64,
+            "frame_index": np.int32,  # int32 handles >2B frames; int64 is overkill
+            "recording_elapsed_sec": np.float32,  # float32: ~40ms precision at 113h — fine for ≥1s intervals
+            "actual_intervals": np.float32,  # interval values ~5s; float32 is plenty
+            "expected_intervals": np.float32,  # constant config value; float32 is plenty
             "temperature_celsius": np.float32,
             "humidity_percent": np.float32,
             "led_type_str": str,
@@ -74,19 +81,23 @@ class ZarrTimeseriesWriter:
             "phase_str": str,
             "cycle_number": np.int16,
             "frame_mean_intensity": np.float32,
-            "sync_success": np.int8,
+            "sync_success": np.bool_,  # binary flag
         }
         standard_fields = {
-            "phase_transition": np.int8,
+            "phase_transition": np.bool_,  # binary flag
             "capture_method": str,
             "cumulative_drift_sec": np.float32,
+            "frame_drift_sec": np.float32,  # actual capture time minus scheduled deadline
+            # Experiment schedule fields (0 / "" when no schedule is used)
+            "segment_index": np.int16,
+            "segment_label": str,
         }
         comprehensive_fields = {
-            "operation_start_absolute": np.float64,
-            "operation_end_absolute": np.float64,
-            "expected_timestamps": np.float64,
-            "capture_timestamps": np.float64,
-            "capture_elapsed_sec": np.float64,
+            "operation_start_absolute": np.float64,  # Unix epoch: must stay float64
+            "operation_end_absolute": np.float64,  # Unix epoch: must stay float64
+            "expected_timestamps": np.float64,  # Unix epoch: must stay float64
+            "capture_timestamps": np.float64,  # Unix epoch: must stay float64
+            "capture_elapsed_sec": np.float32,  # elapsed seconds; same precision as recording_elapsed_sec
             "frame_drift": np.float32,
             "capture_overhead_sec": np.float32,
             "capture_delay_sec": np.float32,
@@ -95,7 +106,7 @@ class ZarrTimeseriesWriter:
             "camera_trigger_latency_ms": np.uint8,
             "temperature": np.float32,
             "humidity": np.float32,
-            "led_sync_success": np.int8,
+            "led_sync_success": np.bool_,  # binary flag
             "transition_count": np.int16,
             "frame_mean": np.float32,
             "sync_quality": str,
@@ -162,7 +173,10 @@ class ZarrTimeseriesWriter:
                 pt.get("capture_timestamp_absolute") or fm.get("timestamp") or time.time()
             )
             recording_elapsed = float(
-                fm.get("recording_elapsed_sec") or pt.get("recording_elapsed_sec") or 0.0
+                fm.get("recording_elapsed_sec")
+                or pt.get("recording_elapsed_sec")
+                or pt.get("capture_elapsed_sec")
+                or 0.0
             )
             s("recording_elapsed_sec", recording_elapsed)
 
@@ -182,7 +196,7 @@ class ZarrTimeseriesWriter:
             s("led_type_str", led_type_str)
 
             sync_success = bool(et.get("sync_success", True))
-            s("sync_success", 1 if sync_success else 0)
+            s("sync_success", sync_success)
 
             phase_str = str(fm.get("phase") or fm.get("current_phase", "continuous"))
             s("phase_str", phase_str)
@@ -192,9 +206,12 @@ class ZarrTimeseriesWriter:
             s("frame_mean_intensity", frame_mean)
 
             if self.mode >= TelemetryMode.STANDARD:
-                s("phase_transition", int(fm.get("phase_transition", False)))
+                s("phase_transition", bool(fm.get("phase_transition", False)))
                 s("capture_method", str(fm.get("capture_method", "unknown")))
                 s("cumulative_drift_sec", float(pt.get("cumulative_drift_sec", 0.0)))
+                s("frame_drift_sec", float(fm.get("frame_drift_sec", np.nan)))
+                s("segment_index", int(fm.get("segment_index", 0)))
+                s("segment_label", str(fm.get("segment_label", "")))
 
             if self.mode == TelemetryMode.COMPREHENSIVE:
                 s(
@@ -209,7 +226,7 @@ class ZarrTimeseriesWriter:
                 s("capture_delay_sec", float(fm.get("capture_delay_sec", np.nan)))
                 s("temperature", temp)
                 s("humidity", humidity)
-                s("led_sync_success", 1 if sync_success else 0)
+                s("led_sync_success", sync_success)
                 s("transition_count", int(fm.get("transition_count", 0)))
                 s("frame_mean", frame_mean)
                 s("sync_quality", str(fm.get("sync_quality", "excellent")))
@@ -254,12 +271,14 @@ class DataManagerZarr:
     def __init__(
         self,
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
-        chunk_size: int = 10,
-        flush_interval: int = 10,
+        img_chunk_frames: int = 50,
+        ts_chunk_size: int = 512,
+        flush_interval: int = 50,
         save_as_uint8: bool = False,
     ):
         self.telemetry_mode = telemetry_mode
-        self.chunk_size = chunk_size
+        self.img_chunk_frames = img_chunk_frames
+        self.ts_chunk_size = ts_chunk_size
         self.flush_interval = flush_interval
         self.save_as_uint8 = save_as_uint8
         self._uint8_shift: int | None = None  # Detected on first frame
@@ -272,7 +291,9 @@ class DataManagerZarr:
         self._ts_writer: ZarrTimeseriesWriter | None = None
         self._frames_array: Any = None
         self._image_shape: tuple[int, int] | None = None
-        self._images_max_frames: int = 100_000
+        self._images_max_frames: int = (
+            200_000  # covers ~7 days @ 5s interval; auto-extends if needed
+        )
 
         self.frame_count = 0
         self._frames_since_flush = 0
@@ -370,6 +391,12 @@ class DataManagerZarr:
                 frame_stats = self._calculate_frame_statistics(frame)
                 phase_metadata = self._process_phase_info(frame_number, metadata)
 
+                # Update timing counters NOW (before any disk I/O) so the next frame's
+                # actual_interval is measured from the capture-time reference, not from
+                # after the write completes — identical to HDF5's pre-enqueue update.
+                self.frame_count += 1
+                self.last_frame_time = timing_metrics["recording_elapsed_sec"]
+
                 # ---- Images ----
                 if self._frames_array is None:
                     if "frames" in self._root["images"]:
@@ -452,12 +479,20 @@ class DataManagerZarr:
                 else:
                     ts_arr = ts_group["timestamps"]
                 if frame_index >= ts_arr.shape[0]:
-                    ts_arr.resize((frame_index + self.chunk_size,))
-                ts_arr[frame_index] = current_time
+                    ts_arr.resize((frame_index + self.ts_chunk_size,))
+                # Store actual capture time (not save time) in timestamps array
+                ts_arr[frame_index] = (
+                    self.recording_start_time + timing_metrics["recording_elapsed_sec"]
+                )
 
-                self.frame_count += 1
-                self.last_frame_time = current_time
                 self._frames_since_flush += 1
+
+                # Write the actual written-frame count to root attrs every flush_interval
+                # frames so the LiveAnalysisWorker can read it reliably (the pre-allocated
+                # timeseries arrays have shape 100k, not the actual written count).
+                if self._frames_since_flush >= self.flush_interval:
+                    self._root.attrs["written_frames"] = self.frame_count
+                    self._frames_since_flush = 0
 
                 logger.debug(f"Zarr frame {frame_number} saved (index={frame_index})")
                 return True
@@ -471,10 +506,14 @@ class DataManagerZarr:
         self._image_shape = (h, w)
         dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
+        # Use multi-frame chunks to avoid creating one file-per-frame in the zarr store.
+        # With chunks=(1, H, W), a week-long recording at 5s intervals creates ~120k files
+        # in one directory — NTFS and Windows Defender overhead causes progressive interval
+        # drift after ~48k files (~4000 min).  img_chunk_frames=50 cuts file count by 50×.
         self._frames_array = self._root["images"].create_dataset(
             "frames",
             shape=(self._images_max_frames, h, w),
-            chunks=(1, h, w),
+            chunks=(self.img_chunk_frames, h, w),
             dtype=dtype,
         )
         self._frames_array.attrs["frame_height"] = h
@@ -495,7 +534,7 @@ class DataManagerZarr:
     def _create_timeseries_writer(self):
         ts_group = self._root["timeseries"]
         self._ts_writer = ZarrTimeseriesWriter(
-            ts_group, chunk_size=self.chunk_size, mode=self.telemetry_mode
+            ts_group, chunk_size=self.ts_chunk_size, mode=self.telemetry_mode
         )
         ts_group.attrs["description"] = "Zarr timeseries telemetry"
         ts_group.attrs["telemetry_mode"] = self.telemetry_mode.name
@@ -505,14 +544,23 @@ class DataManagerZarr:
         self, frame_number: int, current_time: float, metadata: dict
     ) -> dict:
         expected_interval = self.recording_metadata.get("interval_seconds", 5.0)
-        recording_elapsed = current_time - self.recording_start_time
+        # Prefer the actual capture timestamp over the save-time clock so that
+        # recording_elapsed_sec reflects when the frame was captured, not when it was
+        # written to disk (the two can differ by seconds under I/O load).
+        capture_elapsed = metadata.get("capture_elapsed_sec")
+        if capture_elapsed is not None and capture_elapsed >= 0:
+            recording_elapsed = float(capture_elapsed)
+        else:
+            recording_elapsed = current_time - self.recording_start_time
         expected_elapsed = (frame_number - 1) * expected_interval
 
         if frame_number == 1 or self.last_frame_time == 0:
             actual_interval = 0.0
             interval_error = 0.0
         else:
-            actual_interval = current_time - self.last_frame_time
+            # Use capture-based elapsed times (not save-time clock) so I/O jitter
+            # is excluded from interval and drift calculations.
+            actual_interval = recording_elapsed - self.last_frame_time
             interval_error = actual_interval - expected_interval
 
         timing_error = recording_elapsed - expected_elapsed
@@ -626,10 +674,117 @@ class DataManagerZarr:
                     self._root["timeseries"]["timestamps"].resize((self.frame_count,))
 
                 logger.info(f"Zarr recording finalized: {self.frame_count} frames")
+
+                # Compute and persist ROI activity if masks are available
+                self._compute_and_save_roi_activity()
+
                 return True
 
         except Exception as e:
             logger.error(f"Zarr finalize error: {e}")
+            return False
+
+    def _compute_and_save_roi_activity(self) -> bool:
+        """
+        Compute per-ROI activity (mean |ΔPixel| per frame transition) over all
+        recorded frames and write the result to the analysis/ group.
+
+        Processes frames in batches of 100 so RAM usage stays bounded regardless
+        of recording length.  Skipped silently if no ROI masks are saved.
+        """
+        try:
+            if self._root is None:
+                return False
+
+            if "rois" not in self._root or "masks" not in self._root["rois"]:
+                logger.info("No ROI masks found in store — skipping activity computation")
+                return True
+
+            masks_arr = self._root["rois"]["masks"][:]  # (N_rois, H, W) uint8
+            n_rois = masks_arr.shape[0]
+            masks_bool = [masks_arr[i] > 0 for i in range(n_rois)]
+            n_pixels = [int(m.sum()) for m in masks_bool]
+
+            frames_arr = self._root["images"]["frames"]  # (N, H, W)
+            n_frames = int(frames_arr.shape[0])
+
+            if n_frames < 2:
+                logger.warning("Not enough frames for activity computation")
+                return True
+
+            dtype_max = (
+                float(np.iinfo(frames_arr.dtype).max)
+                if np.issubdtype(frames_arr.dtype, np.integer)
+                else 1.0
+            )
+
+            # Timestamps: use frame[t]'s elapsed time for diff[t → t+1]
+            ts_group = self._root.get("timeseries")
+            if ts_group is not None and "recording_elapsed_sec" in ts_group:
+                elapsed = ts_group["recording_elapsed_sec"][:n_frames].astype(np.float32)
+                timestamps = elapsed[: n_frames - 1]
+            else:
+                interval = float(self._root.attrs.get("frame_interval", 5.0))
+                timestamps = np.arange(n_frames - 1, dtype=np.float32) * interval
+
+            # Accumulate activity per ROI in RAM (one float32 per frame per ROI — tiny)
+            roi_activity: list[list[np.ndarray]] = [[] for _ in range(n_rois)]
+            boundary_frame: np.ndarray | None = None
+
+            # Batch size of 50: peak RAM ≈ 2 × (50 × H × W × 4 bytes) ≈ 500 MB for
+            # 1024×1224 frames — safe for multi-day recordings on typical hardware.
+            BATCH = 50
+            n_batches = (n_frames + BATCH - 1) // BATCH
+            logger.info(
+                f"Computing ROI activity: {n_frames} frames, {n_rois} ROIs, {n_batches} batches…"
+            )
+
+            for b, batch_start in enumerate(range(0, n_frames, BATCH)):
+                batch_end = min(batch_start + BATCH, n_frames)
+                raw = frames_arr[batch_start:batch_end].astype(np.float32) / dtype_max
+
+                if boundary_frame is not None:
+                    chunk = np.concatenate([boundary_frame[np.newaxis], raw], axis=0)
+                else:
+                    chunk = raw
+
+                boundary_frame = raw[-1].copy()
+                del raw  # free before allocating diffs
+
+                diffs = np.abs(np.diff(chunk, axis=0))  # (len-1, H, W)
+                del chunk  # free before ROI loop
+
+                for i, (mask_bool, npix) in enumerate(zip(masks_bool, n_pixels)):
+                    if npix == 0 or not diffs.shape[0]:
+                        roi_activity[i].append(np.zeros(diffs.shape[0], dtype=np.float32))
+                    else:
+                        activity = diffs[:, mask_bool].sum(axis=1) / npix
+                        roi_activity[i].append(activity.astype(np.float32))
+
+                if (b + 1) % 10 == 0 or b == n_batches - 1:
+                    logger.info(f"  activity batch {b + 1}/{n_batches} done")
+
+            # Write to analysis/ group
+            ag = self._root.require_group("analysis")
+            ag.create_array("timestamps_sec", data=timestamps, dtype=np.float32, overwrite=True)
+
+            for i in range(n_rois):
+                arr = np.concatenate(roi_activity[i])
+                ag.create_array(f"roi_{i}_activity", data=arr, dtype=np.float32, overwrite=True)
+
+            ag.attrs["n_rois"] = n_rois
+            ag.attrs["n_diffs"] = n_frames - 1
+            ag.attrs["computed_at"] = time.time()
+            ag.attrs["description"] = (
+                "Mean |delta_pixel| per ROI per frame transition, "
+                "normalized by number of pixels in each ROI mask"
+            )
+
+            logger.info(f"ROI activity saved to analysis/: {n_rois} ROIs, {n_frames - 1} diffs")
+            return True
+
+        except Exception as exc:
+            logger.error(f"_compute_and_save_roi_activity failed: {exc}")
             return False
 
     def close_file(self):

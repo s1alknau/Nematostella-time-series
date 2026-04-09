@@ -48,7 +48,7 @@ class RecordingControlPanel(QWidget):
 
         # Duration
         self.duration_spin = QSpinBox()
-        self.duration_spin.setRange(1, 10000)
+        self.duration_spin.setRange(1, 100000)
         self.duration_spin.setValue(60)
         self.duration_spin.setSuffix(" min")
         self.duration_spin.setToolTip("Total recording duration in minutes")

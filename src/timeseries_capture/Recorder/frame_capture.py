@@ -99,7 +99,16 @@ class FrameCaptureService:
             # =================================================================
             pulse_start = time.time()
 
-            if not self._led_is_on:
+            # If a background reconnect is in progress, skip LED commands entirely
+            # and capture whatever the camera has (frame will likely be dark and
+            # trigger the brightness retry, but we must not block the recording loop).
+            _esp32_reconnecting = (
+                hasattr(self.esp32, "is_reconnecting") and self.esp32.is_reconnecting
+            )
+            if _esp32_reconnecting:
+                logger.warning("[LED SKIP] ESP32 reconnect in progress — capturing without LED")
+
+            if not self._led_is_on and not _esp32_reconnecting:
                 stabilization_sec = self.stabilization_ms / 1000.0
 
                 if self._white_led_continuous:
@@ -238,7 +247,7 @@ class FrameCaptureService:
             # =================================================================
             # SCHRITT 5: Turn OFF LED after capture
             # =================================================================
-            if self._led_is_on:
+            if self._led_is_on and not _esp32_reconnecting:
                 try:
                     if self._white_led_continuous:
                         # White LED bleibt an — nur IR abschalten (falls Dual-Modus)
@@ -263,6 +272,9 @@ class FrameCaptureService:
 
                 except Exception as e:
                     logger.warning(f"[LED OFF] Failed to turn off LED: {e}")
+                    # Always reset the state flag so the next frame retries LED setup
+                    # rather than assuming the LED is still on and skipping turn-on entirely.
+                    self._led_is_on = False
 
             return frame, metadata
 

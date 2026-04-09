@@ -18,7 +18,8 @@ from typing import Optional
 from ..Datamanager import DataManager
 from .frame_capture import FrameCaptureService
 from .phase_manager import PhaseManager
-from .recording_state import RecordingConfig, RecordingState
+from .recording_state import ExperimentSchedule, RecordingConfig, RecordingState
+from .schedule_manager import ScheduleManager
 
 # Qt Signals (optional)
 try:
@@ -79,6 +80,7 @@ class RecordingManager(QObject):
     frame_captured = pyqtSignal(int, int)  # current_frame, total_frames
     progress_updated = pyqtSignal(float)  # progress_percent
     phase_changed = pyqtSignal(str, int)  # phase_name, cycle_number
+    segment_changed = pyqtSignal(int, str)  # segment_index, segment_label
 
     error_occurred = pyqtSignal(str)  # error_message
 
@@ -93,6 +95,7 @@ class RecordingManager(QObject):
         self.frame_capture = frame_capture_service
         self.state = RecordingState()
         self.phase_manager: Optional[PhaseManager] = None
+        self.schedule_manager: Optional[ScheduleManager] = None  # optional multi-segment
         self.data_manager: Optional[DataManager] = None  # also assigned DataManagerZarr at runtime
 
         # Recording thread
@@ -105,12 +108,18 @@ class RecordingManager(QObject):
     # RECORDING CONTROL
     # ========================================================================
 
-    def start_recording(self, config: RecordingConfig) -> bool:
+    def start_recording(
+        self,
+        config: RecordingConfig,
+        schedule: Optional[ExperimentSchedule] = None,
+    ) -> bool:
         """
         Startet Recording.
 
         Args:
-            config: Recording-Konfiguration
+            config:   Recording-Konfiguration (always required)
+            schedule: Optional ExperimentSchedule for multi-segment recordings.
+                      When provided, config should be schedule.to_recording_config().
 
         Returns:
             True wenn erfolgreich gestartet
@@ -125,11 +134,21 @@ class RecordingManager(QObject):
             # Setup components
             self.state.set_config(config)
 
-            # Setup Phase Manager
-            if config.phase_enabled:
-                self.phase_manager = PhaseManager(config)
-            else:
+            # Setup Schedule Manager (multi-segment) OR classic Phase Manager
+            if schedule is not None:
+                self.schedule_manager = ScheduleManager(
+                    schedule,
+                    on_segment_changed=self._on_segment_changed,
+                )
                 self.phase_manager = None
+                logger.info(f"Using ScheduleManager: {len(schedule.segments)} segment(s)")
+            else:
+                self.schedule_manager = None
+                # Setup Phase Manager
+                if config.phase_enabled:
+                    self.phase_manager = PhaseManager(config)
+                else:
+                    self.phase_manager = None
 
             # Setup Data Manager
             from ..Datamanager import TelemetryMode
@@ -140,7 +159,8 @@ class RecordingManager(QObject):
 
                 self.data_manager = DataManagerZarr(  # type: ignore[assignment]
                     telemetry_mode=ZarrTelemetryMode.STANDARD,
-                    chunk_size=512,
+                    img_chunk_frames=50,
+                    ts_chunk_size=512,
                     save_as_uint8=getattr(config, "save_as_uint8", False),
                 )
                 logger.info("Using Zarr data manager")
@@ -283,6 +303,29 @@ class RecordingManager(QObject):
             logger.info("=" * 60)
 
             # ================================================================
+            # DISABLE AUTO-GAIN / AUTO-EXPOSURE before recording starts
+            # ================================================================
+            # Global pixel drift (seen as linear ramp in all ROIs) is caused by
+            # camera AGC slowly adjusting gain across the recording.  Force both
+            # GainAuto and ExposureAuto to Off so every frame uses the same
+            # fixed gain/exposure settings.
+            try:
+                agc_result = self.frame_capture.camera.disable_auto_settings()
+                if agc_result.get("gain_auto_off") or agc_result.get("exposure_auto_off"):
+                    logger.info(
+                        f"Camera auto settings disabled: GainAuto={agc_result['gain_auto_off']}, "
+                        f"ExposureAuto={agc_result['exposure_auto_off']} | "
+                        f"gain={agc_result['current_gain']}, exposure_ms={agc_result['current_exposure']}"
+                    )
+                else:
+                    logger.warning(
+                        "⚠️  Could not disable camera auto settings "
+                        "(no-op on dummy/napari adapter or setParameter not available)"
+                    )
+            except Exception as e:
+                logger.warning(f"disable_auto_settings call failed: {e}")
+
+            # ================================================================
             # Initial sensor query before recording starts
             # ================================================================
             # Force the counter so query_sensors_if_needed() always fires here,
@@ -310,8 +353,10 @@ class RecordingManager(QObject):
             self.data_manager.recording_start_time = self.state.start_time  # type: ignore[union-attr]
             logger.info(f"Data Manager start time synchronized: {self.state.start_time:.3f}")
 
-            # Start phase recording
-            if self.phase_manager:
+            # Start phase/schedule recording
+            if self.schedule_manager:
+                self.schedule_manager.start_phase_recording()
+            elif self.phase_manager:
                 self.phase_manager.start_phase_recording()
 
             # Start recording thread
@@ -419,8 +464,8 @@ class RecordingManager(QObject):
                 if self._stop_requested or self.state.is_paused():
                     continue
 
-                # Capture frame
-                self._capture_single_frame()
+                # Capture frame — pass deadline so per-frame drift can be recorded
+                self._capture_single_frame(deadline=next_frame_deadline)
 
                 # Query sensors BETWEEN frame captures (not during capture)
                 # This prevents timing interference with frame capture
@@ -439,7 +484,7 @@ class RecordingManager(QObject):
             self.error_occurred.emit(f"Recording error: {e}")
             self._finalize_recording()
 
-    def _capture_single_frame(self):
+    def _capture_single_frame(self, deadline: float = 0.0):
         """Captured ein einzelnes Frame"""
         try:
             # Check if this is the last frame BEFORE phase transition
@@ -452,11 +497,11 @@ class RecordingManager(QObject):
             led_type = "ir"
             dual_mode = False
 
-            if self.phase_manager and self.phase_manager.is_enabled():
+            # Use ScheduleManager when a schedule is active, else classic PhaseManager
+            active_manager = self.schedule_manager or self.phase_manager
+            if active_manager and active_manager.is_enabled():
                 # Get phase info, but prevent transition if this is the last frame
-                phase_info = self.phase_manager.get_current_phase_info(
-                    prevent_transition=is_last_frame
-                )
+                phase_info = active_manager.get_current_phase_info(prevent_transition=is_last_frame)
 
                 if phase_info:
                     led_type = phase_info.led_type
@@ -498,9 +543,9 @@ class RecordingManager(QObject):
 
             frame_number = self.state.current_frame + 1
             max_capture_retries = 3
-            brightness_threshold = (
-                self.state.config.brightness_validation_threshold
-            )  # Adaptive threshold
+            config = self.state.config
+            assert config is not None  # guaranteed: recording is active
+            brightness_threshold = config.brightness_validation_threshold
 
             logger.debug(
                 f"Capturing frame {frame_number}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
@@ -511,13 +556,15 @@ class RecordingManager(QObject):
                 )
 
             frame = None
-            metadata = None
+            metadata: dict = {}
 
             for retry_attempt in range(max_capture_retries):
                 # Attempt frame capture
                 frame, metadata = self.frame_capture.capture_with_retry(
                     led_type=led_type, dual_mode=dual_mode, max_retries=3
                 )
+                if metadata is None:
+                    metadata = {}
 
                 if frame is None:
                     logger.error("Frame capture failed")
@@ -537,13 +584,13 @@ class RecordingManager(QObject):
                         return mean * 255.0  # float assumed [0, 1]
                     return mean
 
-                if self.state.config.use_full_frame_for_validation:
+                if config.use_full_frame_for_validation:
                     # Use entire frame
                     frame_mean = _normalize_to_255(frame)
                 else:
                     # Use center ROI (same as calibration)
                     h, w = frame.shape[:2]
-                    roi_frac = self.state.config.roi_fraction
+                    roi_frac = config.roi_fraction
 
                     # Calculate ROI boundaries
                     center_h = h // 2
@@ -605,7 +652,6 @@ class RecordingManager(QObject):
                 metadata["phase_enabled"] = False
 
             # Add LED power info (actual powers used for this frame)
-            config = self.state.get_config()
             if config and phase_info and config.phase_enabled:
                 # Phase recording: Use per-phase powers
                 from .recording_state import PhaseType
@@ -643,6 +689,21 @@ class RecordingManager(QObject):
                 metadata["capture_method"] = "normal"
             else:
                 metadata["capture_method"] = "unknown"
+
+            # Inject segment info when using a schedule
+            if self.schedule_manager:
+                metadata["segment_index"] = self.schedule_manager.current_segment_index
+                metadata["segment_label"] = self.schedule_manager.current_segment_label
+
+            # Add per-frame capture timing (elapsed since recording start + drift vs deadline)
+            # Use capture_complete_time (after camera.capture_frame() returned) — this is the
+            # actual moment the sensor was read, excluding LED stabilization overhead.
+            # Fall back to capture_start only if capture_complete_time is absent.
+            capture_time = metadata.get(
+                "capture_complete_time", metadata.get("capture_start", time.time())
+            )
+            metadata["capture_elapsed_sec"] = capture_time - self.state.start_time
+            metadata["frame_drift_sec"] = capture_time - deadline if deadline > 0 else float("nan")
 
             # Save frame
             frame_number = self.state.current_frame + 1
@@ -733,8 +794,10 @@ class RecordingManager(QObject):
                 "config": self.state.config.__dict__ if self.state.config else {},
             }
 
-            # Add phase summary
-            if self.phase_manager:
+            # Add phase / schedule summary
+            if self.schedule_manager:
+                final_info["schedule_summary"] = self.schedule_manager.get_phase_summary()
+            elif self.phase_manager:
                 final_info["phase_summary"] = self.phase_manager.get_phase_summary()
 
             # Add capture stats
@@ -754,6 +817,19 @@ class RecordingManager(QObject):
 
         except Exception as e:
             logger.error(f"Error finalizing recording: {e}")
+
+    def _on_segment_changed(self, new_index: int):
+        """
+        Called by ScheduleManager when a segment transition occurs.
+        Resets _last_phase so the first frame of the new segment triggers a
+        full LED power update, then emits the segment_changed signal.
+        """
+        self._last_phase = None
+        label = ""
+        if self.schedule_manager:
+            label = self.schedule_manager.current_segment_label
+        logger.info(f"Segment changed → {new_index}: {label!r}")
+        self.segment_changed.emit(new_index, label)
 
     def _set_phase_led_powers(self, phase_info, led_type: str, dual_mode: bool) -> bool:
         """

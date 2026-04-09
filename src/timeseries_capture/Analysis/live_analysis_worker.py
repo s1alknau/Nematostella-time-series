@@ -109,6 +109,18 @@ class LiveAnalysisWorker(QThread):
         self.interval_sec = interval_sec
         self._running = False
 
+        # Incremental state — avoids reloading all frames on every update.
+        # Only the new frames since last call are read; the full frame stack is
+        # never held in RAM simultaneously.
+        self._last_n: int = 0  # total frames processed so far
+        self._boundary_frame: np.ndarray | None = (
+            None  # last frame of previous batch (normalised float32)
+        )
+        # Accumulated 1-D arrays (tiny — one value per frame transition)
+        self._roi_activity_raw: list[np.ndarray] = [np.empty(0, dtype=np.float32) for _ in masks]
+        self._led_power_acc: np.ndarray = np.empty(0, dtype=np.float32)  # N led-power values
+        self._elapsed_acc: np.ndarray = np.empty(0, dtype=np.float32)  # N-1 elapsed-sec values
+
     # ------------------------------------------------------------------
     # QThread interface
     # ------------------------------------------------------------------
@@ -138,7 +150,12 @@ class LiveAnalysisWorker(QThread):
     # ------------------------------------------------------------------
 
     def _compute_and_emit(self):
-        """Read current Zarr frames and compute activity per ROI."""
+        """Read only NEW Zarr frames since last call and compute activity per ROI.
+
+        Incremental design: the full frame stack is never held in RAM.
+        At most (new_frames_since_last_update + 1 boundary frame) are loaded
+        per call, so memory usage stays constant regardless of recording length.
+        """
         try:
             import zarr  # lazy import — zarr may not be installed
 
@@ -150,71 +167,100 @@ class LiveAnalysisWorker(QThread):
             frames_arr = root["images"]["frames"]
 
             # Determine how many frames have actually been written.
-            # The images array is pre-allocated to its max capacity (e.g. 100 000),
-            # so frames_arr.shape[0] is NOT the written count.
-            # The timeseries datasets are appended incrementally and are therefore
-            # always exactly as long as the number of written frames.
+            # DataManagerZarr writes root.attrs["written_frames"] every flush_interval
+            # frames — use this as the authoritative count.  The timeseries arrays are
+            # pre-allocated to 100k rows so their .shape[0] is NOT the written count.
             ts_group = root.get("timeseries", None)
-            if ts_group is not None and "frame_index" in ts_group:
-                n_frames = int(ts_group["frame_index"].shape[0])
-            elif ts_group is not None and "recording_elapsed_sec" in ts_group:
-                n_frames = int(ts_group["recording_elapsed_sec"].shape[0])
-            else:
-                # Fallback: check .zattrs written_frames attribute
-                n_frames = int(root.attrs.get("written_frames", 0))
+            n_frames = int(root.attrs.get("written_frames", 0))
 
-            if n_frames < 2:
+            # Nothing new to process
+            if n_frames <= self._last_n or n_frames < 2:
                 return
 
-            # Read only the actually written frames (avoids loading the full
-            # pre-allocated array which can be hundreds of GiB).
-            # Normalize to [0, 1] — identical to napari-hdf5-activity (_reader.py:
-            # normalize_image_to_float32 divides uint16 by 65535.0).
-            dtype_max = float(np.iinfo(frames_arr.dtype).max)  # 255 for uint8, 65535 for uint16
-            frame_data = frames_arr[:n_frames].astype(np.float32) / dtype_max  # (N, H, W)
+            start_idx = self._last_n  # index of first new frame
 
-            # Compute frame-to-frame absolute differences
-            diffs = np.abs(np.diff(frame_data, axis=0))  # (N-1, H, W)
+            # ----------------------------------------------------------------
+            # Load only new frames (small batch, e.g. ~4 frames per 20s update)
+            # ----------------------------------------------------------------
+            dtype_max = float(np.iinfo(frames_arr.dtype).max)
+            new_frames = frames_arr[start_idx:n_frames].astype(np.float32) / dtype_max
 
-            # Read LED power for illumination phase correction (N,)
-            led_power: np.ndarray | None = None
+            # Prepend boundary frame so we get a diff at the batch seam
+            if self._boundary_frame is not None:
+                batch = np.concatenate([self._boundary_frame[np.newaxis], new_frames], axis=0)
+            else:
+                batch = new_frames  # first call — no boundary yet
+
+            # ----------------------------------------------------------------
+            # Always accumulate elapsed + LED for new frames — even if we
+            # return early below (ensures _elapsed_acc[k] == elapsed of frame k
+            # for correct timestamp alignment on subsequent calls).
+            # ----------------------------------------------------------------
+            if ts_group is not None and "recording_elapsed_sec" in ts_group:
+                new_elapsed = ts_group["recording_elapsed_sec"][start_idx:n_frames].astype(
+                    np.float32
+                )
+                self._elapsed_acc = np.concatenate([self._elapsed_acc, new_elapsed])
+
             if ts_group is not None and "white_led_power" in ts_group:
-                led_power = ts_group["white_led_power"][:n_frames].astype(np.float32)
+                new_led = ts_group["white_led_power"][start_idx:n_frames].astype(np.float32)
+                self._led_power_acc = np.concatenate([self._led_power_acc, new_led])
 
-            results: dict = {}
+            # Update boundary cache and frame counter
+            self._boundary_frame = new_frames[-1].copy()
+            self._last_n = n_frames
+
+            if batch.shape[0] < 2:
+                # Only one frame so far — no diff possible yet
+                return
+
+            # Frame differences for this batch only — tiny, O(new_frames)
+            diffs = np.abs(np.diff(batch, axis=0))  # (batch-1, H, W)
+
+            # ----------------------------------------------------------------
+            # Per-ROI activity for new diffs only, append to accumulators
+            # ----------------------------------------------------------------
             for i, mask in enumerate(self.masks):
                 mask_bool = mask > 0
                 if not mask_bool.any():
-                    results[f"roi_{i}"] = np.zeros(n_frames - 1, dtype=np.float32)
+                    self._roi_activity_raw[i] = np.concatenate(
+                        [self._roi_activity_raw[i], np.zeros(diffs.shape[0], dtype=np.float32)]
+                    )
                     continue
                 n_pixels = int(mask_bool.sum())
-                # Mean per-pixel activity per frame transition
-                roi_diffs = diffs[:, mask_bool]  # (N-1, n_pixels)
-                activity = roi_diffs.sum(axis=1) / n_pixels  # (N-1,)
+                roi_diffs = diffs[:, mask_bool]  # (batch-1, n_pixels)
+                activity = roi_diffs.sum(axis=1) / n_pixels  # mean |ΔPixel| per frame per ROI
+                self._roi_activity_raw[i] = np.concatenate(
+                    [self._roi_activity_raw[i], activity.astype(np.float32)]
+                )
 
-                # Illumination phase baseline correction (identical to analysis plugin)
-                if led_power is not None and len(led_power) == n_frames:
-                    activity = _apply_illumination_correction(activity, led_power)
+            # ----------------------------------------------------------------
+            # Build and emit results using full accumulated 1-D arrays (tiny)
+            # ----------------------------------------------------------------
+            n_diffs = len(self._roi_activity_raw[0]) if self.masks else 0
+            if n_diffs == 0:
+                return
 
-                results[f"roi_{i}"] = activity
+            results: dict = {}
+            for i in range(len(self.masks)):
+                results[f"roi_{i}"] = self._roi_activity_raw[i]
 
-            # Timestamps (seconds from start)
-            if "timeseries" in root and "timestamps" in root["timeseries"]:
-                ts = root["timeseries"]["timestamps"][:n_frames].astype(np.float64)
-                # Convert to elapsed seconds from first timestamp
-                if len(ts) > 1:
-                    t0 = ts[0]
-                    elapsed_sec = ts[1:n_frames] - t0  # align with diffs (N-1,)
-                else:
-                    elapsed_sec = np.arange(n_frames - 1, dtype=np.float64)
+            # Timestamps aligned with diffs (N-1 values).
+            # Attribute diff[i] = |frame[i+1]-frame[i]| to frame[i]'s timestamp so
+            # the first diff is at elapsed=0 and all lines start at x=0 in the plot.
+            if len(self._elapsed_acc) >= n_diffs:
+                elapsed_sec = self._elapsed_acc[0:n_diffs]
             else:
-                elapsed_sec = np.arange(n_frames - 1, dtype=np.float64)
+                elapsed_sec = np.arange(n_diffs, dtype=np.float32)
 
             results["timestamps"] = elapsed_sec
-            results["n_frames"] = n_frames
+            results["n_frames"] = self._last_n
 
             self.results_ready.emit(results)
-            logger.debug(f"LiveAnalysis update: {n_frames} frames, {len(self.masks)} ROIs")
+            logger.debug(
+                f"LiveAnalysis update: +{n_frames - start_idx} new frames "
+                f"({self._last_n} total), {len(self.masks)} ROIs"
+            )
 
         except Exception as exc:
             logger.warning(f"LiveAnalysisWorker error (will retry): {exc}")

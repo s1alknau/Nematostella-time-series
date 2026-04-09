@@ -78,6 +78,15 @@ class CameraAdapter(ABC):
             pass
         return 10.0  # Default fallback
 
+    def disable_auto_settings(self) -> dict:
+        """
+        Disable auto-gain and auto-exposure before recording.
+
+        Returns dict with applied settings and their success status so the
+        caller can log what actually happened.
+        """
+        return {}  # base class: no-op, subclasses override
+
 
 # ============================================================================
 # HIK GIGE CAMERA ADAPTER (for ImSwitch)
@@ -218,6 +227,68 @@ class HikGigECameraAdapter(CameraAdapter):
                 logger.debug(f"Could not get detailed camera info: {e}")
 
         return info
+
+    def disable_auto_settings(self) -> dict:
+        """
+        Disable auto-gain and auto-exposure on the HIK camera.
+
+        Calls setParameter() with GenICam standard names for auto-gain (GainAuto)
+        and auto-exposure (ExposureAuto). Also reads current gain/exposure values
+        so the caller can log them.
+
+        Returns:
+            Dict with keys: gain_auto_off (bool), exposure_auto_off (bool),
+            current_gain (float|None), current_exposure (float|None)
+        """
+        result = {
+            "gain_auto_off": False,
+            "exposure_auto_off": False,
+            "current_gain": None,
+            "current_exposure": None,
+        }
+
+        if not self.is_available():
+            logger.warning("disable_auto_settings: camera not available")
+            return result
+
+        try:
+            detector = self.camera_manager._detectorManagers[self.detector_name]
+
+            if not hasattr(detector, "setParameter"):
+                logger.warning("disable_auto_settings: detector has no setParameter()")
+                return result
+
+            # Disable auto-gain
+            try:
+                detector.setParameter("GainAuto", "Off")
+                result["gain_auto_off"] = True
+                logger.info("✅ GainAuto set to Off")
+            except Exception as e:
+                logger.warning(f"Could not disable GainAuto: {e}")
+
+            # Disable auto-exposure
+            try:
+                detector.setParameter("ExposureAuto", "Off")
+                result["exposure_auto_off"] = True
+                logger.info("✅ ExposureAuto set to Off")
+            except Exception as e:
+                logger.warning(f"Could not disable ExposureAuto: {e}")
+
+            # Read back current values for logging
+            if hasattr(detector, "getParameter"):
+                try:
+                    result["current_gain"] = float(detector.getParameter("gain"))
+                except Exception:
+                    pass
+                try:
+                    result["current_exposure"] = float(detector.getParameter("exposure"))
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"disable_auto_settings failed: {e}")
+
+        return result
 
 
 # ============================================================================

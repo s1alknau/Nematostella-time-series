@@ -17,6 +17,7 @@ from qtpy.QtCore import QSettings
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtGui import QImage, QPixmap
 from qtpy.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -72,6 +73,13 @@ class LiveAnalysisPanel(QWidget):
         self._result: RoiDetectionResult | None = None
         self._last_results: dict = {}
         self._total_duration_min: float | None = None
+        # Phase overlay config
+        self._phase_enabled: bool = False
+        self._light_duration_min: int = 720
+        self._dark_duration_min: int = 720
+        self._start_with_light: bool = True
+        # Schedule-driven phase overlay (takes priority over manual config)
+        self._schedule_segments: list | None = None
         self._setup_ui()
         self._load_settings()
 
@@ -211,7 +219,7 @@ class LiveAnalysisPanel(QWidget):
         plot_group = QGroupBox("Live Activity Plot (updates every 20s during recording)")
         plot_layout = QVBoxLayout()
 
-        # ROI selector
+        # ROI selector + ZT toggle row
         selector_row = QHBoxLayout()
         selector_row.addWidget(QLabel("Show:"))
         self.roi_selector = QComboBox()
@@ -220,7 +228,36 @@ class LiveAnalysisPanel(QWidget):
         self.roi_selector.currentIndexChanged.connect(self._on_roi_selector_changed)
         selector_row.addWidget(self.roi_selector)
         selector_row.addStretch()
+        self._zt_checkbox = QCheckBox("ZT axis (hours)")
+        self._zt_checkbox.setToolTip(
+            "Show Zeitgeber Time on x-axis: ZT 0 = recording start, unit = hours"
+        )
+        self._zt_checkbox.stateChanged.connect(self._on_plot_option_changed)
+        selector_row.addWidget(self._zt_checkbox)
         plot_layout.addLayout(selector_row)
+
+        # Phase overlay controls — config is always automatic (from schedule or phase panel)
+        phase_box = QGroupBox("Light/Dark Phase Overlay")
+        phase_vlay = QVBoxLayout()
+        phase_vlay.setContentsMargins(6, 4, 6, 4)
+
+        phase_top = QHBoxLayout()
+        self._phase_chk = QCheckBox("Show phase overlay")
+        self._phase_chk.stateChanged.connect(self._on_plot_option_changed)
+        phase_top.addWidget(self._phase_chk)
+        phase_top.addStretch()
+        self._schedule_info_label = QLabel("No recording active")
+        self._schedule_info_label.setStyleSheet("color: #7f8c8d; font-size: 10px;")
+        phase_top.addWidget(self._schedule_info_label)
+        phase_vlay.addLayout(phase_top)
+
+        # Internal storage only — no spinboxes shown to user
+        self._light_duration_min: int = 720
+        self._dark_duration_min: int = 720
+        self._start_with_light: bool = True
+
+        phase_box.setLayout(phase_vlay)
+        plot_layout.addWidget(phase_box)
 
         if MATPLOTLIB_AVAILABLE:
             self._figure = Figure(figsize=(6, 3), tight_layout=True)
@@ -228,7 +265,7 @@ class LiveAnalysisPanel(QWidget):
             self._canvas.setMinimumHeight(220)
             self._ax = self._figure.add_subplot(111)
             self._ax.set_xlabel("Time (min)")
-            self._ax.set_ylabel("Activity (a.u.)")
+            self._ax.set_ylabel("Σ|ΔPixel| (norm.)")
             self._ax.set_title("Activity per ROI")
             self._ax.grid(True, alpha=0.3)
             plot_layout.addWidget(self._canvas)
@@ -319,6 +356,57 @@ class LiveAnalysisPanel(QWidget):
         """Called by main_widget when recording starts so x-axis can be fixed to full duration."""
         self._total_duration_min = float(total_min)
 
+    def set_phase_config(
+        self,
+        phase_enabled: bool,
+        light_duration_min: int,
+        dark_duration_min: int,
+        start_with_light: bool = True,
+    ):
+        """
+        Store phase config from the phase recording panel.
+        Called by main_widget when a plain (non-schedule) recording starts.
+        Ignored when a schedule is active.
+        """
+        if self._schedule_segments is not None:
+            return  # schedule takes priority
+        self._light_duration_min = light_duration_min
+        self._dark_duration_min = dark_duration_min
+        self._start_with_light = start_with_light
+        self._phase_chk.setChecked(phase_enabled)
+        if phase_enabled:
+            self._schedule_info_label.setText(
+                f"From phase config: {light_duration_min}min light / {dark_duration_min}min dark"
+            )
+            self._schedule_info_label.setStyleSheet("color: #2980b9; font-size: 10px;")
+        else:
+            self._schedule_info_label.setText("Continuous recording (no phases)")
+            self._schedule_info_label.setStyleSheet("color: #7f8c8d; font-size: 10px;")
+        if self._last_results:
+            self._render_plot()
+
+    def set_schedule(self, schedule) -> None:
+        """
+        Load phase overlay directly from an ExperimentSchedule.
+        Called by main_widget when a schedule recording starts.
+        """
+        self._schedule_segments = list(schedule.segments)
+        self._phase_chk.setChecked(True)
+        n = len(self._schedule_segments)
+        segs_desc = ", ".join(s.label for s in self._schedule_segments[:3])
+        if n > 3:
+            segs_desc += f" +{n - 3} more"
+        self._schedule_info_label.setText(f"From schedule: {segs_desc}")
+        self._schedule_info_label.setStyleSheet("color: #27ae60; font-size: 10px;")
+        if self._last_results:
+            self._render_plot()
+
+    def clear_schedule(self) -> None:
+        """Revert to phase-panel config (called when a plain recording starts)."""
+        self._schedule_segments = None
+        self._schedule_info_label.setText("No recording active")
+        self._schedule_info_label.setStyleSheet("color: #7f8c8d; font-size: 10px;")
+
     def set_output_format(self, fmt: str):
         """
         Called by main_widget when the user changes the output format selector.
@@ -382,6 +470,68 @@ class LiveAnalysisPanel(QWidget):
         if self._last_results:
             self._render_plot()
 
+    def _on_plot_option_changed(self):
+        """Re-render when ZT toggle or phase overlay settings change."""
+        if self._last_results:
+            self._render_plot()
+
+    def _compute_phase_bands(self, x_max_min: float, use_zt: bool) -> list:
+        """
+        Return a list of (x_start, x_end, is_light) in plot units.
+
+        When a schedule is active, each segment contributes its own LD pattern.
+        Otherwise uses the manual spinbox values.
+        x units: hours when use_zt=True, minutes otherwise.
+        """
+        scale = 1.0 / 60.0 if use_zt else 1.0  # minutes → plot units
+
+        bands = []
+        if self._schedule_segments is not None:
+            t_min = 0.0
+            for seg in self._schedule_segments:
+                seg_dur = (
+                    float(seg.duration_min)
+                    if seg.duration_min is not None
+                    else max(0.0, x_max_min - t_min)
+                )
+                seg_end = t_min + seg_dur
+
+                if not seg.phase_enabled:
+                    is_light = getattr(seg, "continuous_led_type", "ir") in ("white", "dual")
+                    bands.append((t_min * scale, seg_end * scale, is_light))
+                else:
+                    light_d = float(seg.light_duration_min)
+                    dark_d = float(seg.dark_duration_min)
+                    if light_d <= 0 or dark_d <= 0:
+                        t_min = seg_end
+                        continue
+                    is_light = seg.start_with_light
+                    bt = t_min
+                    while bt < seg_end:
+                        dur = light_d if is_light else dark_d
+                        end = min(bt + dur, seg_end)
+                        bands.append((bt * scale, end * scale, is_light))
+                        bt += dur
+                        is_light = not is_light
+
+                t_min = seg_end
+                if seg.duration_min is None:
+                    break
+        else:
+            light_d = float(self._light_duration_min)
+            dark_d = float(self._dark_duration_min)
+            if light_d > 0 and dark_d > 0:
+                is_light = self._start_with_light
+                t = 0.0
+                while t < x_max_min:
+                    dur = light_d if is_light else dark_d
+                    end = min(t + dur, x_max_min)
+                    bands.append((t * scale, end * scale, is_light))
+                    t += dur
+                    is_light = not is_light
+
+        return bands
+
     def _render_plot(self):
         """Draw the activity plot for the currently selected ROI(s)."""
         if not MATPLOTLIB_AVAILABLE or not self._last_results:
@@ -393,33 +543,64 @@ class LiveAnalysisPanel(QWidget):
         roi_keys = sorted(k for k in results if k.startswith("roi_"))
         all_colors = _roi_colors(len(roi_keys))
 
+        use_zt = self._zt_checkbox.isChecked()
+        show_phases = self._phase_chk.isChecked()
+
         selection = self.roi_selector.currentText()
         if selection == "All ROIs":
             keys_to_plot = roi_keys
             colors_to_plot = all_colors
         else:
-            # "ROI N" → index N-1
             roi_idx = int(selection.split()[1]) - 1
             key = f"roi_{roi_idx}"
             keys_to_plot = [key] if key in results else []
             colors_to_plot = [all_colors[roi_idx]] if keys_to_plot else []
 
         self._ax.clear()
-        self._ax.set_xlabel("Time (min)")
-        self._ax.set_ylabel("Activity (a.u.)")
-        self._ax.set_title(f"Live Activity — {n_frames} frames recorded")
-        self._ax.grid(True, alpha=0.3)
-        if self._total_duration_min is not None:
-            self._ax.set_xlim(0, self._total_duration_min)
 
+        # X-axis: ZT in hours or elapsed in minutes
+        if use_zt:
+            xlabel = "ZT (h)"
+            x_scale = 1.0 / 3600.0  # seconds → hours
+            x_max = self._total_duration_min / 60.0 if self._total_duration_min else None
+        else:
+            xlabel = "Time (min)"
+            x_scale = 1.0 / 60.0  # seconds → minutes
+            x_max = self._total_duration_min
+
+        self._ax.set_xlabel(xlabel)
+        self._ax.set_ylabel("Σ|ΔPixel| (norm.)")
+        self._ax.set_title(f"Live Activity — {n_frames} frames recorded")
+        if x_max is not None:
+            self._ax.set_xlim(0, x_max)
+
+        # Phase overlay bands (drawn first, behind signal lines)
+        if show_phases:
+            x_max_min = (
+                self._total_duration_min
+                if self._total_duration_min
+                else (
+                    float(np.max(timestamps) / 60.0)
+                    if timestamps is not None and len(timestamps)
+                    else 1440.0
+                )
+            )
+            for x0, x1, is_light in self._compute_phase_bands(x_max_min, use_zt):
+                color = "#ffe680" if is_light else "#2c2c2c"
+                alpha = 0.25 if is_light else 0.18
+                self._ax.axvspan(x0, x1, color=color, alpha=alpha, linewidth=0)
+
+        self._ax.grid(True, alpha=0.3, zorder=2)
+
+        # Signal lines
         for key, color in zip(keys_to_plot, colors_to_plot):
             activity = results[key]
             if timestamps is not None and len(timestamps) == len(activity):
-                x = timestamps / 60.0
+                x = timestamps * x_scale
             else:
                 x = np.arange(len(activity))
             roi_num = int(key.split("_")[1]) + 1
-            self._ax.plot(x, activity, color=color, label=f"ROI {roi_num}", linewidth=1.2)
+            self._ax.plot(x, activity, color=color, label=f"ROI {roi_num}", linewidth=1.2, zorder=3)
 
         if keys_to_plot:
             self._ax.legend(loc="upper right", fontsize=8)
@@ -491,20 +672,17 @@ class LiveAnalysisPanel(QWidget):
 
 
 def _roi_colors(n: int) -> list[str]:
-    """Generate n distinct matplotlib colors."""
-    base = [
-        "#e74c3c",
-        "#3498db",
-        "#2ecc71",
-        "#f39c12",
-        "#9b59b6",
-        "#1abc9c",
-        "#e67e22",
-        "#34495e",
-        "#e91e63",
-        "#00bcd4",
-    ]
-    if n <= len(base):
-        return base[:n]
-    # Repeat with slight variation
-    return [base[i % len(base)] for i in range(n)]
+    """Generate n distinct matplotlib colors using tab10/tab20 colormaps."""
+    import matplotlib.cm as cm
+    import matplotlib.colors as mcolors
+
+    if n <= 10:
+        cmap = cm.get_cmap("tab10")
+        return [mcolors.to_hex(cmap(i)) for i in range(n)]
+    elif n <= 20:
+        cmap = cm.get_cmap("tab20")
+        return [mcolors.to_hex(cmap(i)) for i in range(n)]
+    else:
+        # More than 20: cycle through tab20
+        cmap = cm.get_cmap("tab20")
+        return [mcolors.to_hex(cmap(i % 20)) for i in range(n)]
