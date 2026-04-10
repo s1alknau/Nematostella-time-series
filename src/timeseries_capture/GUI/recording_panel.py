@@ -93,10 +93,11 @@ class RecordingControlPanel(QWidget):
 
         # Output Format
         self.format_combo = QComboBox()
-        self.format_combo.addItem("HDF5 (.h5)", "hdf5")
         self.format_combo.addItem("Zarr (.zarr)", "zarr")
+        self.format_combo.addItem("HDF5 (.h5)", "hdf5")
         self.format_combo.setToolTip(
-            "HDF5: classic format\nZarr: compatible with napari-hdf5-activity zarr branch"
+            "Zarr: recommended — supports live analysis and long recordings\n"
+            "HDF5: legacy format, no live analysis preview"
         )
         config_layout.addRow("Format:", self.format_combo)
 

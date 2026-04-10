@@ -194,6 +194,14 @@ class RecordingController(QObject):
                 # Save ROI masks and emit Zarr path for live analysis (Zarr format only)
                 if config.output_format == "zarr" and self._roi_masks:
                     self._save_roi_masks_and_notify()
+                elif config.output_format != "zarr" and self._roi_masks:
+                    logger.warning(
+                        "ROIs detected but output format is not Zarr — live analysis unavailable. "
+                        "Switch to Zarr to enable live preview."
+                    )
+                    self.error_occurred.emit(
+                        "⚠️ Live analysis requires Zarr format. Switch to Zarr in the recording panel."
+                    )
             else:
                 logger.error("Failed to start recording")
                 self.error_occurred.emit("Failed to start recording")
@@ -236,6 +244,10 @@ class RecordingController(QObject):
                 logger.info("Schedule recording started successfully")
                 if config.output_format == "zarr" and self._roi_masks:
                     self._save_roi_masks_and_notify()
+                elif config.output_format != "zarr" and self._roi_masks:
+                    logger.warning(
+                        "ROIs detected but schedule output format is not Zarr — live analysis unavailable."
+                    )
             else:
                 logger.error("Failed to start schedule recording")
                 self.error_occurred.emit("Failed to start schedule recording")
