@@ -467,24 +467,6 @@ class DataManagerZarr:
                     python_timing=timing_metrics,
                 )
 
-                # Also write absolute timestamp for analysis plugin
-                ts_group = self._root["timeseries"]
-                if "timestamps" not in ts_group:
-                    ts_arr = ts_group.create_dataset(
-                        "timestamps",
-                        shape=(self._images_max_frames,),
-                        chunks=(512,),
-                        dtype=np.float64,
-                    )
-                else:
-                    ts_arr = ts_group["timestamps"]
-                if frame_index >= ts_arr.shape[0]:
-                    ts_arr.resize((frame_index + self.ts_chunk_size,))
-                # Store actual capture time (not save time) in timestamps array
-                ts_arr[frame_index] = (
-                    self.recording_start_time + timing_metrics["recording_elapsed_sec"]
-                )
-
                 self._frames_since_flush += 1
 
                 # Write the actual written-frame count to root attrs every flush_interval
@@ -668,10 +650,6 @@ class DataManagerZarr:
                 # Trim timeseries
                 if self._ts_writer:
                     self._ts_writer.trim_to_actual_size()
-
-                # Trim timestamps
-                if "timestamps" in self._root["timeseries"]:
-                    self._root["timeseries"]["timestamps"].resize((self.frame_count,))
 
                 logger.info(f"Zarr recording finalized: {self.frame_count} frames")
 
