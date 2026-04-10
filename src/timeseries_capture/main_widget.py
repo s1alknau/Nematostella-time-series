@@ -640,6 +640,13 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             except Exception as e:
                 logger.debug(f"Disk space check failed: {e}")
 
+            # Sync ROI masks from live analysis panel — ensures masks detected in a
+            # previous detection run (same session) are forwarded even if rois_detected
+            # signal was not re-emitted (user didn't re-detect before this recording).
+            current_masks = self.live_analysis_panel.get_masks()
+            if current_masks:
+                self.recording_controller.set_roi_masks(current_masks)
+
             # Start recording via controller
             self.log_panel.add_log("🎬 Starting recording...", "INFO")
             self.log_panel.add_log(f"Config: {full_config}", "DEBUG")
@@ -963,6 +970,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         )
         # Pre-load phase overlay from schedule so the plot is ready when zarr opens
         self.live_analysis_panel.set_schedule(schedule)
+
+        # Sync ROI masks — same as for plain recordings
+        current_masks = self.live_analysis_panel.get_masks()
+        if current_masks:
+            self.recording_controller.set_roi_masks(current_masks)
 
         success = self.recording_controller.start_schedule(schedule)
         if success:
