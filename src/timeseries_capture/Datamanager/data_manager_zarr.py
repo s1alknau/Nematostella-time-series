@@ -467,14 +467,11 @@ class DataManagerZarr:
                     python_timing=timing_metrics,
                 )
 
-                self._frames_since_flush += 1
-
-                # Write the actual written-frame count to root attrs every flush_interval
-                # frames so the LiveAnalysisWorker can read it reliably (the pre-allocated
-                # timeseries arrays have shape 100k, not the actual written count).
-                if self._frames_since_flush >= self.flush_interval:
-                    self._root.attrs["written_frames"] = self.frame_count
-                    self._frames_since_flush = 0
+                # Always update written_frames — it is a tiny .zattrs JSON write and
+                # the LiveAnalysisWorker reads it every 20s to know how many frames
+                # exist.  Without this, the worker sees 0 for the first flush_interval
+                # frames (250s at 5s interval / flush=50) and the plot never updates.
+                self._root.attrs["written_frames"] = self.frame_count
 
                 logger.debug(f"Zarr frame {frame_number} saved (index={frame_index})")
                 return True
