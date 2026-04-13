@@ -254,6 +254,35 @@ class NematostellaTimelapseCaptureWidget(QWidget):
     # HARDWARE INITIALIZATION
     # ========================================================================
 
+    @staticmethod
+    def _find_imswitch_detectors_manager():
+        """
+        Scan live Python objects for an ImSwitch DetectorsManager instance.
+
+        When the plugin is loaded via the napari plugin system, no camera_manager
+        is passed to the constructor. This method finds the already-running
+        DetectorsManager so we can use HikGigECameraAdapter (direct SDK access +
+        zero-frame recovery) instead of falling back to napari layer reading.
+
+        Returns DetectorsManager or None if not found / ImSwitch not running.
+        """
+        try:
+            import gc
+
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if names:
+                        logger.info(f"Found ImSwitch DetectorsManager with detectors: {names}")
+                        return obj
+        except Exception as e:
+            logger.debug(f"DetectorsManager auto-detect failed: {e}")
+        return None
+
     def _initialize_hardware(self):
         """Initialize hardware components"""
         try:
@@ -274,12 +303,20 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         print(f"  Layer {i}: {layer.name if hasattr(layer, 'name') else 'unnamed'}")
             print(f"{'='*60}\n")
 
+            # Auto-detect ImSwitch DetectorsManager if not explicitly provided.
+            # When launched as a napari plugin, camera_manager is not passed by the
+            # napari plugin system, so we scan live Python objects for a DetectorsManager.
+            if not self.camera_manager:
+                self.camera_manager = self._find_imswitch_detectors_manager()
+                if self.camera_manager:
+                    logger.info("Auto-detected ImSwitch DetectorsManager")
+
             if self.camera_manager:
-                # Use HIK GigE via ImSwitch
+                # Use HIK GigE via ImSwitch (direct SDK access + zero-frame recovery)
                 self.camera_adapter = create_camera_adapter(
                     camera_type="hik", camera_manager=self.camera_manager
                 )
-                self.log_panel.add_log("✅ HIK GigE camera initialized", "SUCCESS")
+                self.log_panel.add_log("HIK GigE camera initialized via ImSwitch", "SUCCESS")
             elif self.viewer:
                 # Use Napari viewer (will auto-detect ImSwitch live layer)
                 self.camera_adapter = create_camera_adapter(

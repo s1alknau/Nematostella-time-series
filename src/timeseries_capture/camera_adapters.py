@@ -117,8 +117,11 @@ class HikGigECameraAdapter(CameraAdapter):
         # Try to find detector automatically if not specified
         if not self.detector_name and self.camera_manager:
             try:
-                # Get first available detector
-                detectors = list(self.camera_manager._detectorManagers.keys())
+                # ImSwitch DetectorsManager exposes getAllDeviceNames(); fall back to _subManagers
+                if hasattr(self.camera_manager, "getAllDeviceNames"):
+                    detectors = self.camera_manager.getAllDeviceNames()
+                else:
+                    detectors = list(self.camera_manager._subManagers.keys())
                 if detectors:
                     self.detector_name = detectors[0]
                     logger.info(f"Auto-selected detector: {self.detector_name}")
@@ -141,7 +144,7 @@ class HikGigECameraAdapter(CameraAdapter):
         try:
             # Get current frame from camera manager
             # This assumes the camera is already running in live mode
-            detector = self.camera_manager._detectorManagers[self.detector_name]
+            detector = self.camera_manager[self.detector_name]
 
             # Try to get latest frame
             frame = detector.getLatestFrame()
@@ -186,26 +189,29 @@ class HikGigECameraAdapter(CameraAdapter):
 
     def _restart_acquisition(self, detector) -> None:
         """
-        Stop and restart the camera acquisition stream to recover from zero-frame state.
+        Recover from zero-frame state by flushing the HIK SDK buffer.
 
-        The HIK GigE SDK occasionally enters a buffer-inconsistent state after
-        extended continuous operation, returning zeroed arrays instead of real frames.
-        A stopAcquisition / startAcquisition cycle flushes the SDK buffers and restores
-        normal operation without needing to reconnect the camera.
+        Tries flushBuffers() first (non-disruptive). Falls back to a full
+        stopAcquisition / startAcquisition cycle if flushBuffers is unavailable.
         """
         import time
 
         try:
-            if hasattr(detector, "stopAcquisition"):
+            if hasattr(detector, "flushBuffers"):
+                detector.flushBuffers()
+                logger.info("Camera buffer flushed (flushBuffers)")
+                time.sleep(0.1)
+            elif hasattr(detector, "stopAcquisition") and hasattr(detector, "startAcquisition"):
                 detector.stopAcquisition()
                 logger.info("Camera acquisition stopped for buffer reset")
-            time.sleep(0.2)
-            if hasattr(detector, "startAcquisition"):
+                time.sleep(0.2)
                 detector.startAcquisition()
                 logger.info("Camera acquisition restarted — buffer reset complete")
-            time.sleep(0.2)
+                time.sleep(0.2)
+            else:
+                logger.warning("No buffer reset method available on detector")
         except Exception as e:
-            logger.warning(f"Camera re-acquisition failed: {e}")
+            logger.warning(f"Camera buffer reset failed: {e}")
 
     def is_available(self) -> bool:
         """
@@ -221,12 +227,11 @@ class HikGigECameraAdapter(CameraAdapter):
             return False
 
         try:
-            # Check if detector exists
-            if self.detector_name not in self.camera_manager._detectorManagers:
-                return False
-
-            # Check if detector is ready
-            detector = self.camera_manager._detectorManagers[self.detector_name]
+            # Check if detector exists (DetectorsManager supports __getitem__ / getAllDeviceNames)
+            if hasattr(self.camera_manager, "getAllDeviceNames"):
+                if self.detector_name not in self.camera_manager.getAllDeviceNames():
+                    return False
+            detector = self.camera_manager[self.detector_name]
 
             # Simple check - detector should have getLatestFrame method
             return hasattr(detector, "getLatestFrame")
@@ -251,7 +256,7 @@ class HikGigECameraAdapter(CameraAdapter):
 
         if self.is_available():
             try:
-                detector = self.camera_manager._detectorManagers[self.detector_name]
+                detector = self.camera_manager[self.detector_name]
 
                 # Try to get shape from last frame
                 if self._last_frame is not None:
@@ -298,7 +303,7 @@ class HikGigECameraAdapter(CameraAdapter):
             return result
 
         try:
-            detector = self.camera_manager._detectorManagers[self.detector_name]
+            detector = self.camera_manager[self.detector_name]
 
             if not hasattr(detector, "setParameter"):
                 logger.warning("disable_auto_settings: detector has no setParameter()")
