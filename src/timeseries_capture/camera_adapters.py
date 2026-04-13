@@ -109,6 +109,10 @@ class HikGigECameraAdapter(CameraAdapter):
         self.camera_manager = camera_manager
         self.detector_name = detector_name
         self._last_frame = None
+        self._consecutive_zero_frames = 0
+        self._zero_frame_reacq_threshold = (
+            5  # re-init acquisition after this many consecutive zero frames
+        )
 
         # Try to find detector automatically if not specified
         if not self.detector_name and self.camera_manager:
@@ -146,12 +150,31 @@ class HikGigECameraAdapter(CameraAdapter):
                 logger.warning("Got None frame from camera")
                 return self._last_frame  # Return last known good frame
 
-            # Store as last frame
-            self._last_frame = frame
-
             # Ensure correct format (uint16 for HIK)
             if frame.dtype != np.uint16:
                 frame = frame.astype(np.uint16)
+
+            # Detect zeroed frames — HIK SDK returns an array of zeros when the
+            # acquisition buffer enters an inconsistent state after extended operation.
+            # These pass the None check but have mean=0.0, causing brightness retries.
+            # After threshold consecutive zero frames, trigger a re-acquisition cycle.
+            if frame.max() == 0:
+                self._consecutive_zero_frames += 1
+                logger.warning(
+                    f"Zero frame from camera ({self._consecutive_zero_frames} consecutive)"
+                )
+                if self._consecutive_zero_frames >= self._zero_frame_reacq_threshold:
+                    logger.warning(
+                        "Attempting camera re-acquisition to recover from zero-frame state..."
+                    )
+                    self._restart_acquisition(detector)
+                    self._consecutive_zero_frames = 0
+                return None  # Let brightness retry handle it
+            else:
+                self._consecutive_zero_frames = 0
+
+            # Store as last good frame
+            self._last_frame = frame
 
             logger.debug(f"Frame captured: {frame.shape}, dtype={frame.dtype}")
 
@@ -160,6 +183,29 @@ class HikGigECameraAdapter(CameraAdapter):
         except Exception as e:
             logger.error(f"Failed to capture frame: {e}")
             return None
+
+    def _restart_acquisition(self, detector) -> None:
+        """
+        Stop and restart the camera acquisition stream to recover from zero-frame state.
+
+        The HIK GigE SDK occasionally enters a buffer-inconsistent state after
+        extended continuous operation, returning zeroed arrays instead of real frames.
+        A stopAcquisition / startAcquisition cycle flushes the SDK buffers and restores
+        normal operation without needing to reconnect the camera.
+        """
+        import time
+
+        try:
+            if hasattr(detector, "stopAcquisition"):
+                detector.stopAcquisition()
+                logger.info("Camera acquisition stopped for buffer reset")
+            time.sleep(0.2)
+            if hasattr(detector, "startAcquisition"):
+                detector.startAcquisition()
+                logger.info("Camera acquisition restarted — buffer reset complete")
+            time.sleep(0.2)
+        except Exception as e:
+            logger.warning(f"Camera re-acquisition failed: {e}")
 
     def is_available(self) -> bool:
         """
