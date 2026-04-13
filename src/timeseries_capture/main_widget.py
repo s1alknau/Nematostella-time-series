@@ -257,12 +257,12 @@ class NematostellaTimelapseCaptureWidget(QWidget):
     @staticmethod
     def _find_imswitch_detectors_manager():
         """
-        Scan live Python objects for an ImSwitch DetectorsManager instance.
+        Scan live Python objects for the ImSwitch DetectorsManager instance.
 
-        When the plugin is loaded via the napari plugin system, no camera_manager
-        is passed to the constructor. This method finds the already-running
-        DetectorsManager so we can use HikGigECameraAdapter (direct SDK access +
-        zero-frame recovery) instead of falling back to napari layer reading.
+        Used to find the HIK detector for buffer-recovery operations (flushBuffers)
+        when zero-frame conditions are detected in the NapariViewerCameraAdapter.
+        Frame reading itself always goes through the napari layer to avoid
+        threading conflicts with ImSwitch's LV worker.
 
         Returns DetectorsManager or None if not found / ImSwitch not running.
         """
@@ -303,16 +303,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         print(f"  Layer {i}: {layer.name if hasattr(layer, 'name') else 'unnamed'}")
             print(f"{'='*60}\n")
 
-            # Auto-detect ImSwitch DetectorsManager if not explicitly provided.
-            # When launched as a napari plugin, camera_manager is not passed by the
-            # napari plugin system, so we scan live Python objects for a DetectorsManager.
-            if not self.camera_manager:
-                self.camera_manager = self._find_imswitch_detectors_manager()
-                if self.camera_manager:
-                    logger.info("Auto-detected ImSwitch DetectorsManager")
-
             if self.camera_manager:
-                # Use HIK GigE via ImSwitch (direct SDK access + zero-frame recovery)
+                # Use HIK GigE via ImSwitch (direct SDK access)
                 self.camera_adapter = create_camera_adapter(
                     camera_type="hik", camera_manager=self.camera_manager
                 )

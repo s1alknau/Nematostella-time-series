@@ -366,6 +366,13 @@ class NapariViewerCameraAdapter(CameraAdapter):
         self._cached_layer = None  # Cache the layer once found
         self._layer_search_count = 0  # Track search attempts
 
+        # Zero-frame detection: HIK SDK returns all-zero arrays when the
+        # acquisition buffer enters an inconsistent state after extended use.
+        # We detect this from the napari layer and trigger a buffer flush
+        # on the underlying ImSwitch detector.
+        self._consecutive_zero_frames = 0
+        self._zero_frame_reacq_threshold = 5
+
         logger.info(f"Napari Viewer Camera Adapter initialized (layer={layer_name})")
 
         # Try to find layer immediately, but don't fail if not found
@@ -416,6 +423,23 @@ class NapariViewerCameraAdapter(CameraAdapter):
             # Make a copy to avoid issues with live updates
             frame = frame.copy()
 
+            # Detect all-zero frames — ImSwitch pushes these to the layer when
+            # the HIK SDK acquisition buffer enters an inconsistent state.
+            if frame.max() == 0:
+                self._consecutive_zero_frames += 1
+                logger.warning(
+                    f"Zero frame from napari layer ({self._consecutive_zero_frames} consecutive)"
+                )
+                if self._consecutive_zero_frames >= self._zero_frame_reacq_threshold:
+                    logger.warning(
+                        "Attempting camera buffer flush to recover from zero-frame state..."
+                    )
+                    self._flush_imswitch_camera()
+                    self._consecutive_zero_frames = 0
+                return None  # Let brightness retry handle it
+            else:
+                self._consecutive_zero_frames = 0
+
             # Store as last frame
             self._last_frame = frame
 
@@ -430,6 +454,43 @@ class NapariViewerCameraAdapter(CameraAdapter):
             logger.error(f"Failed to capture frame from Napari: {e}")
             # Return last frame as fallback
             return self._last_frame
+
+    def _flush_imswitch_camera(self) -> None:
+        """
+        Find the ImSwitch DetectorsManager via gc scan and call flushBuffers()
+        on the current detector to recover from the HIK SDK zero-frame state.
+        Frame reading remains through the napari layer to avoid threading conflicts.
+        """
+        import time
+
+        try:
+            import gc
+
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if not names:
+                        continue
+                    detector = obj[names[0]]
+                    if hasattr(detector, "flushBuffers"):
+                        detector.flushBuffers()
+                        logger.info("Camera buffer flushed via ImSwitch DetectorsManager")
+                        time.sleep(0.1)
+                    elif hasattr(detector, "stopAcquisition") and hasattr(
+                        detector, "startAcquisition"
+                    ):
+                        detector.stopAcquisition()
+                        time.sleep(0.2)
+                        detector.startAcquisition()
+                        logger.info("Camera acquisition restarted via ImSwitch DetectorsManager")
+                        time.sleep(0.2)
+                    return
+        except Exception as e:
+            logger.warning(f"Camera buffer flush failed: {e}")
 
     def is_available(self) -> bool:
         """
