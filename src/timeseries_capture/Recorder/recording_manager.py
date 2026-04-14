@@ -558,80 +558,71 @@ class RecordingManager(QObject):
             frame = None
             metadata: dict = {}
 
-            for retry_attempt in range(max_capture_retries):
-                # Attempt frame capture
-                frame, metadata = self.frame_capture.capture_with_retry(
-                    led_type=led_type, dual_mode=dual_mode, max_retries=3
-                )
-                if metadata is None:
-                    metadata = {}
+            import numpy as np
 
-                if frame is None:
-                    logger.error("Frame capture failed")
-                    self.error_occurred.emit("Frame capture failed")
-                    return
+            def _normalize_to_255(arr: np.ndarray) -> float:
+                mean = float(np.mean(arr))
+                if arr.dtype.kind == "u":
+                    return mean * 255.0 / float(np.iinfo(arr.dtype).max)
+                elif arr.dtype.kind == "f":
+                    return mean * 255.0
+                return mean
 
-                # Validate frame brightness (using same ROI as calibration)
-                import numpy as np
-
-                # Calculate mean intensity using same method as calibration
-                # Normalize to 0–255 scale to match calibration target_intensity
-                def _normalize_to_255(arr: np.ndarray) -> float:
-                    mean = float(np.mean(arr))
-                    if arr.dtype.kind == "u":
-                        return mean * 255.0 / float(np.iinfo(arr.dtype).max)
-                    elif arr.dtype.kind == "f":
-                        return mean * 255.0  # float assumed [0, 1]
-                    return mean
-
+            def _frame_mean(f: np.ndarray) -> float:
                 if config.use_full_frame_for_validation:
-                    # Use entire frame
-                    frame_mean = _normalize_to_255(frame)
-                else:
-                    # Use center ROI (same as calibration)
-                    h, w = frame.shape[:2]
-                    roi_frac = config.roi_fraction
+                    return _normalize_to_255(f)
+                h, w = f.shape[:2]
+                roi_frac = config.roi_fraction
+                center_h, center_w = h // 2, w // 2
+                roi_h, roi_w = int(h * roi_frac), int(w * roi_frac)
+                roi_y1 = center_h - roi_h // 2
+                roi_x1 = center_w - roi_w // 2
+                return _normalize_to_255(f[roi_y1 : roi_y1 + roi_h, roi_x1 : roi_x1 + roi_w])
 
-                    # Calculate ROI boundaries
-                    center_h = h // 2
-                    center_w = w // 2
-                    roi_h = int(h * roi_frac)
-                    roi_w = int(w * roi_frac)
+            # One full LED pulse to capture the frame (includes 1 s stabilization).
+            # capture_with_retry handles camera-level failures (None returns).
+            frame, metadata = self.frame_capture.capture_with_retry(
+                led_type=led_type, dual_mode=dual_mode, max_retries=3
+            )
+            if metadata is None:
+                metadata = {}
 
-                    roi_y1 = center_h - roi_h // 2
-                    roi_y2 = roi_y1 + roi_h
-                    roi_x1 = center_w - roi_w // 2
-                    roi_x2 = roi_x1 + roi_w
+            if frame is None:
+                logger.error("Frame capture failed")
+                self.error_occurred.emit("Frame capture failed")
+                return
 
-                    # Extract ROI and calculate mean
-                    roi_region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
-                    frame_mean = _normalize_to_255(roi_region)
-
-                # Check if frame is too dark (likely a timing issue)
-                if frame_mean < brightness_threshold:
-                    logger.warning(
-                        f"⚠️  Frame {frame_number} too dark (mean={frame_mean:.1f} < {brightness_threshold}), "
-                        f"retry {retry_attempt + 1}/{max_capture_retries}"
-                    )
-
-                    if retry_attempt < max_capture_retries - 1:
-                        # Wait a bit before retry to let system stabilize
-                        time.sleep(0.5)
-                        continue
-                    else:
-                        # Last retry failed - log error but save frame anyway
-                        logger.error(
-                            f"❌ Frame {frame_number} still dark (mean={frame_mean:.1f}) after {max_capture_retries} retries - saving anyway"
-                        )
-                        metadata["capture_method"] = "dark_frame_recovered"
-                        break
-                else:
-                    # Frame brightness OK
+            # Brightness check: if the frame is too dark (LED not yet stable,
+            # timing race, or stale buffer) re-read from the camera without
+            # re-firing the LED pulse.  Each re-read is cheap (~50 ms) so
+            # 3 retries add at most ~150 ms — well inside the 5 s interval.
+            frame_mean_val = _frame_mean(frame)
+            for retry_attempt in range(max_capture_retries):
+                if frame_mean_val >= brightness_threshold:
                     if retry_attempt > 0:
                         logger.info(
-                            f"✅ Frame {frame_number} recovered successfully (mean={frame_mean:.1f}) on retry {retry_attempt + 1}"
+                            f"✅ Frame {frame_number} recovered (mean={frame_mean_val:.1f}) "
+                            f"on re-read {retry_attempt}"
                         )
                     break
+
+                logger.warning(
+                    f"⚠️  Frame {frame_number} too dark (mean={frame_mean_val:.1f} < {brightness_threshold}), "
+                    f"re-read {retry_attempt + 1}/{max_capture_retries}"
+                )
+
+                if retry_attempt < max_capture_retries - 1:
+                    time.sleep(0.05)  # Wait for ImSwitch LV worker to push next frame
+                    reread = self.frame_capture.camera.capture_frame()
+                    if reread is not None:
+                        frame = reread
+                        frame_mean_val = _frame_mean(frame)
+                else:
+                    logger.error(
+                        f"❌ Frame {frame_number} still dark (mean={frame_mean_val:.1f}) "
+                        f"after {max_capture_retries} re-reads - saving anyway"
+                    )
+                    metadata["capture_method"] = "dark_frame_recovered"
 
             if frame is None:
                 logger.error("Frame capture failed after all retries")
