@@ -875,6 +875,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 "paused": status.get("paused", False),
                 "current_frame": status.get("current_frame", 0),
                 "total_frames": status.get("total_frames", 0),
+                "last_frame_drift_sec": status.get("last_frame_drift_sec", float("nan")),
             }
             self.status_panel.update_recording_status(rec_status)
 

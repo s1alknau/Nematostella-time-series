@@ -77,6 +77,15 @@ class StatusPanel(QWidget):
         self.rec_label.setStyleSheet("background-color: transparent; font-weight: bold;")
         layout.addWidget(self.rec_label)
 
+        # Separator
+        sep4 = self._create_separator()
+        layout.addWidget(sep4)
+
+        # Frame drift indicator
+        self.drift_label = QLabel("Drift: --")
+        self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
+        layout.addWidget(self.drift_label)
+
         layout.addStretch()
 
         # Phase Info (wird nur bei Phase-Recording angezeigt)
@@ -144,10 +153,13 @@ class StatusPanel(QWidget):
 
     def update_recording_status(self, rec_status: dict):
         """Update Recording-Status"""
+        import math
+
         recording = rec_status.get("recording", False)
         paused = rec_status.get("paused", False)
         current_frame = rec_status.get("current_frame", 0)
         total_frames = rec_status.get("total_frames", 0)
+        drift = rec_status.get("last_frame_drift_sec", float("nan"))
 
         if recording:
             if paused:
@@ -162,12 +174,30 @@ class StatusPanel(QWidget):
                 self.rec_label.setStyleSheet(
                     "background-color: transparent; font-weight: bold; color: #e74c3c;"
                 )
+
+            # Drift indicator
+            if math.isnan(drift):
+                self.drift_label.setText("Drift: --")
+                self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
+            elif drift < 0.5:
+                self.drift_label.setText(f"Drift: +{drift:.2f}s")
+                self.drift_label.setStyleSheet("background-color: transparent; color: #2ecc71;")
+            elif drift < 2.0:
+                self.drift_label.setText(f"Drift: +{drift:.2f}s")
+                self.drift_label.setStyleSheet("background-color: transparent; color: #f39c12;")
+            else:
+                self.drift_label.setText(f"Drift: +{drift:.2f}s")
+                self.drift_label.setStyleSheet(
+                    "background-color: transparent; color: #e74c3c; font-weight: bold;"
+                )
         else:
             self.rec_icon.setText("⚪")
             self.rec_label.setText("Idle")
             self.rec_label.setStyleSheet(
                 "background-color: transparent; font-weight: bold; color: #95a5a6;"
             )
+            self.drift_label.setText("Drift: --")
+            self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
 
     def update_phase_info(self, phase_info: dict):
         """Update Phase-Information"""
