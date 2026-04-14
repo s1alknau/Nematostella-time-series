@@ -174,15 +174,15 @@ class StatusPanel(QWidget):
                     "background-color: transparent; font-weight: bold; color: #e74c3c;"
                 )
 
-            # Cumulative drift indicator (sum of all interval overruns since start)
-            if drift < 1.0:
-                self.drift_label.setText(f"Drift: {drift:.1f}s")
+            # Cumulative signed drift: positive = running late, negative = running early
+            abs_drift = abs(drift)
+            drift_sign = "+" if drift >= 0 else "-"
+            self.drift_label.setText(f"Drift: {drift_sign}{abs_drift:.1f}s")
+            if abs_drift < 1.0:
                 self.drift_label.setStyleSheet("background-color: transparent; color: #2ecc71;")
-            elif drift < 10.0:
-                self.drift_label.setText(f"Drift: {drift:.1f}s")
+            elif abs_drift < 10.0:
                 self.drift_label.setStyleSheet("background-color: transparent; color: #f39c12;")
             else:
-                self.drift_label.setText(f"Drift: {drift:.1f}s")
                 self.drift_label.setStyleSheet(
                     "background-color: transparent; color: #e74c3c; font-weight: bold;"
                 )

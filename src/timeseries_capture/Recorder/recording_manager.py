@@ -705,15 +705,14 @@ class RecordingManager(QObject):
             metadata["capture_elapsed_sec"] = capture_time - self.state.start_time
             metadata["frame_drift_sec"] = capture_time - deadline if deadline > 0 else float("nan")
 
-            # Accumulate interval overrun: only positive excess counts
+            # Accumulate signed drift: positive when interval too long, negative when too short
             import math
 
             _cfg = self.state.get_config()
             interval_sec = _cfg.interval_sec if _cfg is not None else 0.0
             if not math.isnan(self._last_capture_time):
                 actual_interval = capture_time - self._last_capture_time
-                excess = max(0.0, actual_interval - interval_sec)
-                self._cumulative_drift_sec += excess
+                self._cumulative_drift_sec += actual_interval - interval_sec
             self._last_capture_time = capture_time
 
             # Save frame
