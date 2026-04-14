@@ -883,13 +883,26 @@ class RecordingManager(QObject):
         if not phase_transition:
             return False
 
+        # Detect whether the current segment is a continuous (non-LD) light segment.
+        # Schedule-designer continuous segments (phase_enabled=False, led_type white/dual)
+        # should behave like white_led_continuous — the LED stays on between frames.
+        _continuous_light_segment = False
+        if self.schedule_manager is not None and self.schedule_manager.is_enabled():
+            _seg = self.schedule_manager._schedule.segments[self.schedule_manager._current_seg_idx]
+            _continuous_light_segment = not _seg.phase_enabled and _seg.continuous_led_type in (
+                "white",
+                "dual",
+            )
+
+        use_continuous = config.white_led_continuous or _continuous_light_segment
+
         # Determine which LED powers to set based on current phase
         if phase_info.phase == PhaseType.DARK:
             ir_power = config.dark_phase_ir_power
             logger.info(f"[PHASE POWER] Dark phase transition: Setting IR={ir_power}%")
             self.frame_capture.esp32.set_led_power(ir_power, "ir")
 
-            if config.white_led_continuous:
+            if use_continuous:
                 self.frame_capture.set_white_continuous(False)
 
         else:
@@ -907,8 +920,12 @@ class RecordingManager(QObject):
                 logger.info(f"[PHASE POWER] Light phase transition (white): White={white_power}%")
                 self.frame_capture.esp32.set_led_power(white_power, "white")
 
-            if config.white_led_continuous:
+            if use_continuous:
                 self.frame_capture.set_white_continuous(True)
+                logger.info(
+                    f"[PHASE POWER] Continuous white/dual LED activated "
+                    f"({'schedule segment' if _continuous_light_segment else 'phase config'})"
+                )
 
         return phase_transition
 
