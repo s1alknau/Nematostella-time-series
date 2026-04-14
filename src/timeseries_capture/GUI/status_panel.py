@@ -81,7 +81,16 @@ class StatusPanel(QWidget):
         sep4 = self._create_separator()
         layout.addWidget(sep4)
 
-        # Frame drift indicator
+        # Actual frame interval indicator
+        self.interval_label = QLabel("Interval: --")
+        self.interval_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
+        layout.addWidget(self.interval_label)
+
+        # Separator
+        sep5 = self._create_separator()
+        layout.addWidget(sep5)
+
+        # Cumulative drift indicator
         self.drift_label = QLabel("Drift: --")
         self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
         layout.addWidget(self.drift_label)
@@ -153,12 +162,14 @@ class StatusPanel(QWidget):
 
     def update_recording_status(self, rec_status: dict):
         """Update Recording-Status"""
+        import math
 
         recording = rec_status.get("recording", False)
         paused = rec_status.get("paused", False)
         current_frame = rec_status.get("current_frame", 0)
         total_frames = rec_status.get("total_frames", 0)
         drift = rec_status.get("cumulative_drift_sec", 0.0)
+        actual_interval = rec_status.get("last_actual_interval_sec", float("nan"))
 
         if recording:
             if paused:
@@ -173,6 +184,14 @@ class StatusPanel(QWidget):
                 self.rec_label.setStyleSheet(
                     "background-color: transparent; font-weight: bold; color: #e74c3c;"
                 )
+
+            # Actual frame interval
+            if math.isnan(actual_interval):
+                self.interval_label.setText("Interval: --")
+                self.interval_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
+            else:
+                self.interval_label.setText(f"Interval: {actual_interval:.2f}s")
+                self.interval_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
 
             # Cumulative signed drift: positive = running late, negative = running early
             abs_drift = abs(drift)
@@ -192,6 +211,8 @@ class StatusPanel(QWidget):
             self.rec_label.setStyleSheet(
                 "background-color: transparent; font-weight: bold; color: #95a5a6;"
             )
+            self.interval_label.setText("Interval: --")
+            self.interval_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
             self.drift_label.setText("Drift: 0.0s")
             self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
 

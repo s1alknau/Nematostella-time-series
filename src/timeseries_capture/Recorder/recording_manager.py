@@ -102,10 +102,10 @@ class RecordingManager(QObject):
         self._recording_thread: Optional[threading.Thread] = None
         self._stop_requested = False
 
-        # Cumulative drift: sum of per-frame interval overruns (read by get_status())
-        # excess_N = max(0, t_capture_N - t_capture_{N-1} - interval_sec)
+        # Cumulative signed drift and last actual frame interval (read by get_status())
         self._cumulative_drift_sec: float = 0.0
         self._last_capture_time: float = float("nan")
+        self._last_actual_interval_sec: float = float("nan")
 
         logger.info("RecordingManager initialized")
 
@@ -346,9 +346,10 @@ class RecordingManager(QObject):
             # ================================================================
             self._set_high_priority()
 
-            # Reset cumulative drift for new recording
+            # Reset cumulative drift and interval tracker for new recording
             self._cumulative_drift_sec = 0.0
             self._last_capture_time = float("nan")
+            self._last_actual_interval_sec = float("nan")
 
             # Start recording state
             self.state.start_recording()
@@ -712,6 +713,7 @@ class RecordingManager(QObject):
             interval_sec = _cfg.interval_sec if _cfg is not None else 0.0
             if not math.isnan(self._last_capture_time):
                 actual_interval = capture_time - self._last_capture_time
+                self._last_actual_interval_sec = actual_interval
                 self._cumulative_drift_sec += actual_interval - interval_sec
             self._last_capture_time = capture_time
 
@@ -927,6 +929,7 @@ class RecordingManager(QObject):
 
         # Cumulative interval overrun since recording start
         status["cumulative_drift_sec"] = self._cumulative_drift_sec
+        status["last_actual_interval_sec"] = self._last_actual_interval_sec
 
         return status
 

@@ -308,7 +308,7 @@ class FrameCaptureService:
                     f"[RETRY] Capture attempt {attempt + 1}/{max_retries} failed, retrying..."
                 )
 
-            time.sleep(0.5)  # Kurze Pause vor Retry
+            time.sleep(0.1)  # Short pause before retry (LED already on, just wait for camera)
 
         logger.error(f"[FAILED] All {max_retries} capture attempts failed")
         return None, {
