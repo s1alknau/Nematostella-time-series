@@ -176,6 +176,7 @@ class ExperimentDesignerWidget(QWidget):
     """
 
     schedule_ready = pyqtSignal(object)  # ExperimentSchedule
+    stop_requested = pyqtSignal()  # emitted when user clicks Stop Recording
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -386,6 +387,12 @@ class ExperimentDesignerWidget(QWidget):
         self._btn_start.setStyleSheet(
             "QPushButton { background-color: #27ae60; color: white; font-weight: bold; padding: 6px; }"
         )
+        self._btn_stop = QPushButton("⏹ Stop Recording")
+        self._btn_stop.setStyleSheet(
+            "QPushButton { background-color: #c0392b; color: white; font-weight: bold; padding: 6px; }"
+            "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
+        )
+        self._btn_stop.setEnabled(False)
         self._total_label = QLabel("")
         self._total_label.setStyleSheet("color: #7f8c8d;")
         action_row.addWidget(self._btn_save)
@@ -393,11 +400,13 @@ class ExperimentDesignerWidget(QWidget):
         action_row.addStretch()
         action_row.addWidget(self._total_label)
         action_row.addWidget(self._btn_start)
+        action_row.addWidget(self._btn_stop)
         root.addLayout(action_row)
 
         self._btn_save.clicked.connect(self._on_save)
         self._btn_load.clicked.connect(self._on_load)
         self._btn_start.clicked.connect(self._on_start)
+        self._btn_stop.clicked.connect(self._on_stop)
 
         self._set_editor_enabled(False)
 
@@ -677,7 +686,26 @@ class ExperimentDesignerWidget(QWidget):
             self, "Start Schedule Recording?", msg, QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
+            self._btn_start.setEnabled(False)
+            self._btn_stop.setEnabled(True)
             self.schedule_ready.emit(sched)
+
+    def _on_stop(self):
+        reply = QMessageBox.question(
+            self,
+            "Stop Recording?",
+            "Stop the running schedule recording?\nAlready captured frames will be saved.",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self._btn_stop.setEnabled(False)
+            self._btn_start.setEnabled(True)
+            self.stop_requested.emit()
+
+    def set_recording_active(self, active: bool):
+        """Called by the host widget to sync button states with actual recording state."""
+        self._btn_start.setEnabled(not active)
+        self._btn_stop.setEnabled(active)
 
     # ------------------------------------------------------------------
     # Public API

@@ -178,6 +178,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.recording_panel.get_config().get("interval_sec", 5)
         )
         self.experiment_designer.schedule_ready.connect(self._on_schedule_ready)
+        self.experiment_designer.stop_requested.connect(self._on_stop_recording_requested)
 
     def _load_camera_system_config(self):
         """Load camera system configuration if available"""
@@ -826,6 +827,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.log_panel.add_log("Stopping recording...", "INFO")
             self.recording_controller.stop_recording()
             self.log_panel.add_log("Recording stopped", "SUCCESS")
+            self.experiment_designer.set_recording_active(False)
         except Exception as e:
             logger.error(f"Stop recording error: {e}", exc_info=True)
             self.log_panel.add_log(f"Stop error: {e}", "ERROR")
@@ -1010,6 +1012,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         success = self.recording_controller.start_schedule(schedule)
         if success:
             self.log_panel.add_log("✅ Schedule recording started", "SUCCESS")
+            self.experiment_designer.set_recording_active(True)
             # Wire segment_changed now that recording_manager is alive
             rm = self.recording_controller.recording_manager
             if rm is not None and hasattr(rm, "segment_changed"):
@@ -1019,6 +1022,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     pass
         else:
             self.log_panel.add_log("❌ Failed to start schedule recording", "ERROR")
+            self.experiment_designer.set_recording_active(False)
 
     def _on_segment_changed(self, new_index: int, label: str):
         """Recording manager advanced to a new schedule segment."""
