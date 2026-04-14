@@ -102,8 +102,10 @@ class RecordingManager(QObject):
         self._recording_thread: Optional[threading.Thread] = None
         self._stop_requested = False
 
-        # Live drift tracking (updated every frame, read by get_status())
-        self._last_frame_drift_sec: float = float("nan")
+        # Cumulative drift: sum of per-frame interval overruns (read by get_status())
+        # excess_N = max(0, t_capture_N - t_capture_{N-1} - interval_sec)
+        self._cumulative_drift_sec: float = 0.0
+        self._last_capture_time: float = float("nan")
 
         logger.info("RecordingManager initialized")
 
@@ -343,6 +345,10 @@ class RecordingManager(QObject):
             # Set process priority to HIGH for stable timing
             # ================================================================
             self._set_high_priority()
+
+            # Reset cumulative drift for new recording
+            self._cumulative_drift_sec = 0.0
+            self._last_capture_time = float("nan")
 
             # Start recording state
             self.state.start_recording()
@@ -697,9 +703,18 @@ class RecordingManager(QObject):
                 "capture_complete_time", metadata.get("capture_start", time.time())
             )
             metadata["capture_elapsed_sec"] = capture_time - self.state.start_time
-            drift = capture_time - deadline if deadline > 0 else float("nan")
-            metadata["frame_drift_sec"] = drift
-            self._last_frame_drift_sec = drift
+            metadata["frame_drift_sec"] = capture_time - deadline if deadline > 0 else float("nan")
+
+            # Accumulate interval overrun: only positive excess counts
+            import math
+
+            _cfg = self.state.get_config()
+            interval_sec = _cfg.interval_sec if _cfg is not None else 0.0
+            if not math.isnan(self._last_capture_time):
+                actual_interval = capture_time - self._last_capture_time
+                excess = max(0.0, actual_interval - interval_sec)
+                self._cumulative_drift_sec += excess
+            self._last_capture_time = capture_time
 
             # Save frame
             frame_number = self.state.current_frame + 1
@@ -911,8 +926,8 @@ class RecordingManager(QObject):
         # Add capture stats
         status["capture_stats"] = self.frame_capture.get_capture_stats()
 
-        # Live drift (capture time minus scheduled deadline for the last frame)
-        status["last_frame_drift_sec"] = self._last_frame_drift_sec
+        # Cumulative interval overrun since recording start
+        status["cumulative_drift_sec"] = self._cumulative_drift_sec
 
         return status
 

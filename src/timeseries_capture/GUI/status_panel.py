@@ -153,13 +153,12 @@ class StatusPanel(QWidget):
 
     def update_recording_status(self, rec_status: dict):
         """Update Recording-Status"""
-        import math
 
         recording = rec_status.get("recording", False)
         paused = rec_status.get("paused", False)
         current_frame = rec_status.get("current_frame", 0)
         total_frames = rec_status.get("total_frames", 0)
-        drift = rec_status.get("last_frame_drift_sec", float("nan"))
+        drift = rec_status.get("cumulative_drift_sec", 0.0)
 
         if recording:
             if paused:
@@ -175,18 +174,15 @@ class StatusPanel(QWidget):
                     "background-color: transparent; font-weight: bold; color: #e74c3c;"
                 )
 
-            # Drift indicator
-            if math.isnan(drift):
-                self.drift_label.setText("Drift: --")
-                self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
-            elif drift < 0.5:
-                self.drift_label.setText(f"Drift: +{drift:.2f}s")
+            # Cumulative drift indicator (sum of all interval overruns since start)
+            if drift < 1.0:
+                self.drift_label.setText(f"Drift: {drift:.1f}s")
                 self.drift_label.setStyleSheet("background-color: transparent; color: #2ecc71;")
-            elif drift < 2.0:
-                self.drift_label.setText(f"Drift: +{drift:.2f}s")
+            elif drift < 10.0:
+                self.drift_label.setText(f"Drift: {drift:.1f}s")
                 self.drift_label.setStyleSheet("background-color: transparent; color: #f39c12;")
             else:
-                self.drift_label.setText(f"Drift: +{drift:.2f}s")
+                self.drift_label.setText(f"Drift: {drift:.1f}s")
                 self.drift_label.setStyleSheet(
                     "background-color: transparent; color: #e74c3c; font-weight: bold;"
                 )
@@ -196,7 +192,7 @@ class StatusPanel(QWidget):
             self.rec_label.setStyleSheet(
                 "background-color: transparent; font-weight: bold; color: #95a5a6;"
             )
-            self.drift_label.setText("Drift: --")
+            self.drift_label.setText("Drift: 0.0s")
             self.drift_label.setStyleSheet("background-color: transparent; color: #95a5a6;")
 
     def update_phase_info(self, phase_info: dict):
