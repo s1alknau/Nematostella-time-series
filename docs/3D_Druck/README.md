@@ -13,8 +13,8 @@ This folder contains custom 3D print files for the Nematostella imaging setup.
 | File | Description |
 |------|-------------|
 | `Achse_10mm.stp` | Axis component (10 mm) |
-| `Cam_Mount.3mf` | Camera mount |
-| `Cam_mount_2.stp` | Camera mount (variant 2) |
+| `Cam_Mount.3mf` | Camera mount (1)|
+| `Cam_mount_2.stp` | Camera mount (2) |
 | `Extension_neu.stp` | Rail extension |
 | `Mirror_cutting_template.stp` | Mirror cutting template |
 | `Mosfet cable.stp` | MOSFET cable holder |
