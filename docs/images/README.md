@@ -6,10 +6,20 @@ This directory contains photos of the Nematostella timelapse recording hardware 
 
 Add the following photos to this directory to complete the hardware documentation:
 
-### 1. `<img width="4080" height="3060" alt="Setup" src="https://github.com/user-attachments/assets/935447f7-7533-45a9-b48c-b8bb1586e81f" />`
-<img width="3060" height="2583" alt="20260123_104014" src="https://github.com/user-attachments/assets/5bf9cafb-e18e-47e0-acef-5b31ecf1e6f3" />
-<img width="2040" height="1530" alt="C_20260130_095036" src="https://github.com/user-attachments/assets/416e0f3e-5826-4a04-b73f-fb495b317fe5" />
-<img width="2040" height="1530" alt="B_20260130_095019" src="https://github.com/user-attachments/assets/98432805-5488-498a-83f9-dcc0fd521596" />
+### 1. **Full system overview**
+
+<img width="3060" height="4080" alt="20260217_092247" src="https://github.com/user-attachments/assets/88945f64-9898-47e6-8816-fa5b55fa7a06" />
+
+<img width="3060" height="4080" alt="20260130_095036" src="https://github.com/user-attachments/assets/61e2be3e-892b-4837-a317-b3e2a0c917d0" />
+
+<img width="3060" height="4080" alt="20260130_095019" src="https://github.com/user-attachments/assets/3ca491e3-588e-4a07-9c41-51185c034734" />
+
+<img width="3060" height="2583" alt="20260123_104014" src="https://github.com/user-attachments/assets/cfd60008-c2f7-41be-b2f9-479e4578a54a" />
+
+<img width="3060" height="4080" alt="20260107_185617" src="https://github.com/user-attachments/assets/fd0031be-7770-46f4-b870-150d21bc59a2" />
+
+<img width="4080" height="3060" alt="Setup" src="https://github.com/user-attachments/assets/a4443a78-a56e-4084-bc0d-f74eaa338bbf" />
+
 
 **Full system overview**
 - Show complete setup including:
