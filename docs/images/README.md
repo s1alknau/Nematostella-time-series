@@ -6,7 +6,11 @@ This directory contains photos of the Nematostella timelapse recording hardware 
 
 Add the following photos to this directory to complete the hardware documentation:
 
-### 1. `system_complete.jpg`
+### 1. `<img width="4080" height="3060" alt="Setup" src="https://github.com/user-attachments/assets/935447f7-7533-45a9-b48c-b8bb1586e81f" />`
+<img width="3060" height="2583" alt="20260123_104014" src="https://github.com/user-attachments/assets/5bf9cafb-e18e-47e0-acef-5b31ecf1e6f3" />
+<img width="2040" height="1530" alt="C_20260130_095036" src="https://github.com/user-attachments/assets/416e0f3e-5826-4a04-b73f-fb495b317fe5" />
+<img width="2040" height="1530" alt="B_20260130_095019" src="https://github.com/user-attachments/assets/98432805-5488-498a-83f9-dcc0fd521596" />
+
 **Full system overview**
 - Show complete setup including:
   - ESP32 controller
@@ -93,7 +97,8 @@ These can supplement or replace photos in some cases.
 
 ## How to Add Photos
 
-1. **Capture photos** following guidelines above
+1. **Capture photo
+s** following guidelines above
 2. **Edit/annotate** images for clarity
 3. **Save images** to this directory with exact filenames listed above
 4. **Verify** images appear in main README.md
