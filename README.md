@@ -133,29 +133,33 @@ Optional dependencies:
    - See [ESP32-S3-BOX-3 Configuration Guide](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details
 
 2. **LED System**
-   - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm)
+   - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm) https://www.buyledstrip.com/de/led-streifen-2538-120-led-m-ir-850nm-je-50cm.html
    - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation)
    - **MOSFET Drivers**: 2x BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
    - **Important**: IR and White LEDs use different voltages (12V vs 24V)
 
 3. **DHT22 Sensor**
-   - Temperature range: -40°C to 80°C (±0.5°C accuracy)
+   - Temperature range: -40°C to 80°C (±0.5°C accuracy) https://www.amazon.de/dp/B0F42HN92Q?ref=ppx_yo2ov_dt_b_fed_asin_title
    - Humidity range: 0-100% RH (±2-5% accuracy)
    - DHT22 sensor board with integrated pull-up resistor (no external resistor needed)
 
-4. **Power Supplies**
+4. **Power Supplies and Mosfet logic level 3,3V **
    - **ESP32 Power**: 5V via USB (from computer)
-   - **IR LED Power**: 12V DC, 2-5A power supply
-   - **White LED Power**: 24V DC, 2-5A power supply
+   - **IR LED Power**: 12V DC, 2-5A power supply https://www.buyledstrip.com/de/netzteil-60-watt-12v-24v.html?id=173564582
+   - **White LED Power**: 24V DC, 2-5A power supply https://www.buyledstrip.com/de/netzteil-60-watt-12v-24v.html?id=173564582
+   - BOJACK IRLZ34N MOSFET 30 A 55 V IRLZ34NPBF https://www.amazon.de/dp/B0893WBH6H?ref=ppx_yo2ov_dt_b_fed_asin_title
    - **Critical**: Common ground connection required between USB ground and both PSU grounds
 
-5. **Connectors & Wiring**
-   - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor)
+5. **Connectors, Wiring, Screw kit**
+   - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor) https://www.amazon.de/dp/B0CDPC692C?ref=ppx_yo2ov_dt_b_fed_asin_title
    - Wire: 18-22 AWG for signal, 16-18 AWG for power
    - Tool-free connection, reusable
+   - Magnets https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1
+   - Screw Kit incl hex keys 
+   https://www.amazon.de/dp/B0CZSW8S66/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0CZSW8S66&pd_rd_w=sepag&content-id=amzn1.sym.bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_p=bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_r=DCAXTTNQE08Z865MHAFS&pd_rd_wg=3wRol&pd_rd_r=6337fa24-4ceb-478e-8c50-316aa9eb6b8d&aref=1O1nyuJ2mQ&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw
 
 6. **Camera**
-   - Hik Robotics MV-CS-013 60GN Near Infrared
+   - Hik Robotics MV-CS-013 60GN Near Infrared Request at  UC2 company https://openuc2.com/imprint/ or https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254
    - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
 
 ---
