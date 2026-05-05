@@ -413,39 +413,64 @@ class ESP32Communication:
 
     def read_bytes(self, count: int, timeout: Optional[float] = None) -> Optional[bytes]:
         """
-        Liest mehrere Bytes.
+        Reads exactly `count` bytes from the serial port without holding
+        _comm_lock during pyserial's blocking wait.
+
+        Mirrors read_until_response(): polls in_waiting + short sleep
+        outside the lock, so other threads can issue commands while a
+        slow ESP32 response is pending. This prevents the Windows USB
+        serial driver stall from holding _comm_lock for many seconds
+        (the same bug that caused 105 s frame-interval spikes before
+        read_until_response was rewritten).
 
         Args:
-            count: Anzahl zu lesender Bytes
-            timeout: Optional timeout override
+            count: Number of bytes to read
+            timeout: Total wait timeout in seconds (default 2.0)
 
         Returns:
-            Bytes oder None bei Fehler
+            Bytes object of length `count`, or None on timeout / partial read.
         """
-        with self._comm_lock:
-            if not self.is_connected():
-                return None
+        if timeout is None:
+            timeout = 2.0
 
-            try:
-                old_timeout = self.serial_connection.timeout
-                if timeout is not None:
-                    self.serial_connection.timeout = timeout
+        start_time = time.time()
+        buffer = bytearray()
 
-                data = self.serial_connection.read(count)
+        while (time.time() - start_time) < timeout and len(buffer) < count:
+            with self._comm_lock:
+                if not self.is_connected():
+                    return None
+                try:
+                    waiting = self.serial_connection.in_waiting
+                except Exception as e:
+                    logger.error(f"Error querying in_waiting: {e}")
+                    return None
 
-                if timeout is not None:
-                    self.serial_connection.timeout = old_timeout
+                if waiting > 0:
+                    needed = count - len(buffer)
+                    chunk = self.serial_connection.read(min(waiting, needed))
+                    if chunk:
+                        buffer.extend(chunk)
+                    if len(buffer) >= count:
+                        result = bytes(buffer[:count])
+                        logger.debug(f"Read {count} bytes: {result.hex()}")
+                        return result
+                    continue
+            # Lock released here — other threads can acquire while we wait
+            time.sleep(0.010)
 
-                if len(data) == count:
-                    logger.debug(f"Read {count} bytes: {data.hex()}")
-                    return data
+        if len(buffer) == count:
+            result = bytes(buffer)
+            logger.debug(f"Read {count} bytes: {result.hex()}")
+            return result
 
-                logger.warning(f"Expected {count} bytes, got {len(data)}")
-                return None
-
-            except Exception as e:
-                logger.error(f"Error reading bytes: {e}")
-                return None
+        logger.warning(
+            f"read_bytes: expected {count}, got {len(buffer)} within {timeout:.2f}s timeout"
+        )
+        # Drop partial bytes so they do not corrupt the next exchange
+        if buffer:
+            self.clear_buffers()
+        return None
 
     def read_until_response(
         self, expected_byte: int, timeout: float = 2.0, max_bytes: int = 100

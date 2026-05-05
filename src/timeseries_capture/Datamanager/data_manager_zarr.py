@@ -306,10 +306,12 @@ class AsyncZarrWriter:
         depth = self._queue.qsize()
         if depth > self._max_queue_depth:
             self._max_queue_depth = depth
-            if depth > self._queue.maxsize // 2:
-                logger.warning(
-                    f"Zarr write queue at {depth}/{self._queue.maxsize} — disk may be slow"
-                )
+        # Warn early (>80%) so the user sees disk pressure before put() blocks
+        if depth >= (self._queue.maxsize * 4) // 5:
+            logger.warning(
+                f"⚠️ Zarr write queue at {depth}/{self._queue.maxsize} (>80%) — "
+                f"disk cannot keep up; next enqueue may block"
+            )
 
         item = {
             "frame_data": frame_data.copy(),

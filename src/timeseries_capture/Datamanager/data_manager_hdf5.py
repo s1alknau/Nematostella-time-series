@@ -113,10 +113,12 @@ class AsyncHDF5Writer:
         depth = self._queue.qsize()
         if depth > self._max_queue_depth:
             self._max_queue_depth = depth
-            if depth > self._queue.maxsize // 2:
-                logger.warning(
-                    f"HDF5 write queue at {depth}/{self._queue.maxsize} — disk may be slow"
-                )
+        # Warn early (>80%) so the user sees disk pressure before put() blocks
+        if depth >= (self._queue.maxsize * 4) // 5:
+            logger.warning(
+                f"⚠️ HDF5 write queue at {depth}/{self._queue.maxsize} (>80%) — "
+                f"disk cannot keep up; next enqueue may block"
+            )
 
         item = {
             "frame_data": frame_data.copy(),  # decouple from camera buffer
@@ -215,11 +217,13 @@ class AsyncHDF5Writer:
                 self.frames_written += 1
                 frames_since_flush += 1
 
-                # Periodic flush (every flush_interval frames)
+                # Periodic flush (every flush_interval frames).
+                # ts_writer.flush() already flushes the entire file via
+                # self.g.file.flush(), so a second call would double the cost
+                # (file flush walks all dataset metadata and grows with N).
                 if frames_since_flush >= self._flush_interval:
                     try:
                         self._ts_writer.flush()
-                        self._hdf5_file.flush()
                         frames_since_flush = 0
                         logger.debug(f"HDF5 flushed (total written: {self.frames_written})")
                     except Exception as flush_exc:
@@ -233,10 +237,9 @@ class AsyncHDF5Writer:
             finally:
                 self._queue.task_done()
 
-        # Final flush after queue drained
+        # Final flush after queue drained (single call, see comment above)
         try:
             self._ts_writer.flush()
-            self._hdf5_file.flush()
             logger.info(f"AsyncHDF5Writer: final flush ({self.frames_written} frames total)")
         except Exception as exc:
             logger.error(f"AsyncHDF5Writer: final flush error: {exc}")
@@ -922,8 +925,36 @@ class DataManager:
             self.current_filepath = output_path / filename
 
             try:
-                # Create HDF5 file
-                self.hdf5_file = h5py.File(self.current_filepath, "w")
+                # ----------------------------------------------------------
+                # Open HDF5 with parameters that keep write time flat over
+                # long recordings (otherwise per-frame write cost grows with
+                # file size and shows up as exponential slowdown):
+                #
+                #   libver='latest'      → use HDF5 v3 format with v2 B-trees;
+                #                          chunk-index lookup stays O(log N)
+                #                          with much smaller constant factor
+                #                          than the legacy v1 B-tree.
+                #   fs_strategy='page'   → paged free-space management; new
+                #                          chunk allocations cost O(1) instead
+                #                          of scaling with prior allocations.
+                #   fs_page_size=4 MiB   → matches typical chunk size; avoids
+                #                          fragmenting chunk writes across pages.
+                #   rdcc_nbytes=64 MiB   → chunk cache large enough to hold
+                #                          dozens of recent frames without
+                #                          evicting on every write.
+                #   rdcc_nslots=10007    → prime, ~10× default, reduces hash
+                #                          collisions in the chunk cache index.
+                # ----------------------------------------------------------
+                self.hdf5_file = h5py.File(
+                    self.current_filepath,
+                    "w",
+                    libver="latest",
+                    fs_strategy="page",
+                    fs_page_size=4 * 1024 * 1024,
+                    rdcc_nbytes=64 * 1024 * 1024,
+                    rdcc_nslots=10007,
+                    rdcc_w0=0.75,
+                )
 
                 # Create groups
                 self.hdf5_file.create_group("images")
@@ -933,7 +964,7 @@ class DataManager:
                 self.hdf5_file.attrs["created"] = time.time()
                 self.hdf5_file.attrs["created_human"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 self.hdf5_file.attrs["experiment_name"] = experiment_name
-                self.hdf5_file.attrs["file_version"] = "5.0-refactored"
+                self.hdf5_file.attrs["file_version"] = "5.1-paged-fs"
                 self.hdf5_file.attrs["software"] = "nematostella-timelapse-refactored"
                 self.hdf5_file.attrs["structure"] = "phase_aware_timeseries_chunked"
                 self.hdf5_file.attrs["phase_support"] = True
@@ -1089,24 +1120,43 @@ class DataManager:
                                 f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
                             )
                         frame = (frame >> self._uint8_shift).astype(np.uint8)
-                self._async_writer.enqueue(  # type: ignore[union-attr]
-                    frame_data=frame,
-                    frame_index=frame_index,
-                    frame_number=frame_number,
-                    images_dataset=self._images_dataset,  # type: ignore[arg-type]
-                    image_shape=self._image_shape,  # type: ignore[arg-type]
-                    images_max_frames=self._images_max_frames,
-                    frame_metadata=frame_metadata,
-                    esp32_timing=esp32_timing,
-                    python_timing=timing_metrics,
-                )
 
-                logger.debug(f"Frame {frame_number} enqueued for async write")
-                return True
+                # Snapshot local refs so we can call enqueue() after releasing the lock.
+                # enqueue() may block (queue.put with 60s timeout) when the disk is
+                # slow — holding _hdf5_lock during that wait would freeze any other
+                # consumer (e.g. GUI get_stats()) for the same duration.
+                frame_to_enqueue = frame
+                async_writer = self._async_writer
+                images_dataset_ref = self._images_dataset
+                image_shape_ref = self._image_shape
+                images_max_frames_ref = self._images_max_frames
 
             except Exception as e:
-                logger.error(f"Failed to enqueue frame {frame_number}: {e}")
+                logger.error(f"Failed to prepare frame {frame_number}: {e}")
                 return False
+
+        # --------------------------------------------------------------
+        # Enqueue OUTSIDE the lock (mirrors Zarr writer pattern).
+        # queue.put() may block when disk is slow; the lock must NOT be
+        # held during that wait, otherwise GUI consumers freeze too.
+        # --------------------------------------------------------------
+        try:
+            async_writer.enqueue(  # type: ignore[union-attr]
+                frame_data=frame_to_enqueue,
+                frame_index=frame_index,
+                frame_number=frame_number,
+                images_dataset=images_dataset_ref,  # type: ignore[arg-type]
+                image_shape=image_shape_ref,  # type: ignore[arg-type]
+                images_max_frames=images_max_frames_ref,
+                frame_metadata=frame_metadata,
+                esp32_timing=esp32_timing,
+                python_timing=timing_metrics,
+            )
+            logger.debug(f"Frame {frame_number} enqueued for async write")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to enqueue frame {frame_number}: {e}")
+            return False
 
     def _create_timeseries_writer(self):
         """Create timeseries writer"""
@@ -1276,8 +1326,15 @@ class DataManager:
         self._image_shape = (h, w)
         dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
-        # One full frame per chunk = O(1) random access per frame
-        chunk_shape = (1, h, w)
+        # Group multiple frames per chunk so the chunk B-tree stays small
+        # over long recordings (one chunk per frame would create 200k+
+        # B-tree entries for a week-long run, dominating per-write cost).
+        # Target ~4 MiB per chunk to match fs_page_size and chunk cache;
+        # never less than 1 frame, never more than 32 frames per chunk.
+        bytes_per_frame = h * w * np.dtype(dtype).itemsize
+        target_bytes = 4 * 1024 * 1024
+        chunk_frames = max(1, min(32, target_bytes // max(1, bytes_per_frame)))
+        chunk_shape = (chunk_frames, h, w)
 
         images_group = self.hdf5_file["images"]  # type: ignore[index]
 

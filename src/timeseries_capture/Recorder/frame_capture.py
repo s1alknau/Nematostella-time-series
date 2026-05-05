@@ -148,19 +148,30 @@ class FrameCaptureService:
                         self.esp32.select_led_type(led_type)
                         self.esp32.led_on()
 
-                    time.sleep(stabilization_sec)
+                    # Stabilization must cover at least one full exposure period
+                    # so the next frame the camera produces is fully exposed under
+                    # the stable LED. For short exposures the 1 s default dominates;
+                    # for long exposures (>500 ms) we extend to 2× exposure.
+                    exposure_sec = self.exposure_ms / 1000.0
+                    effective_stab_sec = max(stabilization_sec, 2.0 * exposure_sec)
+                    time.sleep(effective_stab_sec)
                     logger.debug(
-                        f"[LED STABLE] Stabilization complete after {stabilization_sec:.3f}s"
+                        f"[LED STABLE] Stabilization complete after {effective_stab_sec:.3f}s "
+                        f"(default={stabilization_sec:.3f}s, exposure={exposure_sec:.3f}s)"
                     )
 
                     # Flush stale pre-LED frames from camera buffer.
                     # getLatestFrame() returns the most recent buffered frame which
-                    # may have been captured before LED-on. Discard 2 frames so the
-                    # actual capture gets a frame acquired after LED stabilization.
+                    # may have been captured before LED-on. The wait between flushes
+                    # must exceed one frame period so we actually advance to a new
+                    # frame; scale with exposure (camera FPS ≈ 1/exposure).
+                    flush_wait_sec = max(0.05, exposure_sec * 1.5)
                     for _ in range(2):
                         self.camera.capture_frame()
-                        time.sleep(0.05)
-                    logger.debug("[BUFFER FLUSH] Stale pre-LED frames discarded")
+                        time.sleep(flush_wait_sec)
+                    logger.debug(
+                        f"[BUFFER FLUSH] Stale pre-LED frames discarded (wait={flush_wait_sec:.3f}s)"
+                    )
 
                 self._current_led_type = target_led_config
                 self._led_is_on = True

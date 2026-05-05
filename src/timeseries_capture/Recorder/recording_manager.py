@@ -15,6 +15,8 @@ import threading
 import time
 from typing import Optional
 
+import numpy as np
+
 from ..Datamanager import DataManager
 from .frame_capture import FrameCaptureService
 from .phase_manager import PhaseManager
@@ -106,6 +108,14 @@ class RecordingManager(QObject):
         self._cumulative_drift_sec: float = 0.0
         self._last_capture_time: float = float("nan")
         self._last_actual_interval_sec: float = float("nan")
+
+        # Last successful frame, kept for placeholder fallback when a capture
+        # fails.  Replicating the previous frame (instead of zeros) means the
+        # frame-difference based activity analysis sees |last - last| = 0 at
+        # the failed slot rather than a huge spike — no false-positive
+        # activity peaks in napari-hdf5-activity.
+        self._last_good_frame: Optional[np.ndarray] = None
+        self._placeholder_frame_count: int = 0
 
         logger.info("RecordingManager initialized")
 
@@ -330,6 +340,32 @@ class RecordingManager(QObject):
             logger.info(f"Frame capture timing: {stab_ms} ms stabilization + {exp_ms} ms exposure")
 
             # ================================================================
+            # Sanity check: interval must exceed minimum capture-cycle duration
+            # ================================================================
+            # Capture cycle = effective stabilization (max of stab_ms and 2×exp)
+            #                 + 2 × buffer-flush waits (max of 50 ms and 1.5×exp)
+            #                 + camera readout (~exp_ms)
+            #                 + LED off + overhead (~100 ms).
+            # If interval_sec < this floor, frames cannot keep up and the actual
+            # interval will exceed the requested one (no drift, but a stretched cadence).
+            effective_stab_ms = max(stab_ms, 2 * exp_ms)
+            flush_wait_ms = max(50, int(exp_ms * 1.5))
+            min_capture_cycle_sec = (effective_stab_ms + 2 * flush_wait_ms + exp_ms + 100) / 1000.0
+            if config.interval_sec < min_capture_cycle_sec:
+                logger.warning(
+                    f"⚠️ interval_sec={config.interval_sec:.2f}s is shorter than the minimum "
+                    f"capture-cycle duration (~{min_capture_cycle_sec:.2f}s for exposure={exp_ms}ms). "
+                    f"Frames will be captured back-to-back and the actual interval will be "
+                    f"≈{min_capture_cycle_sec:.2f}s instead of the requested value."
+                )
+            else:
+                logger.info(
+                    f"✅ Timing budget OK: interval={config.interval_sec:.2f}s, "
+                    f"min cycle={min_capture_cycle_sec:.2f}s, headroom="
+                    f"{config.interval_sec - min_capture_cycle_sec:.2f}s"
+                )
+
+            # ================================================================
             # Initial sensor query before recording starts
             # ================================================================
             # Force the counter so query_sensors_if_needed() always fires here,
@@ -349,6 +385,10 @@ class RecordingManager(QObject):
             self._cumulative_drift_sec = 0.0
             self._last_capture_time = float("nan")
             self._last_actual_interval_sec = float("nan")
+
+            # Reset placeholder-frame reference (will be set on first success)
+            self._last_good_frame = None
+            self._placeholder_frame_count = 0
 
             # Start recording state
             self.state.start_recording()
@@ -596,10 +636,44 @@ class RecordingManager(QObject):
             if metadata is None:
                 metadata = {}
 
+            # ----------------------------------------------------------------
+            # Capture failure → replicate the last good frame as placeholder.
+            # Replicating (not zeros) is critical so that frame-difference
+            # based activity analysis sees |last - last| = 0 at this slot
+            # instead of a giant spike against a zero-filled frame.
+            # napari-hdf5-activity does not handle index gaps, so we MUST
+            # produce something at this index.
+            # ----------------------------------------------------------------
             if frame is None:
-                logger.error("Frame capture failed")
-                self.error_occurred.emit("Frame capture failed")
-                return
+                if self._last_good_frame is not None:
+                    logger.error(
+                        f"❌ Frame {frame_number} capture failed — "
+                        f"replicating last good frame as placeholder"
+                    )
+                    self.error_occurred.emit(
+                        f"Frame {frame_number} capture failed (placeholder written)"
+                    )
+                    # AsyncWriter.enqueue() copies the array, so passing the
+                    # cached frame directly is safe — no double-copy needed.
+                    frame = self._last_good_frame
+                    metadata["capture_method"] = "capture_failed_placeholder_replicated"
+                    metadata["success"] = False
+                    self._placeholder_frame_count += 1
+                else:
+                    # First-ever capture failed — no reference frame yet.
+                    # We MUST advance the counter so the next deadline is not
+                    # the same one we just missed (would tight-loop).  This is
+                    # the only path that can introduce an index gap; logged
+                    # explicitly so it's visible in postprocessing.
+                    logger.error(
+                        f"❌ Frame {frame_number} capture failed and no reference frame yet — "
+                        f"skipping (frame index will be missing)"
+                    )
+                    self.error_occurred.emit(
+                        f"Frame {frame_number} capture failed (no placeholder possible)"
+                    )
+                    self.state.increment_frame()
+                    return
 
             # Brightness check: if the frame is too dark (LED not yet stable,
             # timing race, or stale buffer) re-read from the camera without
@@ -621,7 +695,10 @@ class RecordingManager(QObject):
                 )
 
                 if retry_attempt < max_capture_retries - 1:
-                    time.sleep(0.05)  # Wait for ImSwitch LV worker to push next frame
+                    # Wait at least one full exposure period so ImSwitch's
+                    # LiveView worker actually produces a new frame.
+                    _exp_sec = self.frame_capture.exposure_ms / 1000.0
+                    time.sleep(max(0.05, _exp_sec * 1.2))
                     reread = self.frame_capture.camera.capture_frame()
                     if reread is not None:
                         frame = reread
@@ -634,9 +711,24 @@ class RecordingManager(QObject):
                     metadata["capture_method"] = "dark_frame_recovered"
 
             if frame is None:
-                logger.error("Frame capture failed after all retries")
-                self.error_occurred.emit("Frame capture failed")
-                return
+                # Defense-in-depth: should be unreachable since the brightness
+                # retry loop only assigns non-None reads.  Same placeholder
+                # strategy as the primary failure path above.
+                if self._last_good_frame is not None:
+                    logger.error(
+                        f"❌ Frame {frame_number} unexpectedly None after retries — "
+                        f"replicating last good frame"
+                    )
+                    self.error_occurred.emit("Frame capture failed (placeholder)")
+                    frame = self._last_good_frame
+                    metadata["capture_method"] = "capture_failed_placeholder_replicated"
+                    metadata["success"] = False
+                    self._placeholder_frame_count += 1
+                else:
+                    logger.error("Frame capture failed and no reference frame — skipping index")
+                    self.error_occurred.emit("Frame capture failed")
+                    self.state.increment_frame()
+                    return
 
             # ================================================================
             # ENRICH METADATA with missing timeseries fields
@@ -724,9 +816,32 @@ class RecordingManager(QObject):
                     frame=frame, frame_number=frame_number, metadata=metadata
                 )
 
+                # Always advance the frame counter, even on save-failure.
+                # A stuck counter would cause the loop to recompute the same
+                # missed deadline and tight-loop until the failure clears.
+                # On save-failure the timeseries entry will be missing for
+                # this index, but the deadline cadence is preserved.
+                self.state.increment_frame()
+
                 if success:
-                    # Increment frame counter
-                    self.state.increment_frame()
+                    # Cache the actual frame for placeholder fallback.  Skip
+                    # caching when this WAS the placeholder (don't re-cache a
+                    # replicated stale frame).  In-place copy to the existing
+                    # buffer when shape matches — avoids per-frame allocation
+                    # of multi-MB arrays over a long recording.
+                    if metadata.get("capture_method") != "capture_failed_placeholder_replicated":
+                        if (
+                            self._last_good_frame is None
+                            or self._last_good_frame.shape != frame.shape
+                            or self._last_good_frame.dtype != frame.dtype
+                        ):
+                            self._last_good_frame = frame.copy()
+                            logger.info(
+                                f"Placeholder reference set: shape={frame.shape}, "
+                                f"dtype={frame.dtype}"
+                            )
+                        else:
+                            np.copyto(self._last_good_frame, frame)
 
                     # Emit signal
                     self.frame_captured.emit(self.state.current_frame, self.state.total_frames)
@@ -739,7 +854,9 @@ class RecordingManager(QObject):
                     else:
                         logger.debug(f"Frame {frame_number} saved successfully")
                 else:
-                    logger.error(f"Failed to save frame {frame_number}")
+                    logger.error(
+                        f"Failed to save frame {frame_number} — counter advanced to keep cadence"
+                    )
 
         except Exception as e:
             logger.error(f"Error capturing frame: {e}")
@@ -813,6 +930,7 @@ class RecordingManager(QObject):
 
             # Add capture stats
             final_info["capture_stats"] = self.frame_capture.get_capture_stats()
+            final_info["placeholder_frame_count"] = self._placeholder_frame_count
 
             # Finalize data manager
             if self.data_manager:
@@ -947,6 +1065,7 @@ class RecordingManager(QObject):
         # Cumulative interval overrun since recording start
         status["cumulative_drift_sec"] = self._cumulative_drift_sec
         status["last_actual_interval_sec"] = self._last_actual_interval_sec
+        status["placeholder_frame_count"] = self._placeholder_frame_count
 
         return status
 
