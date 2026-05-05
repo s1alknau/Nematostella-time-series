@@ -208,31 +208,15 @@ class RecordingManager(QObject):
                 }
             )
 
-            # Setup Frame Capture timing
-            # Get actual camera exposure time from ImSwitch
-            try:
-                camera_exposure_ms = self.frame_capture.camera.get_exposure_ms()
-                logger.info(f"Using camera exposure time: {camera_exposure_ms:.1f} ms")
-            except Exception as e:
-                logger.warning(f"Could not get camera exposure, using default: {e}")
-                camera_exposure_ms = 10.0
-
+            # ================================================================
+            # Setup Frame Capture timing (preliminary — confirmed after AGC disable)
+            # ================================================================
+            stab_ms = 1000  # LED stabilization before capture (always 1000 ms)
             if config.phase_enabled:
-                # Use stabilization from phase config
-                stab_ms = 1000  # Default LED stabilization time
-                # For phase recording, use camera trigger latency (time to wait after LED on)
-                # This should be: LED stabilization - camera exposure
-                # But we'll use the configured latency value
                 exp_ms = config.camera_trigger_latency_ms
             else:
-                # No phase recording: use actual camera exposure time
-                stab_ms = 1000  # LED stabilization before capture
-                exp_ms = int(camera_exposure_ms)  # Use actual camera exposure
-
+                exp_ms = 10  # Temporary default; replaced after AGC disable below
             self.frame_capture.set_timing(stab_ms, exp_ms)
-            logger.info(
-                f"Frame capture timing set: {stab_ms}ms stabilization + {exp_ms}ms trigger latency"
-            )
 
             # ================================================================
             # CRITICAL: Reset LED state cache before recording
@@ -329,6 +313,21 @@ class RecordingManager(QObject):
                     )
             except Exception as e:
                 logger.warning(f"disable_auto_settings call failed: {e}")
+
+            # ================================================================
+            # RE-READ camera exposure from ImSwitch AFTER AGC is frozen
+            # ================================================================
+            # Reading before disable_auto_settings() may return an AGC-adjusted
+            # value; reading here returns the exposure actually used during recording.
+            try:
+                camera_exposure_ms = self.frame_capture.camera.get_exposure_ms()
+                logger.info(f"Camera exposure (from ImSwitch): {camera_exposure_ms:.1f} ms")
+                exp_ms = max(1, int(round(camera_exposure_ms)))
+                self.frame_capture.set_timing(stab_ms, exp_ms)
+            except Exception as e:
+                logger.warning(f"Could not read camera exposure from ImSwitch: {e}")
+                camera_exposure_ms = float(exp_ms)
+            logger.info(f"Frame capture timing: {stab_ms} ms stabilization + {exp_ms} ms exposure")
 
             # ================================================================
             # Initial sensor query before recording starts

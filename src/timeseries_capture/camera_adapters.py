@@ -547,6 +547,37 @@ class NapariViewerCameraAdapter(CameraAdapter):
 
         return info
 
+    def get_exposure_ms(self) -> float:
+        """
+        Read camera exposure from the ImSwitch DetectorsManager.
+
+        Uses the same gc-scan approach as _flush_imswitch_camera() to locate
+        the active ImSwitch detector and calls getParameter("exposure") on it.
+        ImSwitch returns exposure in milliseconds (as displayed in its UI).
+
+        Returns:
+            Exposure time in ms, or 10.0 if the detector cannot be reached.
+        """
+        try:
+            import gc
+
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if not names:
+                        continue
+                    detector = obj[names[0]]
+                    if hasattr(detector, "getParameter"):
+                        value = detector.getParameter("exposure")
+                        return float(value)
+        except Exception as e:
+            logger.debug(f"get_exposure_ms via gc scan failed: {e}")
+        return 10.0  # fallback
+
     def _get_camera_layer(self):
         """
         Get camera layer from viewer.

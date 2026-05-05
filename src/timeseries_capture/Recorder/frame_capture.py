@@ -412,7 +412,7 @@ class FrameCaptureService:
         if should_query:
             try:
                 sensor_data = self.esp32.get_sensor_data()
-                print(f"[SENSOR] Raw data from ESP32: {sensor_data}")
+                logger.debug(f"[SENSOR] Raw data from ESP32: {sensor_data}")
                 if sensor_data:
                     # Only update if we got valid values (not None, not 0)
                     temp = sensor_data.get("temperature")

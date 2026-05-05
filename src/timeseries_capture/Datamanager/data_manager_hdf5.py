@@ -865,9 +865,8 @@ class DataManager:
         # Timeseries writer
         self._ts_writer: Optional[ChunkedTimeseriesWriter] = None
 
-        # On-disk temp buffer + consolidation worker (replaces bounded in-memory queue)
-        self._temp_buffer: Optional[TempFrameBuffer] = None
-        self._consolidation_worker: Optional[HDF5ConsolidationWorker] = None
+        # Async write-behind queue (decouples disk I/O from recording thread entirely)
+        self._async_writer: Optional[AsyncHDF5Writer] = None
 
         # Pre-allocated 3D image dataset (v5.1 optimization)
         # Eliminates per-frame B-tree insertions that cause exponential write slowdown
@@ -1014,18 +1013,14 @@ class DataManager:
                 if self._ts_writer is None:
                     self._create_timeseries_writer()
 
-                # Start temp buffer + consolidation worker on first frame
-                if self._temp_buffer is None:
-                    temp_dir = Path(self.current_filepath).parent / "temp_frames"  # type: ignore[arg-type]
-                    self._temp_buffer = TempFrameBuffer(temp_dir)
-                    self._consolidation_worker = HDF5ConsolidationWorker(
-                        temp_buffer=self._temp_buffer,
+                # Start async write-behind worker on first frame
+                if self._async_writer is None:
+                    self._async_writer = AsyncHDF5Writer(
                         ts_writer=self._ts_writer,  # type: ignore[arg-type]
                         hdf5_file=self.hdf5_file,  # type: ignore[arg-type]
-                        images_dataset=self._images_dataset,  # type: ignore[arg-type]
                         flush_interval=self.flush_interval,
+                        max_queue_size=64,  # 64 × 5 s = 320 s of buffering headroom
                     )
-                    self._consolidation_worker.start()
 
                 # ----------------------------------------------------------
                 # Compute all metadata in recording thread (pure Python/numpy,
@@ -1055,7 +1050,9 @@ class DataManager:
                     "humidity_percent": metadata.get("humidity", 0.0),
                     "led_type_used": metadata.get("led_type", "unknown"),
                     "sync_success": metadata.get("success", True),
-                    "camera_trigger_latency_ms": metadata.get("camera_trigger_latency_ms", 20),
+                    "camera_trigger_latency_ms": metadata.get(
+                        "exposure_ms", metadata.get("camera_trigger_latency_ms", 20)
+                    ),
                 }
 
                 # ----------------------------------------------------------
@@ -1092,17 +1089,19 @@ class DataManager:
                                 f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
                             )
                         frame = (frame >> self._uint8_shift).astype(np.uint8)
-                self._temp_buffer.write(  # type: ignore[union-attr]
+                self._async_writer.enqueue(  # type: ignore[union-attr]
+                    frame_data=frame,
+                    frame_index=frame_index,
                     frame_number=frame_number,
-                    frame=frame,
+                    images_dataset=self._images_dataset,  # type: ignore[arg-type]
+                    image_shape=self._image_shape,  # type: ignore[arg-type]
+                    images_max_frames=self._images_max_frames,
                     frame_metadata=frame_metadata,
                     esp32_timing=esp32_timing,
                     python_timing=timing_metrics,
-                    image_shape=self._image_shape,  # type: ignore[arg-type]
-                    images_max_frames=self._images_max_frames,
                 )
 
-                logger.debug(f"Frame {frame_number} written to temp buffer")
+                logger.debug(f"Frame {frame_number} enqueued for async write")
                 return True
 
             except Exception as e:
@@ -1328,12 +1327,11 @@ class DataManager:
         """
         logger.info("Finalizing HDF5 recording...")
 
-        # Drain all pending temp files first — every frame must reach HDF5
+        # Drain all pending frames first — every frame must reach HDF5
         # before we trim datasets or close the file.
-        if self._consolidation_worker is not None:
-            self._consolidation_worker.drain_and_shutdown()
-            self._consolidation_worker = None
-            self._temp_buffer = None
+        if self._async_writer is not None:
+            self._async_writer.drain_and_shutdown()
+            self._async_writer = None
 
         try:
             with self._hdf5_lock:
@@ -1408,13 +1406,11 @@ class DataManager:
             return False
 
     def close_file(self):
-        """Close HDF5 file (drains consolidation worker first)."""
+        """Close HDF5 file (drains async writer first)."""
         try:
-            # Drain on-disk temp buffer + consolidation worker
-            if self._consolidation_worker is not None:
-                self._consolidation_worker.drain_and_shutdown()
-                self._consolidation_worker = None
-                self._temp_buffer = None
+            if self._async_writer is not None:
+                self._async_writer.drain_and_shutdown()
+                self._async_writer = None
 
             with self._hdf5_lock:
                 if self._ts_writer:
@@ -1461,13 +1457,12 @@ class DataManager:
         if self._ts_writer:
             stats["timeseries"] = self._ts_writer.get_stats()  # type: ignore[assignment]
 
-        if self._consolidation_worker is not None:
+        if self._async_writer is not None:
             stats["write_queue"] = {  # type: ignore[assignment]
-                "frames_written_to_disk": self._consolidation_worker.frames_written,
-                "pending_temp_files": (
-                    len(self._temp_buffer.pending_paths()) if self._temp_buffer else 0
-                ),
-                "write_errors": self._consolidation_worker.write_errors,
+                "frames_written_to_disk": self._async_writer.frames_written,
+                "queue_depth": self._async_writer._queue.qsize(),
+                "peak_queue_depth": self._async_writer._max_queue_depth,
+                "write_errors": self._async_writer.write_errors,
             }
 
         return stats

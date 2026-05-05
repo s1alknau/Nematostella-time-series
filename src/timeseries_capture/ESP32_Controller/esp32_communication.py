@@ -451,15 +451,23 @@ class ESP32Communication:
         self, expected_byte: int, timeout: float = 2.0, max_bytes: int = 100
     ) -> bool:
         """
-        Liest bis erwartetes Byte gefunden wird.
+        Polls for an expected byte using in_waiting to avoid blocking reads.
+
+        Uses a non-blocking poll (in_waiting check) + short sleep instead of
+        blocking serial.read(timeout=0.1).  This prevents Windows USB serial
+        driver stalls from holding _comm_lock for longer than the configured
+        timeout and causing multi-second frame interval spikes.
+
+        On timeout the input buffer is cleared to prevent stale ACK bytes
+        from corrupting the next command exchange.
 
         Args:
-            expected_byte: Erwartetes Response-Byte
-            timeout: Timeout in Sekunden
-            max_bytes: Maximale Anzahl zu lesender Bytes
+            expected_byte: Expected response byte
+            timeout: Total wait budget in seconds
+            max_bytes: Bail out after reading this many non-matching bytes
 
         Returns:
-            True wenn Response gefunden
+            True when expected_byte found, False on timeout/max_bytes/error
         """
         start_time = time.time()
         bytes_read = 0
@@ -467,17 +475,40 @@ class ESP32Communication:
         logger.debug(f"Waiting for response 0x{expected_byte:02X}...")
 
         while (time.time() - start_time) < timeout and bytes_read < max_bytes:
-            byte = self.read_byte(timeout=0.1)
-            if byte is None:
-                continue
+            with self._comm_lock:
+                if not self.is_connected():
+                    return False
+                try:
+                    waiting = self.serial_connection.in_waiting
+                except Exception as e:
+                    logger.debug(f"in_waiting check failed: {e}")
+                    return False
 
-            bytes_read += 1
+                if waiting > 0:
+                    # Read however many bytes are already buffered (non-blocking)
+                    chunk_size = min(waiting, max_bytes - bytes_read)
+                    try:
+                        data = self.serial_connection.read(chunk_size)
+                    except Exception as e:
+                        logger.debug(f"read failed: {e}")
+                        return False
 
-            if byte == expected_byte:
-                logger.debug(f"Found expected response 0x{expected_byte:02X}")
-                return True
+                    for byte in data:
+                        bytes_read += 1
+                        if byte == expected_byte:
+                            logger.debug(f"Found expected response 0x{expected_byte:02X}")
+                            return True
+
+                    # Bytes read but target not among them — keep polling
+                    continue
+
+            # No data yet — sleep briefly *without* holding the lock so other
+            # threads (e.g. recording loop) can use the port in between.
+            time.sleep(0.010)  # 10 ms poll interval
 
         logger.warning(f"Response 0x{expected_byte:02X} not found within timeout")
+        # Flush any late-arriving stale bytes so they don't corrupt the next command
+        self.clear_buffers()
         return False
 
     def clear_buffers(self, aggressive: bool = False) -> bool:

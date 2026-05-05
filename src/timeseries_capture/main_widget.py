@@ -536,7 +536,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         f"📷 Calibration exposure: {self._calibration_exposure_ms:.1f} ms", "INFO"
                     )
 
-                    if exposure_diff > 0.5:  # More than 0.5ms difference
+                    if exposure_diff > 0.5:
                         self.log_panel.add_log(
                             f"⚠️ WARNING: Camera exposure changed by {exposure_diff:.1f} ms since calibration!",
                             "WARNING",
@@ -545,7 +545,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             f"⚠️ This will cause intensity mismatch! Calibration was done at {self._calibration_exposure_ms:.1f} ms.",
                             "WARNING",
                         )
-                        # Ask user if they want to continue
                         reply = QMessageBox.question(
                             self,
                             "Exposure Mismatch",
@@ -685,6 +684,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
             if success:
                 self.log_panel.add_log("✅ Recording started successfully", "SUCCESS")
+                if self.esp32_gui_controller:
+                    self.esp32_gui_controller.pause_monitoring()
             else:
                 self.log_panel.add_log("❌ Failed to start recording", "ERROR")
 
@@ -828,6 +829,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.recording_controller.stop_recording()
             self.log_panel.add_log("Recording stopped", "SUCCESS")
             self.experiment_designer.set_recording_active(False)
+            if self.esp32_gui_controller:
+                self.esp32_gui_controller.resume_monitoring()
         except Exception as e:
             logger.error(f"Stop recording error: {e}", exc_info=True)
             self.log_panel.add_log(f"Stop error: {e}", "ERROR")
@@ -1013,6 +1016,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         if success:
             self.log_panel.add_log("✅ Schedule recording started", "SUCCESS")
             self.experiment_designer.set_recording_active(True)
+            if self.esp32_gui_controller:
+                self.esp32_gui_controller.pause_monitoring()
             # Wire segment_changed now that recording_manager is alive
             rm = self.recording_controller.recording_manager
             if rm is not None and hasattr(rm, "segment_changed"):
@@ -1143,15 +1148,12 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     target_intensity = self.led_panel.get_target_intensity()
                     tolerance_percent = self.led_panel.get_tolerance_percent()
 
-                    # Read and log camera exposure time for calibration
+                    # Read camera exposure from ImSwitch
                     try:
                         camera_exposure_ms = self.camera_adapter.get_exposure_ms()
                         self.log_panel.add_log(
-                            f"📷 Camera exposure time: {camera_exposure_ms:.1f} ms", "INFO"
-                        )
-                        self.log_panel.add_log(
-                            "⚠️ IMPORTANT: Do NOT change camera exposure between calibration and recording!",
-                            "WARNING",
+                            f"📷 Camera exposure (from ImSwitch): {camera_exposure_ms:.1f} ms",
+                            "INFO",
                         )
                     except Exception as e:
                         self.log_panel.add_log(f"⚠️ Could not read camera exposure: {e}", "WARNING")

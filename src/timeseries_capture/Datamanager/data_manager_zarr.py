@@ -27,6 +27,7 @@ Zarr store structure:
 from __future__ import annotations
 
 import logging
+import queue
 import threading
 import time
 from enum import IntEnum
@@ -253,6 +254,146 @@ class ZarrTimeseriesWriter:
 
 
 # ============================================================================
+# ASYNC ZARR WRITE-BEHIND QUEUE
+# ============================================================================
+
+
+class AsyncZarrWriter:
+    """
+    Write-behind queue that decouples Zarr disk I/O from the recording thread.
+    Analogous to AsyncHDF5Writer in data_manager_hdf5.py.
+
+    The recording thread calls enqueue() and returns in microseconds.
+    A background worker drains the queue and performs all Zarr writes
+    (frame chunk + timeseries arrays + periodic written_frames attr update).
+    """
+
+    _SENTINEL = object()
+
+    def __init__(
+        self,
+        frames_array,
+        ts_writer: ZarrTimeseriesWriter,
+        root,
+        max_queue_size: int = 64,
+        written_frames_update_interval: int = 10,
+    ):
+        self._frames_array = frames_array
+        self._ts_writer = ts_writer
+        self._root = root
+        self._update_interval = written_frames_update_interval
+
+        self._queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        self._shutdown_event = threading.Event()
+
+        self.frames_written = 0
+        self.write_errors = 0
+        self._max_queue_depth = 0
+
+        self._thread = threading.Thread(target=self._worker, daemon=True, name="Zarr-WriteWorker")
+        self._thread.start()
+        logger.info(f"AsyncZarrWriter started (queue={max_queue_size})")
+
+    def enqueue(
+        self,
+        frame_data: np.ndarray,
+        frame_index: int,
+        frame_number: int,
+        frame_metadata: dict,
+        esp32_timing: dict,
+        python_timing: dict,
+    ) -> None:
+        depth = self._queue.qsize()
+        if depth > self._max_queue_depth:
+            self._max_queue_depth = depth
+            if depth > self._queue.maxsize // 2:
+                logger.warning(
+                    f"Zarr write queue at {depth}/{self._queue.maxsize} — disk may be slow"
+                )
+
+        item = {
+            "frame_data": frame_data.copy(),
+            "frame_index": frame_index,
+            "frame_number": frame_number,
+            "frame_metadata": frame_metadata,
+            "esp32_timing": esp32_timing,
+            "python_timing": python_timing,
+        }
+
+        try:
+            self._queue.put(item, timeout=60.0)
+        except queue.Full:
+            logger.error("Zarr write queue full after 60s — frame dropped! Disk is too slow.")
+            self.write_errors += 1
+
+    def drain_and_shutdown(self, timeout: float = 300.0) -> None:
+        pending = self._queue.qsize()
+        if pending:
+            logger.info(f"AsyncZarrWriter: draining {pending} queued frame(s)...")
+        self._shutdown_event.set()
+        try:
+            self._queue.put(self._SENTINEL, timeout=5.0)
+        except queue.Full:
+            logger.error("Could not send shutdown sentinel — queue full")
+        self._thread.join(timeout=timeout)
+        if self._thread.is_alive():
+            logger.error(f"AsyncZarrWriter drain timed out after {timeout}s!")
+        else:
+            logger.info(
+                f"AsyncZarrWriter stopped (written={self.frames_written}, "
+                f"errors={self.write_errors}, peak_queue={self._max_queue_depth})"
+            )
+        try:
+            self._root.attrs["written_frames"] = self.frames_written
+        except Exception:
+            pass
+
+    def _worker(self) -> None:
+        logger.debug("AsyncZarrWriter worker thread started")
+        frames_since_update = 0
+
+        while True:
+            try:
+                item = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                if self._shutdown_event.is_set():
+                    break
+                continue
+
+            if item is self._SENTINEL:
+                self._queue.task_done()
+                break
+
+            try:
+                self._frames_array[item["frame_index"]] = item["frame_data"]
+                self._ts_writer.append(
+                    frame_index=item["frame_index"],
+                    frame_metadata=item["frame_metadata"],
+                    esp32_timing=item["esp32_timing"],
+                    python_timing=item["python_timing"],
+                )
+                self.frames_written += 1
+                frames_since_update += 1
+
+                if frames_since_update >= self._update_interval:
+                    try:
+                        self._root.attrs["written_frames"] = self.frames_written
+                    except Exception:
+                        pass
+                    frames_since_update = 0
+
+            except Exception as exc:
+                logger.error(
+                    f"AsyncZarrWriter: write error frame {item.get('frame_number', '?')}: {exc}"
+                )
+                self.write_errors += 1
+            finally:
+                self._queue.task_done()
+
+        logger.debug("AsyncZarrWriter worker thread stopped")
+
+
+# ============================================================================
 # MAIN ZARR DATA MANAGER
 # ============================================================================
 
@@ -294,6 +435,7 @@ class DataManagerZarr:
         self._images_max_frames: int = (
             200_000  # covers ~7 days @ 5s interval; auto-extends if needed
         )
+        self._async_writer: AsyncZarrWriter | None = None
 
         self.frame_count = 0
         self._frames_since_flush = 0
@@ -383,8 +525,8 @@ class DataManagerZarr:
         frame_index = frame_number - 1
         current_time = time.time()
 
-        with self._lock:
-            try:
+        try:
+            with self._lock:
                 timing_metrics = self._calculate_timing_metrics(
                     frame_number, current_time, metadata
                 )
@@ -397,7 +539,7 @@ class DataManagerZarr:
                 self.frame_count += 1
                 self.last_frame_time = timing_metrics["recording_elapsed_sec"]
 
-                # ---- Images ----
+                # ---- Images (lazy init, first frame only) ----
                 if self._frames_array is None:
                     if "frames" in self._root["images"]:
                         self._frames_array = self._root["images"]["frames"]
@@ -414,30 +556,37 @@ class DataManagerZarr:
 
                 if self.save_as_uint8 and frame.dtype != np.uint8:
                     if frame.dtype.kind == "f":
-                        # Float data (e.g., ImSwitch normalized [0, 1]) → scale to uint8
                         frame = (frame * 255.0).clip(0, 255).astype(np.uint8)
                         if self._uint8_shift is None:
-                            self._uint8_shift = -1  # sentinel: float path used
+                            self._uint8_shift = -1
                             logger.info("uint8 conversion: float [0,1] → scaled to [0,255]")
                     else:
                         if self._uint8_shift is None:
                             max_val = int(frame.max())
                             if max_val > 4095:
-                                self._uint8_shift = 8  # 16-bit camera
+                                self._uint8_shift = 8
                             elif max_val > 255:
-                                self._uint8_shift = 4  # 12-bit camera
+                                self._uint8_shift = 4
                             else:
-                                self._uint8_shift = 0  # 8-bit data in uint16 container
+                                self._uint8_shift = 0
                             logger.info(
                                 f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
                             )
                         frame = (frame >> self._uint8_shift).astype(np.uint8)
-                self._frames_array[frame_index] = frame
 
-                # ---- Timeseries ----
+                # ---- Timeseries writer (lazy init, first frame only) ----
                 if self._ts_writer is None:
                     self._create_timeseries_writer()
                 assert self._ts_writer is not None
+
+                # ---- Start async writer on first frame ----
+                if self._async_writer is None:
+                    self._async_writer = AsyncZarrWriter(
+                        frames_array=self._frames_array,
+                        ts_writer=self._ts_writer,
+                        root=self._root,
+                        max_queue_size=64,
+                    )
 
                 frame_metadata = {
                     **metadata,
@@ -457,28 +606,32 @@ class DataManagerZarr:
                     "humidity_percent": metadata.get("humidity", 0.0),
                     "led_type_used": metadata.get("led_type", "unknown"),
                     "sync_success": metadata.get("success", True),
-                    "camera_trigger_latency_ms": metadata.get("camera_trigger_latency_ms", 20),
+                    "camera_trigger_latency_ms": metadata.get(
+                        "exposure_ms", metadata.get("camera_trigger_latency_ms", 20)
+                    ),
                 }
 
-                self._ts_writer.append(
-                    frame_index=frame_index,
-                    frame_metadata=frame_metadata,
-                    esp32_timing=esp32_timing,
-                    python_timing=timing_metrics,
-                )
+                # Snapshot local refs so we can use them after releasing the lock
+                frame_to_enqueue = frame
+                async_writer = self._async_writer
 
-                # Always update written_frames — it is a tiny .zattrs JSON write and
-                # the LiveAnalysisWorker reads it every 20s to know how many frames
-                # exist.  Without this, the worker sees 0 for the first flush_interval
-                # frames (250s at 5s interval / flush=50) and the plot never updates.
-                self._root.attrs["written_frames"] = self.frame_count
+            # Enqueue OUTSIDE the lock — queue.put() may block if disk is slow,
+            # and we must not hold the lock while blocked.
+            async_writer.enqueue(
+                frame_data=frame_to_enqueue,
+                frame_index=frame_index,
+                frame_number=frame_number,
+                frame_metadata=frame_metadata,
+                esp32_timing=esp32_timing,
+                python_timing=timing_metrics,
+            )
 
-                logger.debug(f"Zarr frame {frame_number} saved (index={frame_index})")
-                return True
+            logger.debug(f"Zarr frame {frame_number} enqueued for async write")
+            return True
 
-            except Exception as e:
-                logger.error(f"Failed to save Zarr frame {frame_number}: {e}")
-                return False
+        except Exception as e:
+            logger.error(f"Failed to save Zarr frame {frame_number}: {e}")
+            return False
 
     def _initialize_images_array(self, frame: np.ndarray) -> None:
         h, w = frame.shape[0], frame.shape[1]
@@ -615,6 +768,12 @@ class DataManagerZarr:
 
     def finalize_recording(self, final_info: dict) -> bool:
         logger.info("Finalizing Zarr recording...")
+
+        # Drain all pending frames before trimming datasets or closing the store.
+        if self._async_writer is not None:
+            self._async_writer.drain_and_shutdown()
+            self._async_writer = None
+
         try:
             with self._lock:
                 if self._root is None:
@@ -764,6 +923,10 @@ class DataManagerZarr:
 
     def close_file(self):
         """Close/sync the Zarr store."""
+        if self._async_writer is not None:
+            self._async_writer.drain_and_shutdown()
+            self._async_writer = None
+
         try:
             if self._store is not None:
                 if hasattr(self._store, "close"):
@@ -787,6 +950,13 @@ class DataManagerZarr:
         }
         if self._ts_writer:
             stats["timeseries"] = self._ts_writer.get_stats()
+        if self._async_writer is not None:
+            stats["write_queue"] = {
+                "frames_written_to_disk": self._async_writer.frames_written,
+                "queue_depth": self._async_writer._queue.qsize(),
+                "peak_queue_depth": self._async_writer._max_queue_depth,
+                "write_errors": self._async_writer.write_errors,
+            }
         return stats
 
     def get_recording_directory(self) -> str | None:

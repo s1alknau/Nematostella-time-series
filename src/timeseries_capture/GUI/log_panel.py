@@ -7,6 +7,9 @@ import datetime
 from qtpy.QtGui import QTextCursor
 from qtpy.QtWidgets import QCheckBox, QHBoxLayout, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
+_MAX_LOG_LINES = 5000  # cap to prevent unbounded memory growth over multi-day recordings
+_TRIM_BATCH = 500  # remove this many lines at once when over the cap
+
 
 class LogPanel(QWidget):
     """Panel für System-Logs"""
@@ -125,6 +128,16 @@ class LogPanel(QWidget):
             f"<span style='color: #808080;'>[{timestamp}]</span> "
             f"<span style='color: {color};'>{icon} {message}</span>"
         )
+
+        # Trim oldest lines when over the cap (batch removal to amortise cost)
+        doc = self.log_text.document()
+        if doc.blockCount() > _MAX_LOG_LINES:
+            cursor = QTextCursor(doc)
+            cursor.movePosition(QTextCursor.Start)
+            for _ in range(_TRIM_BATCH):
+                cursor.select(QTextCursor.BlockUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # remove the trailing newline
 
         self.log_text.append(log_entry)
 
