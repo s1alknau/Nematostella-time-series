@@ -15,10 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install OpenSCAD and Xvfb
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y openscad xvfb
+      - name: Set up f3d
+        uses: f3d-app/setup-f3d@v1
 
       - name: Render STL files to PNG
         run: |
@@ -26,13 +24,12 @@ jobs:
           for stl in docs/3D_Druck/STL/*.stl; do
             name=$(basename "$stl" .stl)
             echo "Rendering $name ..."
-            xvfb-run openscad \
-              --render \
-              --imgsize=800,600 \
-              --camera=0,0,0,55,0,25,auto \
-              --colorscheme=Tomorrow \
-              -o "docs/3D_Druck/previews/${name}.png" \
-              "$stl" || echo "  WARNING: failed to render $stl"
+            f3d \
+              --output "docs/3D_Druck/previews/${name}.png" \
+              --resolution 800,600 \
+              --camera-position 1,1,1 \
+              --camera-view-up 0,0,1 \
+              "$stl" && echo "  OK" || echo "  WARNING: failed to render $stl"
           done
 
       - name: Commit rendered previews
@@ -40,5 +37,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/3D_Druck/previews/
-          git diff --staged --quiet && echo "No new previews." || \
-            git commit -m "CI: auto-render STL previews [skip ci]" && git push
+          git diff --staged --quiet && echo "No changes." || \
+            (git commit -m "CI: auto-render STL previews [skip ci]" && git push)
