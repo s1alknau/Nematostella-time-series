@@ -134,8 +134,7 @@ Optional dependencies:
 
 2. **LED System**
    - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm) https://www.buyledstrip.com/de/led-streifen-2538-120-led-m-ir-850nm-je-50cm.html
-   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation)
-   - **MOSFET Drivers**: 2x BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
+   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation) https://www.amazon.de/dp/B0CT3B7K1D?ref_=ppx_hzsearch_conn_dt_b_fed_asin_title_1&th=1
    - **Important**: IR and White LEDs use different voltages (12V vs 24V)
 
 3. **DHT22 Sensor**
@@ -156,8 +155,12 @@ Optional dependencies:
    - Resistor 220 https://www.amazon.de/Elegoo-Widerst%C3%A4nde-Sortiment-St%C3%BCck-Metallfilm/dp/B072BHDBDG/ref=asc_df_B072BHDBDG?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312989902&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=192097&hvtargid=pla-4584413786304525&psc=1&msclkid=bc9a95dd8148109d2d6dffdc21218251
    - Magnets https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1
    - Connector whitelight LED https://www.amazon.de/dp/B0BJKC6WQJ?ref=ppx_yo2ov_dt_b_fed_asin_title
+   - Wires and connectors https://www.amazon.de/dp/B0B67KW6BC/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0B67KW6BC&pd_rd_w=Egnt7&content-id=amzn1.sym.99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_p=99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_r=B64Y7SJKH0MZRHKKB5XT&pd_rd_wg=B3gIN&pd_rd_r=712c8eed-6bdc-40b7-bd24-77516c8be8b2&aref=HdgOtKuxpu&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfdGhlbWF0aWM
+   - Glue https://www.amazon.de/dp/B0C6R9G4ZW?ref=nb_sb_ss_w_as-reorder_k0_1_8&amp=&crid=120N5DRLM9J5Q&sprefix=sekunden&th=1
+   - Hot glue gun https://www.amazon.de/RUNSAI-Hei%C3%9Fklebepistole-Klebepistole-Heissklebepistole-Klebepistolen/dp/B0FDGNZRPR/ref=sr_1_1_sspa?crid=1KQDWKVF8YWCF&dib=eyJ2IjoiMSJ9.WZlV9v1vUcb8kqQbh1nrqbNu4aSP8eWGOkJxBPx6pXaAq7WXuAwLiezS78mWRTujvlHkTBL7daUXeIjiXTyrWOddOLODKQmPlYpNsZW_5ppicYUQAVtQPU3qPni3-aGMC9EJg0Z5Rr3E0u-s4F_PClmALPQEc06K_QtDoRUi7WPbBDrYqO8xBe0cQ7--uichxZmXpGWsJwvbnravJGdN2Vzj142In4-RfgijVjdK69s.oydV89Yx8W2dxGRQ-1TWMTVTyLjj2DO2uT7NrHdBrMg&dib_tag=se&keywords=hotglue%2Bgun%2B7mm&qid=1778514033&sprefix=hotglue%2Caps%2C114&sr=8-1-spons&aref=T1O09xDQ0T&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1
    - Screw Kit incl hex keys 
    https://www.amazon.de/dp/B0CZSW8S66/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0CZSW8S66&pd_rd_w=sepag&content-id=amzn1.sym.bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_p=bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_r=DCAXTTNQE08Z865MHAFS&pd_rd_wg=3wRol&pd_rd_r=6337fa24-4ceb-478e-8c50-316aa9eb6b8d&aref=1O1nyuJ2mQ&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw
+   
 
 6. **Camera**
    - Hik Robotics MV-CS-013 60GN Near Infrared Request at  UC2 company https://openuc2.com/imprint/ or https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254
@@ -214,13 +217,13 @@ Optional dependencies:
 **IR LED Circuit:**
 ```
                     ┌─────────────┐
-ESP32 GPIO 4 ──────►│ Gate        │
+ESP32 GPIO 4 ──────►│ Gate Pin (1)│
 (3.3V PWM)          │  IRLZ34N    │
                     │  MOSFET     │
                     │             │
-12V PSU (+) ────────┤ Drain       │
+12V PSU (+) ────────┤Drain Pin (2)│
                     │             │
-                    │ Source      ├─────► IR LED Strip (+)
+                    │Source Pin (3)     ├─────► IR LED Strip (+)
                     └─────────────┘
                                         IR LED Strip (-) ──► GND
 
@@ -230,13 +233,13 @@ Note: Add current-limiting resistor if using individual LEDs
 **White LED Circuit:**
 ```
                     ┌─────────────┐
-ESP32 GPIO 15 ─────►│ Gate        │
+ESP32 GPIO 15 ─────►│ Gate Pin (1) 
 (3.3V PWM)          │  IRLZ34N    │
                     │  MOSFET     │
                     │             │
-24V PSU (+) ────────┤ Drain       │
+24V PSU (+) ────────┤ Drain Pin (2)       │
                     │             │
-                    │ Source      ├─────► White LED Strip (+)
+                    │ Source Pin (3)     ├─────► White LED Strip (+)
                     └─────────────┘
                                         White LED Strip (-) ──► GND
 
