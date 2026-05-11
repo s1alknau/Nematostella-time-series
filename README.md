@@ -153,8 +153,9 @@ Optional dependencies:
 5. **Connectors, Wiring, Screw kit**
    - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor) https://www.amazon.de/dp/B0CDPC692C?ref=ppx_yo2ov_dt_b_fed_asin_title
    - Wire: 18-22 AWG for signal, 16-18 AWG for power
-   - Tool-free connection, reusable
+   - Resistor 220 https://www.amazon.de/Elegoo-Widerst%C3%A4nde-Sortiment-St%C3%BCck-Metallfilm/dp/B072BHDBDG/ref=asc_df_B072BHDBDG?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312989902&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=192097&hvtargid=pla-4584413786304525&psc=1&msclkid=bc9a95dd8148109d2d6dffdc21218251
    - Magnets https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1
+   - Connector whitelight LED https://www.amazon.de/dp/B0BJKC6WQJ?ref=ppx_yo2ov_dt_b_fed_asin_title
    - Screw Kit incl hex keys 
    https://www.amazon.de/dp/B0CZSW8S66/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0CZSW8S66&pd_rd_w=sepag&content-id=amzn1.sym.bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_p=bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_r=DCAXTTNQE08Z865MHAFS&pd_rd_wg=3wRol&pd_rd_r=6337fa24-4ceb-478e-8c50-316aa9eb6b8d&aref=1O1nyuJ2mQ&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw
 
@@ -420,14 +421,14 @@ White LED Strip (-) → Common Ground (WAGO #3)
 **MOSFET Wiring:**
 
 IR IRLZ34N MOSFET:
-- Gate  → ESP32 GPIO 4 (direct wire, no WAGO)
-- Drain → 12V PSU (+) via WAGO #1
-- Source → Common Ground (WAGO #3)
+- Gate (Pin 1)  → ESP32 GPIO 4 (direct wire, no WAGO)
+- Drain (Pin 2) → 12V PSU (+) via WAGO #1
+- Source (Pin 3) → Common Ground (WAGO #3)
 
 White IRLZ34N MOSFET:
-- Gate  → ESP32 GPIO 15 (direct wire, no WAGO)
-- Drain → 24V PSU (+) via WAGO #2
-- Source → Common Ground (WAGO #3)
+- Gate (Pin 1)  → ESP32 GPIO 15 (direct wire, no WAGO)
+- Drain (Pin 2) → 24V PSU (+) via WAGO #2
+- Source (Pin 3) → Common Ground (WAGO #3)
 
 **Assembly Steps:**
 
@@ -540,34 +541,7 @@ White IRLZ34N MOSFET:
 #### Complete Pinout Reference
 
 ```
-╔══════════════════════════════════════════════════════════════╗
-║                    ESP32 DevKit Pinout                       ║
-╠══════════════════════════════════════════════════════════════╣
-║                                                              ║
-║  3.3V  ─────────────────────┬─────────────┐                 ║
-║                             │             │                 ║
-║                         DHT22 VCC    10kΩ Pull-up           ║
-║                                            │                 ║
-║  GPIO 14 ───────────────────┴──────────────┤                ║
-║                                            │                 ║
-║                                       DHT22 Data             ║
-║                                                              ║
-║  GPIO 4  ─────────────────── IRLZ34N Gate (IR MOSFET)       ║
-║                                      │                       ║
-║                                      └──→ IR LED Strip      ║
-║                                                              ║
-║  GPIO 15 ─────────────────── IRLZ34N Gate (White MOSFET)    ║
-║                                      │                       ║
-║                                      └──→ White LED Strip   ║
-║                                                              ║
-║  GND ────────────────────────┬───────┬─────────┬────────    ║
-║                              │       │         │            ║
-║                          DHT22    IR LED   White LED        ║
-║                           GND      GND       GND            ║
-║                                                              ║
-║  USB ────────────────────── Computer (Serial 115200 baud)   ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝
+
 ```
 
 #### Power Requirements
