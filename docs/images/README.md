@@ -117,10 +117,10 @@ The main README.md already references these images, so once you add them here, t
 
 ## Current Status
 
-- [ ] system_complete.jpg
-- [ ] esp32_assembly.jpg
-- [ ] led_setup.jpg
-- [ ] sample_chamber.jpg
-- [ ] wiring_overview.jpg
+- [x] system_complete.jpg
+- [x] esp32_assembly.jpg
+- [x] led_setup.jpg
+- [x] sample_chamber.jpg
+- [x] wiring_overview.jpg
 
 Check off items as you add them!
