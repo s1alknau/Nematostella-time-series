@@ -498,41 +498,25 @@ White IRLZ34N MOSFET:
 
 ### Device Photos
 
-**Add your setup photos here to help others replicate the hardware configuration.**
+#### Complete System Overview
 
-#### Complete System
+![Overview of all components](docs/images/Overview_all_components.jpg)
 
-![Complete Nematostella Timelapse System](docs/images/system_complete.jpg)
-*Full system showing ESP32, LED array, camera, and sample chamber*
+#### Imager Body and Mirror
 
-#### ESP32 Controller Assembly
+![Imager body with mirror](docs/images/Imager_body_Mirror.jpg)
 
-![ESP32 with DHT22 and LED connections](docs/images/esp32_assembly.jpg)
-*ESP32 DevKit with DHT22 sensor and LED driver connections*
+#### Camera Rail Guide
 
-#### LED Illumination Setup
+![Camera rail guide](docs/images/Kamera_Railguide.jpg)
 
-![IR and White LED positioning](docs/images/led_setup.jpg)
-*Dual-LED array showing IR (850nm) and White LED positioning around sample chamber*
+#### Sample Mount with White Light Lid
 
-#### Sample Chamber Detail
+![Sample mount with white light lid](docs/images/Sample_Mount_White_Light_Lid.jpg)
 
-![Sample chamber with Nematostella](docs/images/sample_chamber.jpg)
-*Sample chamber showing Nematostella positioning and illumination*
+#### White Light Lid — Oblique Illumination
 
-#### Wiring Overview
-
-![Complete wiring diagram](docs/images/wiring_overview.jpg)
-*Overview of all connections: ESP32, LEDs, sensor, and camera*
-
-**Note:** *Photo placeholders above - replace with actual images of your setup. Recommended image directory: `docs/images/`*
-
-**Photo Guidelines:**
-- Use high-resolution images (1920x1080 or higher)
-- Include labels or annotations for key components
-- Show multiple angles for complex assemblies
-- Include close-ups of critical connections (DHT22, LED drivers)
-- Consider adding a scale reference (e.g., ruler) in photos
+![White light lid oblique illumination](docs/images/white_Light_lid_oblique_illumination.jpg)
 
 ---
 
