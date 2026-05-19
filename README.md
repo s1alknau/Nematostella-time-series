@@ -1,4 +1,4 @@
-<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/3fb8c1ca-1afa-445f-ad86-12ac70d5d849" /># Nematostella Timelapse Capture Plugin
+
 
 [![License MIT](https://img.shields.io/pypi/l/nematostella-time-series.svg?color=green)](https://github.com/s1alknau/nematostella-time-series/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/nematostella-time-series.svg?color=green)](https://pypi.org/project/nematostella-time-series)
@@ -250,7 +250,7 @@ ESP32 GPIO 15 ─────►│ Gate Pin (1)
 
 Note: White LED uses 24V power supply (different from 12V IR LED)
 ```
-<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/b7d66513-b996-49a3-afcb-03abee8a9102" />
+
 <img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/5c80ecc5-f3e1-4717-8a15-862930296dbf" />
 <img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/6766c63b-32fb-47f6-8405-4432e6df24f1" />
 
