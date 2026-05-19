@@ -1,4 +1,4 @@
-# Nematostella Timelapse Capture Plugin
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/3fb8c1ca-1afa-445f-ad86-12ac70d5d849" /># Nematostella Timelapse Capture Plugin
 
 [![License MIT](https://img.shields.io/pypi/l/nematostella-time-series.svg?color=green)](https://github.com/s1alknau/nematostella-time-series/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/nematostella-time-series.svg?color=green)](https://pypi.org/project/nematostella-time-series)
@@ -124,6 +124,7 @@ Optional dependencies:
    - Firmware: Custom firmware with LED control and sensor support
    - Firmware version: v2.2 or higher
    - GPIO Pins Used: GPIO 4 (IR LED), GPIO 15 (White LED), GPIO 14 (DHT22)
+   - https://www.amazon.de/AZDelivery-Development-Anschluss-kompatibel-inklusive/dp/B0D8WDDGC3/ref=asc_df_B0D8WDDGC3?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312995674&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=129578&hvtargid=pla-4584413787761197&msclkid=d051c43db7391f3541afae31cde17710&th=1
 
    **Option B: ESP32-S3-BOX-3 (Advanced)** ⭐ *New!*
    - Development board with integrated 2.4" touchscreen display
@@ -214,6 +215,10 @@ Optional dependencies:
 - Gate Threshold: 1-2V (logic-level, works with 3.3V from ESP32)
 - Package: TO-220
 
+
+
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/adb24b71-2206-48ab-bf18-08f5a98684d7" />
+
 **IR LED Circuit:**
 ```
                     ┌─────────────┐
@@ -245,14 +250,17 @@ ESP32 GPIO 15 ─────►│ Gate Pin (1)
 
 Note: White LED uses 24V power supply (different from 12V IR LED)
 ```
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/b7d66513-b996-49a3-afcb-03abee8a9102" />
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/5c80ecc5-f3e1-4717-8a15-862930296dbf" />
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/6766c63b-32fb-47f6-8405-4432e6df24f1" />
 
 **MOSFET Connection Details:**
-1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor (optional, for protection)
-2. **Drain Pin** → Power Supply (+) [12V for IR, 24V for White]
-3. **Source Pin** → Common Ground (WAGO #3)
+1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor 
+2. **Drain Pin** → LED Connection (-) [12V for IR, 24V for White]
+3. **Source Pin A/B 3** → Common Ground (WAGO #W2)
 4. **LED Connections:**
-   - IR LED: (+) from 12V PSU via WAGO #1, (-) to Common Ground
-   - White LED: (+) from 24V PSU via WAGO #2, (-) to Common Ground
+   - IR LED: (+) from 12V PSU via WAGO #W1
+   - White LED: (+) from 24V PSU via WAGO #W3, 
 
 **Important:**
 - IRLZ34N is **logic-level** compatible (works with 3.3V gate voltage)
