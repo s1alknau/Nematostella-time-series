@@ -152,7 +152,7 @@ Optional dependencies:
 
 5. **Connectors, Wiring, Screw kit**
    - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor) https://www.amazon.de/dp/B0CDPC692C?ref=ppx_yo2ov_dt_b_fed_asin_title
-   - Wire: 18-22 AWG for signal, 16-18 AWG for power
+   - Wire: PSU connector DC plug https://www.buyledstrip.com/de/55-mm-dc-buchse-weiblich.html
    - Resistor 220 https://www.amazon.de/Elegoo-Widerst%C3%A4nde-Sortiment-St%C3%BCck-Metallfilm/dp/B072BHDBDG/ref=asc_df_B072BHDBDG?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312989902&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=192097&hvtargid=pla-4584413786304525&psc=1&msclkid=bc9a95dd8148109d2d6dffdc21218251
    - Magnets https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1
    - Connector whitelight LED https://www.amazon.de/dp/B0BJKC6WQJ?ref=ppx_yo2ov_dt_b_fed_asin_title
