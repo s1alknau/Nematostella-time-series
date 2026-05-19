@@ -219,37 +219,7 @@ Optional dependencies:
 
 <img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/adb24b71-2206-48ab-bf18-08f5a98684d7" />
 
-**IR LED Circuit:**
-```
-                    ┌─────────────┐
-ESP32 GPIO 4 ──────►│ Gate Pin (1)│
-(3.3V PWM)          │  IRLZ34N    │
-                    │  MOSFET     │
-                    │             │
-12V PSU (+) ────────┤Drain Pin (2)│
-                    │             │
-                    │Source Pin (3)     ├─────► IR LED Strip (+)
-                    └─────────────┘
-                                        IR LED Strip (-) ──► GND
 
-Note: Add current-limiting resistor if using individual LEDs
-```
-
-**White LED Circuit:**
-```
-                    ┌─────────────┐
-ESP32 GPIO 15 ─────►│ Gate Pin (1) 
-(3.3V PWM)          │  IRLZ34N    │
-                    │  MOSFET     │
-                    │             │
-24V PSU (+) ────────┤ Drain Pin (2)       │
-                    │             │
-                    │ Source Pin (3)     ├─────► White LED Strip (+)
-                    └─────────────┘
-                                        White LED Strip (-) ──► GND
-
-Note: White LED uses 24V power supply (different from 12V IR LED)
-```
 
 <img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/5c80ecc5-f3e1-4717-8a15-862930296dbf" />
 <img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/6766c63b-32fb-47f6-8405-4432e6df24f1" />
@@ -260,7 +230,12 @@ Note: White LED uses 24V power supply (different from 12V IR LED)
 3. **Source Pin A/B 3** → Common Ground (WAGO #W2)
 4. **LED Connections:**
    - IR LED: (+) from 12V PSU via WAGO #W1
-   - White LED: (+) from 24V PSU via WAGO #W3, 
+   - White LED: (+) from 24V PSU via WAGO #W3,
+5. DHT22
+   - GND Connected to common ground W2 or best direct to ESP32 GND
+   - VCC DHT connected to 3,3 V at ESP32
+   - Data Pin to Pin14
+
 
 **Important:**
 - IRLZ34N is **logic-level** compatible (works with 3.3V gate voltage)
@@ -270,24 +245,17 @@ Note: White LED uses 24V power supply (different from 12V IR LED)
 
 **Safety Notes:**
 - ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
-- Use heatsink on MOSFET if driving >2A continuous
+- Use heatsink on MOSFET if driving >2A continuous (usually not the case)
 - Add flyback diode (1N4007) across LED if using inductive loads
 - Ensure common ground between ESP32, PSU, and MOSFETs
 - Use appropriate gauge wire for current loads
 
-#### Step 3: DHT22 Sensor Connection
 
-```
-DHT22 Sensor Board Pinout:
-Pin 1 (VCC)  → ESP32 3.3V
-Pin 2 (Data) → ESP32 GPIO 14
-Pin 3 (GND)  → ESP32 GND
-```
 
 **Important Notes:**
 - DHT22 sensor board has **integrated pull-up resistor** - no external resistor needed
 - Direct 3-wire connection to ESP32
-- Use short wires (<30cm) for reliable communication
+- Use short wires (<40cm) for reliable communication
 
 **Power Supply Note:**
 - DHT22 datasheet specifies 3.3-6V operating range (5V optimal)
@@ -313,197 +281,8 @@ Pin 3 (GND)  → ESP32 GND
 **Camera Positioning:**
 - Position camera to view sample chamber
 - Ensure LEDs illuminate sample area uniformly
-- Use IR-pass filter for IR-only imaging (optional)
 
-#### Step 5: Complete System Wiring with WAGO Connectors
 
-**System Overview:**
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│          COMPLETE SYSTEM WIRING (2 PSUs + USB Power)               │
-└─────────────────────────────────────────────────────────────────────┘
-
-Power Sources:
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  USB Cable   │     │   12V PSU    │     │   24V PSU    │
-│   (ESP32)    │     │  (IR LED)    │     │ (White LED)  │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │                    │                    │
-       │ USB                │ 12V+               │ 24V+
-       │                    │                    │
-       ▼                    ▼                    ▼
-   ┌────────┐          ┌─────────┐         ┌─────────┐
-   │ ESP32  │          │ WAGO #1 │         │ WAGO #2 │
-   │        │          │(IR 12V+)│         │(W 24V+) │
-   │ GPIO 4 ├──────┐   └────┬────┘         └────┬────┘
-   │ GPIO15 ├────┐ │     [1][2][3]           [1][2][3]
-   │ GPIO14 ◄─┐  │ │      │  │               │  │
-   │  3.3V──┬─┼──┼─┘   12V+│  │           24V+│  │
-   │  GND─┬─┼─┼──┘         │  │               │  │
-   │  GND─┼─┼─┘            │  │               │  │
-   └──┬───┼─┘              │  │               │  │
-      │   └──DHT22         │  │               │  │
-      │       VCC          │  │               │  │
-      │       Data         │  └──►IR LED(+)   │  └──►White LED(+)
-      │       GND          │      12V         │      24V
-      │                    │                  │
-      │           IR MOSFET│         White MOSFET
-      │           Gate◄─GPIO4       Gate◄─GPIO15
-      │           Drain◄─12V PSU(+) Drain◄─24V PSU(+)
-      │           Source─┐          Source─┐
-      │                  │                 │
-      ▼                  ▼                 ▼
-   ┌─────────────────────────────────────────────────────┐
-   │           WAGO #3 (Common Ground Hub)               │
-   │  [1] 12V PSU GND(-)  [2] 24V PSU GND(-)  [3] ESP32 GND│
-   │                                                      │
-   │  Additional wires connected:                        │
-   │  - IR MOSFET Source                                 │
-   │  - White MOSFET Source                              │
-   │  - IR LED Cathode (-) 12V                           │
-   │  - White LED Cathode (-) 24V                        │
-   └─────────────────────────────────────────────────────┘
-```
-
-**Key Points:**
-- **Power Sources**: USB (ESP32), 12V PSU (IR LED), 24V PSU (White LED)
-- DHT22 GND → ESP32 second GND pin (direct, NOT via WAGO #3)
-- **WAGO #1**: 12V+ distribution - [1]=12V PSU(+), [2]=IR LED(+)
-- **WAGO #2**: 24V+ distribution - [1]=24V PSU(+), [2]=White LED(+)
-- **WAGO #3 (Critical)**: Common ground hub connecting all power sources
-  - [1] 12V PSU GND (-)
-  - [2] 24V PSU GND (-)
-  - [3] ESP32 GND pin
-  - Plus: Both MOSFET Sources, both LED cathodes (-)
-- GPIO 4 → IR MOSFET Gate (direct wire)
-- GPIO 15 → White MOSFET Gate (direct wire)
-
-**WAGO Connector Usage:**
-
-**WAGO #1 - 12V IR LED Power Distribution**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #1                   │
-│   (IR LED 12V+ Circuit)             │
-├─────────────────────────────────────┤
-│ [1] 12V PSU (+)                     │
-│ [2] 12V IR LED Strip (+)            │
-│ [3] (unused or spare connection)    │
-└─────────────────────────────────────┘
-
-12V+ flows: 12V PSU → WAGO #1 [1] → IR LED+ [2]
-IR LED Strip (-) → Common Ground (WAGO #3)
-```
-
-**WAGO #2 - 24V White LED Power Distribution**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #2                   │
-│   (White LED 24V+ Circuit)          │
-├─────────────────────────────────────┤
-│ [1] 24V PSU (+)                     │
-│ [2] 24V White LED Strip (+)         │
-│ [3] (unused or spare connection)    │
-└─────────────────────────────────────┘
-
-24V+ flows: 24V PSU → WAGO #2 [1] → White LED+ [2]
-White LED Strip (-) → Common Ground (WAGO #3)
-```
-
-**WAGO #3 - Common Ground Hub**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #3                   │
-│   (Common Ground)                   │
-├─────────────────────────────────────┤
-│ [1] 12V PSU GND (-)                 │
-│ [2] 24V PSU GND (-)                 │
-│ [3] ESP32 GND                       │
-│                                     │
-│ Connected via additional wires:     │
-│ - IR MOSFET Source                  │
-│ - White MOSFET Source               │
-│ - IR LED Strip (-) 12V              │
-│ - White LED Strip (-) 24V           │
-└─────────────────────────────────────┘
-```
-**Critical:** This connector creates the common ground between **all power sources** (12V PSU, 24V PSU, ESP32 USB) and all components. Without this common ground, the MOSFETs cannot switch properly.
-
-**MOSFET Wiring:**
-
-IR IRLZ34N MOSFET:
-- Gate (Pin 1)  → ESP32 GPIO 4 (direct wire, no WAGO)
-- Drain (Pin 2) → 12V PSU (+) via WAGO #1
-- Source (Pin 3) → Common Ground (WAGO #3)
-
-White IRLZ34N MOSFET:
-- Gate (Pin 1)  → ESP32 GPIO 15 (direct wire, no WAGO)
-- Drain (Pin 2) → 24V PSU (+) via WAGO #2
-- Source (Pin 3) → Common Ground (WAGO #3)
-
-**Assembly Steps:**
-
-1. **Mount Components:**
-   - ESP32 in accessible location for USB connection
-   - 2x IRLZ34N MOSFETs (can use heatsinks if needed)
-   - LEDs positioned for optimal sample illumination
-   - DHT22 sensor near sample chamber for accurate readings
-   - Camera mounted with stable positioning
-
-2. **Connect WAGO #1 (12V IR LED Power):**
-   - Port [1]: 12V PSU (+) positive
-   - Port [2]: IR LED Strip (+) anode
-   - Port [3]: Spare/unused
-   - IR MOSFET Drain → 12V PSU (+) directly or via WAGO #1
-
-3. **Connect WAGO #2 (24V White LED Power):**
-   - Port [1]: 24V PSU (+) positive
-   - Port [2]: White LED Strip (+) anode
-   - Port [3]: Spare/unused
-   - White MOSFET Drain → 24V PSU (+) directly or via WAGO #2
-
-4. **Connect WAGO #3 (Common Ground Hub):**
-   - Port [1]: 12V PSU GND (-)
-   - Port [2]: 24V PSU GND (-)
-   - Port [3]: ESP32 GND pin
-   - Additional wires to WAGO #3 (all grounds go here):
-     - IR MOSFET Source pin
-     - White MOSFET Source pin
-     - IR LED Strip (-) cathode
-     - White LED Strip (-) cathode
-
-5. **Connect MOSFETs:**
-   - IR MOSFET: Gate → ESP32 GPIO 4, Drain → 12V+, Source → GND (WAGO #3)
-   - White MOSFET: Gate → ESP32 GPIO 15, Drain → 24V+, Source → GND (WAGO #3)
-
-5. **Connect DHT22 Sensor:**
-   - DHT22 VCC → ESP32 3.3V (direct connection)
-   - DHT22 Data → ESP32 GPIO 14 (direct connection)
-   - DHT22 GND → ESP32 second GND pin (direct connection, NOT via WAGO)
-
-6. **Connect Power Sources:**
-   - ESP32: USB cable to computer
-   - 12V PSU: Connect mains power (ensure correct voltage!)
-   - 24V PSU: Connect mains power (ensure correct voltage!)
-   - **Critical:** Verify common ground (WAGO #1) is connected before powering on
-
-7. **Cable Management:**
-   - Keep signal cables (PWM, DHT22) away from power cables
-   - Use shielded cables for long runs
-   - Secure all connections to prevent accidental disconnection
-   - Use cable ties to organize wiring
-
-8. **Initial Testing:**
-   ```bash
-   # Test ESP32 connection
-   python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic
-
-   # Verify LED control
-   # In napari plugin: LED Control tab → Test IR/White LEDs
-
-   # Check sensor readings
-   # In napari plugin: Status tab → View temperature/humidity
-   ```
 
 ---
 
