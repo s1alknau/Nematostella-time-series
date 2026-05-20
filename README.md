@@ -217,11 +217,7 @@ Optional dependencies:
 
 
 
-<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/adb24b71-2206-48ab-bf18-08f5a98684d7" />
 
-
-
-<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/5c80ecc5-f3e1-4717-8a15-862930296dbf" />
 <img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/6766c63b-32fb-47f6-8405-4432e6df24f1" />
 
 **MOSFET Connection Details:**
