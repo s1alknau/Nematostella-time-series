@@ -162,10 +162,11 @@ Optional dependencies:
    - Screw Kit incl hex keys 
    https://www.amazon.de/dp/B0CZSW8S66/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0CZSW8S66&pd_rd_w=sepag&content-id=amzn1.sym.bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_p=bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_r=DCAXTTNQE08Z865MHAFS&pd_rd_wg=3wRol&pd_rd_r=6337fa24-4ceb-478e-8c50-316aa9eb6b8d&aref=1O1nyuJ2mQ&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw
    
-
 6. **Camera**
    - Hik Robotics MV-CS-013 60GN Near Infrared Request at  UC2 company https://openuc2.com/imprint/ or https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254
    - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
+  
+7. 3D Printed Components from Print section
 
 ---
 
