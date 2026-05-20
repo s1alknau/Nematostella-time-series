@@ -446,7 +446,8 @@ In napari:
 
 ### Component Hierarchy
 
-<img width="1384" height="1185" alt="image" src="https://github.com/user-attachments/assets/d930aa51-e2c5-42c7-897e-c77edee7d008" />
+<img width="715" height="595" alt="AdobeExpressPhotos_02f43629ad0644b1bb715cf363688806_CopyEdited" src="https://github.com/user-attachments/assets/8a1d89f4-7d10-430d-a4f3-4ff37531801a" />
+
 
 
 ### Key Components
@@ -474,7 +475,7 @@ In napari:
 **5. Data Manager** ([data_manager_hdf5.py](src/timeseries_capture/Datamanager/data_manager_hdf5.py))
 - HDF5 file creation and management
 - Chunked timeseries writing
-- Metadata organization
+
 
 ---
 
