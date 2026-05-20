@@ -217,8 +217,8 @@ Optional dependencies:
 
 
 
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/2b784ed2-0176-480f-b420-e1cafd119f22" />
 
-<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/6766c63b-32fb-47f6-8405-4432e6df24f1" />
 
 **MOSFET Connection Details:**
 1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor 
