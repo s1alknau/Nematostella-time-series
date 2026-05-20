@@ -166,7 +166,7 @@ Optional dependencies:
    - Hik Robotics MV-CS-013 60GN Near Infrared Request at  UC2 company https://openuc2.com/imprint/ or https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254
    - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
   
-7. 3D Printed Components from Print section
+7. 3D Printed Components from Print section in /docs directory
 
 ---
 
