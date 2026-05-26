@@ -1,4 +1,4 @@
-# Nematostella Timelapse Capture Plugin
+
 
 [![License MIT](https://img.shields.io/pypi/l/nematostella-time-series.svg?color=green)](https://github.com/s1alknau/nematostella-time-series/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/nematostella-time-series.svg?color=green)](https://pypi.org/project/nematostella-time-series)
@@ -124,6 +124,7 @@ Optional dependencies:
    - Firmware: Custom firmware with LED control and sensor support
    - Firmware version: v2.2 or higher
    - GPIO Pins Used: GPIO 4 (IR LED), GPIO 15 (White LED), GPIO 14 (DHT22)
+   - https://www.amazon.de/AZDelivery-Development-Anschluss-kompatibel-inklusive/dp/B0D8WDDGC3/ref=asc_df_B0D8WDDGC3?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312995674&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=129578&hvtargid=pla-4584413787761197&msclkid=d051c43db7391f3541afae31cde17710&th=1
 
    **Option B: ESP32-S3-BOX-3 (Advanced)** ⭐ *New!*
    - Development board with integrated 2.4" touchscreen display
@@ -134,8 +135,7 @@ Optional dependencies:
 
 2. **LED System**
    - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm) https://www.buyledstrip.com/de/led-streifen-2538-120-led-m-ir-850nm-je-50cm.html
-   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation)
-   - **MOSFET Drivers**: 2x BOJACK IRLZ34N (30A, 55V, Logic-Level N-Channel MOSFET)
+   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation) https://www.amazon.de/dp/B0CT3B7K1D?ref_=ppx_hzsearch_conn_dt_b_fed_asin_title_1&th=1
    - **Important**: IR and White LEDs use different voltages (12V vs 24V)
 
 3. **DHT22 Sensor**
@@ -152,16 +152,21 @@ Optional dependencies:
 
 5. **Connectors, Wiring, Screw kit**
    - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor) https://www.amazon.de/dp/B0CDPC692C?ref=ppx_yo2ov_dt_b_fed_asin_title
-   - Wire: 18-22 AWG for signal, 16-18 AWG for power
+   - Wire: PSU connector DC plug https://www.buyledstrip.com/de/55-mm-dc-buchse-weiblich.html
    - Resistor 220 https://www.amazon.de/Elegoo-Widerst%C3%A4nde-Sortiment-St%C3%BCck-Metallfilm/dp/B072BHDBDG/ref=asc_df_B072BHDBDG?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312989902&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=192097&hvtargid=pla-4584413786304525&psc=1&msclkid=bc9a95dd8148109d2d6dffdc21218251
    - Magnets https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1
    - Connector whitelight LED https://www.amazon.de/dp/B0BJKC6WQJ?ref=ppx_yo2ov_dt_b_fed_asin_title
+   - Wires and connectors https://www.amazon.de/dp/B0B67KW6BC/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0B67KW6BC&pd_rd_w=Egnt7&content-id=amzn1.sym.99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_p=99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_r=B64Y7SJKH0MZRHKKB5XT&pd_rd_wg=B3gIN&pd_rd_r=712c8eed-6bdc-40b7-bd24-77516c8be8b2&aref=HdgOtKuxpu&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfdGhlbWF0aWM
+   - Glue https://www.amazon.de/dp/B0C6R9G4ZW?ref=nb_sb_ss_w_as-reorder_k0_1_8&amp=&crid=120N5DRLM9J5Q&sprefix=sekunden&th=1
+   - Hot glue gun https://www.amazon.de/RUNSAI-Hei%C3%9Fklebepistole-Klebepistole-Heissklebepistole-Klebepistolen/dp/B0FDGNZRPR/ref=sr_1_1_sspa?crid=1KQDWKVF8YWCF&dib=eyJ2IjoiMSJ9.WZlV9v1vUcb8kqQbh1nrqbNu4aSP8eWGOkJxBPx6pXaAq7WXuAwLiezS78mWRTujvlHkTBL7daUXeIjiXTyrWOddOLODKQmPlYpNsZW_5ppicYUQAVtQPU3qPni3-aGMC9EJg0Z5Rr3E0u-s4F_PClmALPQEc06K_QtDoRUi7WPbBDrYqO8xBe0cQ7--uichxZmXpGWsJwvbnravJGdN2Vzj142In4-RfgijVjdK69s.oydV89Yx8W2dxGRQ-1TWMTVTyLjj2DO2uT7NrHdBrMg&dib_tag=se&keywords=hotglue%2Bgun%2B7mm&qid=1778514033&sprefix=hotglue%2Caps%2C114&sr=8-1-spons&aref=T1O09xDQ0T&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1
    - Screw Kit incl hex keys 
    https://www.amazon.de/dp/B0CZSW8S66/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0CZSW8S66&pd_rd_w=sepag&content-id=amzn1.sym.bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_p=bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_r=DCAXTTNQE08Z865MHAFS&pd_rd_wg=3wRol&pd_rd_r=6337fa24-4ceb-478e-8c50-316aa9eb6b8d&aref=1O1nyuJ2mQ&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw
-
+   
 6. **Camera**
    - Hik Robotics MV-CS-013 60GN Near Infrared Request at  UC2 company https://openuc2.com/imprint/ or https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254
    - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
+  
+7. 3D Printed Components from Print section in /docs directory
 
 ---
 
@@ -211,45 +216,23 @@ Optional dependencies:
 - Gate Threshold: 1-2V (logic-level, works with 3.3V from ESP32)
 - Package: TO-220
 
-**IR LED Circuit:**
-```
-                    ┌─────────────┐
-ESP32 GPIO 4 ──────►│ Gate        │
-(3.3V PWM)          │  IRLZ34N    │
-                    │  MOSFET     │
-                    │             │
-12V PSU (+) ────────┤ Drain       │
-                    │             │
-                    │ Source      ├─────► IR LED Strip (+)
-                    └─────────────┘
-                                        IR LED Strip (-) ──► GND
 
-Note: Add current-limiting resistor if using individual LEDs
-```
 
-**White LED Circuit:**
-```
-                    ┌─────────────┐
-ESP32 GPIO 15 ─────►│ Gate        │
-(3.3V PWM)          │  IRLZ34N    │
-                    │  MOSFET     │
-                    │             │
-24V PSU (+) ────────┤ Drain       │
-                    │             │
-                    │ Source      ├─────► White LED Strip (+)
-                    └─────────────┘
-                                        White LED Strip (-) ──► GND
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/2b784ed2-0176-480f-b420-e1cafd119f22" />
 
-Note: White LED uses 24V power supply (different from 12V IR LED)
-```
 
 **MOSFET Connection Details:**
-1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor (optional, for protection)
-2. **Drain Pin** → Power Supply (+) [12V for IR, 24V for White]
-3. **Source Pin** → Common Ground (WAGO #3)
+1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor 
+2. **Drain Pin** → LED Connection (-) [12V for IR, 24V for White]
+3. **Source Pin A/B 3** → Common Ground (WAGO #W2)
 4. **LED Connections:**
-   - IR LED: (+) from 12V PSU via WAGO #1, (-) to Common Ground
-   - White LED: (+) from 24V PSU via WAGO #2, (-) to Common Ground
+   - IR LED: (+) from 12V PSU via WAGO #W1
+   - White LED: (+) from 24V PSU via WAGO #W3,
+5. DHT22
+   - GND Connected to common ground W2 or best direct to ESP32 GND
+   - VCC DHT connected to 3,3 V at ESP32
+   - Data Pin to Pin14
+
 
 **Important:**
 - IRLZ34N is **logic-level** compatible (works with 3.3V gate voltage)
@@ -259,24 +242,17 @@ Note: White LED uses 24V power supply (different from 12V IR LED)
 
 **Safety Notes:**
 - ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
-- Use heatsink on MOSFET if driving >2A continuous
+- Use heatsink on MOSFET if driving >2A continuous (usually not the case)
 - Add flyback diode (1N4007) across LED if using inductive loads
 - Ensure common ground between ESP32, PSU, and MOSFETs
 - Use appropriate gauge wire for current loads
 
-#### Step 3: DHT22 Sensor Connection
 
-```
-DHT22 Sensor Board Pinout:
-Pin 1 (VCC)  → ESP32 3.3V
-Pin 2 (Data) → ESP32 GPIO 14
-Pin 3 (GND)  → ESP32 GND
-```
 
 **Important Notes:**
 - DHT22 sensor board has **integrated pull-up resistor** - no external resistor needed
 - Direct 3-wire connection to ESP32
-- Use short wires (<30cm) for reliable communication
+- Use short wires (<40cm) for reliable communication
 
 **Power Supply Note:**
 - DHT22 datasheet specifies 3.3-6V operating range (5V optimal)
@@ -302,197 +278,8 @@ Pin 3 (GND)  → ESP32 GND
 **Camera Positioning:**
 - Position camera to view sample chamber
 - Ensure LEDs illuminate sample area uniformly
-- Use IR-pass filter for IR-only imaging (optional)
 
-#### Step 5: Complete System Wiring with WAGO Connectors
 
-**System Overview:**
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│          COMPLETE SYSTEM WIRING (2 PSUs + USB Power)               │
-└─────────────────────────────────────────────────────────────────────┘
-
-Power Sources:
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  USB Cable   │     │   12V PSU    │     │   24V PSU    │
-│   (ESP32)    │     │  (IR LED)    │     │ (White LED)  │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │                    │                    │
-       │ USB                │ 12V+               │ 24V+
-       │                    │                    │
-       ▼                    ▼                    ▼
-   ┌────────┐          ┌─────────┐         ┌─────────┐
-   │ ESP32  │          │ WAGO #1 │         │ WAGO #2 │
-   │        │          │(IR 12V+)│         │(W 24V+) │
-   │ GPIO 4 ├──────┐   └────┬────┘         └────┬────┘
-   │ GPIO15 ├────┐ │     [1][2][3]           [1][2][3]
-   │ GPIO14 ◄─┐  │ │      │  │               │  │
-   │  3.3V──┬─┼──┼─┘   12V+│  │           24V+│  │
-   │  GND─┬─┼─┼──┘         │  │               │  │
-   │  GND─┼─┼─┘            │  │               │  │
-   └──┬───┼─┘              │  │               │  │
-      │   └──DHT22         │  │               │  │
-      │       VCC          │  │               │  │
-      │       Data         │  └──►IR LED(+)   │  └──►White LED(+)
-      │       GND          │      12V         │      24V
-      │                    │                  │
-      │           IR MOSFET│         White MOSFET
-      │           Gate◄─GPIO4       Gate◄─GPIO15
-      │           Drain◄─12V PSU(+) Drain◄─24V PSU(+)
-      │           Source─┐          Source─┐
-      │                  │                 │
-      ▼                  ▼                 ▼
-   ┌─────────────────────────────────────────────────────┐
-   │           WAGO #3 (Common Ground Hub)               │
-   │  [1] 12V PSU GND(-)  [2] 24V PSU GND(-)  [3] ESP32 GND│
-   │                                                      │
-   │  Additional wires connected:                        │
-   │  - IR MOSFET Source                                 │
-   │  - White MOSFET Source                              │
-   │  - IR LED Cathode (-) 12V                           │
-   │  - White LED Cathode (-) 24V                        │
-   └─────────────────────────────────────────────────────┘
-```
-
-**Key Points:**
-- **Power Sources**: USB (ESP32), 12V PSU (IR LED), 24V PSU (White LED)
-- DHT22 GND → ESP32 second GND pin (direct, NOT via WAGO #3)
-- **WAGO #1**: 12V+ distribution - [1]=12V PSU(+), [2]=IR LED(+)
-- **WAGO #2**: 24V+ distribution - [1]=24V PSU(+), [2]=White LED(+)
-- **WAGO #3 (Critical)**: Common ground hub connecting all power sources
-  - [1] 12V PSU GND (-)
-  - [2] 24V PSU GND (-)
-  - [3] ESP32 GND pin
-  - Plus: Both MOSFET Sources, both LED cathodes (-)
-- GPIO 4 → IR MOSFET Gate (direct wire)
-- GPIO 15 → White MOSFET Gate (direct wire)
-
-**WAGO Connector Usage:**
-
-**WAGO #1 - 12V IR LED Power Distribution**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #1                   │
-│   (IR LED 12V+ Circuit)             │
-├─────────────────────────────────────┤
-│ [1] 12V PSU (+)                     │
-│ [2] 12V IR LED Strip (+)            │
-│ [3] (unused or spare connection)    │
-└─────────────────────────────────────┘
-
-12V+ flows: 12V PSU → WAGO #1 [1] → IR LED+ [2]
-IR LED Strip (-) → Common Ground (WAGO #3)
-```
-
-**WAGO #2 - 24V White LED Power Distribution**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #2                   │
-│   (White LED 24V+ Circuit)          │
-├─────────────────────────────────────┤
-│ [1] 24V PSU (+)                     │
-│ [2] 24V White LED Strip (+)         │
-│ [3] (unused or spare connection)    │
-└─────────────────────────────────────┘
-
-24V+ flows: 24V PSU → WAGO #2 [1] → White LED+ [2]
-White LED Strip (-) → Common Ground (WAGO #3)
-```
-
-**WAGO #3 - Common Ground Hub**
-```
-┌─────────────────────────────────────┐
-│   WAGO 221-413 #3                   │
-│   (Common Ground)                   │
-├─────────────────────────────────────┤
-│ [1] 12V PSU GND (-)                 │
-│ [2] 24V PSU GND (-)                 │
-│ [3] ESP32 GND                       │
-│                                     │
-│ Connected via additional wires:     │
-│ - IR MOSFET Source                  │
-│ - White MOSFET Source               │
-│ - IR LED Strip (-) 12V              │
-│ - White LED Strip (-) 24V           │
-└─────────────────────────────────────┘
-```
-**Critical:** This connector creates the common ground between **all power sources** (12V PSU, 24V PSU, ESP32 USB) and all components. Without this common ground, the MOSFETs cannot switch properly.
-
-**MOSFET Wiring:**
-
-IR IRLZ34N MOSFET:
-- Gate (Pin 1)  → ESP32 GPIO 4 (direct wire, no WAGO)
-- Drain (Pin 2) → 12V PSU (+) via WAGO #1
-- Source (Pin 3) → Common Ground (WAGO #3)
-
-White IRLZ34N MOSFET:
-- Gate (Pin 1)  → ESP32 GPIO 15 (direct wire, no WAGO)
-- Drain (Pin 2) → 24V PSU (+) via WAGO #2
-- Source (Pin 3) → Common Ground (WAGO #3)
-
-**Assembly Steps:**
-
-1. **Mount Components:**
-   - ESP32 in accessible location for USB connection
-   - 2x IRLZ34N MOSFETs (can use heatsinks if needed)
-   - LEDs positioned for optimal sample illumination
-   - DHT22 sensor near sample chamber for accurate readings
-   - Camera mounted with stable positioning
-
-2. **Connect WAGO #1 (12V IR LED Power):**
-   - Port [1]: 12V PSU (+) positive
-   - Port [2]: IR LED Strip (+) anode
-   - Port [3]: Spare/unused
-   - IR MOSFET Drain → 12V PSU (+) directly or via WAGO #1
-
-3. **Connect WAGO #2 (24V White LED Power):**
-   - Port [1]: 24V PSU (+) positive
-   - Port [2]: White LED Strip (+) anode
-   - Port [3]: Spare/unused
-   - White MOSFET Drain → 24V PSU (+) directly or via WAGO #2
-
-4. **Connect WAGO #3 (Common Ground Hub):**
-   - Port [1]: 12V PSU GND (-)
-   - Port [2]: 24V PSU GND (-)
-   - Port [3]: ESP32 GND pin
-   - Additional wires to WAGO #3 (all grounds go here):
-     - IR MOSFET Source pin
-     - White MOSFET Source pin
-     - IR LED Strip (-) cathode
-     - White LED Strip (-) cathode
-
-5. **Connect MOSFETs:**
-   - IR MOSFET: Gate → ESP32 GPIO 4, Drain → 12V+, Source → GND (WAGO #3)
-   - White MOSFET: Gate → ESP32 GPIO 15, Drain → 24V+, Source → GND (WAGO #3)
-
-5. **Connect DHT22 Sensor:**
-   - DHT22 VCC → ESP32 3.3V (direct connection)
-   - DHT22 Data → ESP32 GPIO 14 (direct connection)
-   - DHT22 GND → ESP32 second GND pin (direct connection, NOT via WAGO)
-
-6. **Connect Power Sources:**
-   - ESP32: USB cable to computer
-   - 12V PSU: Connect mains power (ensure correct voltage!)
-   - 24V PSU: Connect mains power (ensure correct voltage!)
-   - **Critical:** Verify common ground (WAGO #1) is connected before powering on
-
-7. **Cable Management:**
-   - Keep signal cables (PWM, DHT22) away from power cables
-   - Use shielded cables for long runs
-   - Secure all connections to prevent accidental disconnection
-   - Use cable ties to organize wiring
-
-8. **Initial Testing:**
-   ```bash
-   # Test ESP32 connection
-   python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic
-
-   # Verify LED control
-   # In napari plugin: LED Control tab → Test IR/White LEDs
-
-   # Check sensor readings
-   # In napari plugin: Status tab → View temperature/humidity
-   ```
 
 ---
 
@@ -656,42 +443,9 @@ In napari:
 
 ### Component Hierarchy
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   Main Widget (GUI)                     │
-├─────────────────────────────────────────────────────────┤
-│  ┌───────────────┐  ┌────────────────┐  ┌────────────┐ │
-│  │ Recording     │  │ ESP32 Control  │  │ Calibration│ │
-│  │ Panel         │  │ Panel          │  │ Panel      │ │
-│  └───────┬───────┘  └───────┬────────┘  └──────┬─────┘ │
-│          │                  │                   │       │
-└──────────┼──────────────────┼───────────────────┼───────┘
-           │                  │                   │
-           ▼                  ▼                   ▼
-    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │ Recording   │    │ ESP32 GUI   │    │ Calibration │
-    │ Controller  │◄───┤ Controller  │◄───┤ Service     │
-    └──────┬──────┘    └──────┬──────┘    └─────────────┘
-           │                  │
-           ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐
-    │ Recording   │    │    ESP32    │
-    │ Manager     │◄───┤ Controller  │
-    └──────┬──────┘    └──────┬──────┘
-           │                  │
-           ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐
-    │   Frame     │    │    ESP32    │
-    │  Capture    │◄───┤    Comm     │
-    └──────┬──────┘    └─────────────┘
-           │
-           ▼
-    ┌─────────────┐
-    │    Data     │
-    │  Manager    │
-    │   (HDF5)    │
-    └─────────────┘
-```
+<img width="715" height="595" alt="AdobeExpressPhotos_02f43629ad0644b1bb715cf363688806_CopyEdited" src="https://github.com/user-attachments/assets/8a1d89f4-7d10-430d-a4f3-4ff37531801a" />
+
+
 
 ### Key Components
 
@@ -718,7 +472,7 @@ In napari:
 **5. Data Manager** ([data_manager_hdf5.py](src/timeseries_capture/Datamanager/data_manager_hdf5.py))
 - HDF5 file creation and management
 - Chunked timeseries writing
-- Metadata organization
+
 
 ---
 
