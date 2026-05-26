@@ -241,9 +241,31 @@ class LiveAnalysisWorker(QThread):
             if n_diffs == 0:
                 return
 
+            # ----------------------------------------------------------------
+            # Apply per-illumination-period baseline equalization — identical
+            # to equalize_signal_per_illumination_period() in
+            # napari-hdf5-activity.  Without this the raw |dPixel| signal
+            # shows a large baseline step at every light/dark transition
+            # (brighter frames have more pixel noise -> higher diff floor),
+            # making the LD structure of schedule-designed recordings look
+            # like illumination artifacts instead of biological activity.
+            # Correction is a no-op when only a single phase is present
+            # (e.g. continuous IR-only recordings).
+            # ----------------------------------------------------------------
+            apply_correction = len(self._led_power_acc) == n_diffs + 1
+            if not apply_correction:
+                logger.debug(
+                    f"Skipping illumination correction: led_power_acc has "
+                    f"{len(self._led_power_acc)} entries, expected {n_diffs + 1}"
+                )
+
             results: dict = {}
             for i in range(len(self.masks)):
-                results[f"roi_{i}"] = self._roi_activity_raw[i]
+                raw = self._roi_activity_raw[i]
+                if apply_correction:
+                    results[f"roi_{i}"] = _apply_illumination_correction(raw, self._led_power_acc)
+                else:
+                    results[f"roi_{i}"] = raw
 
             # Timestamps aligned with diffs (N-1 values).
             # Attribute diff[i] = |frame[i+1]-frame[i]| to frame[i]'s timestamp so
