@@ -10,7 +10,7 @@ This folder contains custom 3D print files for the Nematostella imaging setup.
 | Component | Source |
 |-----------|--------|
 | ESP32 Case | [Thingiverse – thing:4667813](https://www.thingiverse.com/thing:4667813) |
-| Wago Case | [Thingiverse – thing:4667813](https://makerworld.com/de/models/555698-wago-221-3x3-junctionbox?from=search#profileId-474467) |
+| Wago Case | [Makerworld](https://makerworld.com/de/models/555698-wago-221-3x3-junctionbox?from=search#profileId-474467) |
 
 ## Parts
 
