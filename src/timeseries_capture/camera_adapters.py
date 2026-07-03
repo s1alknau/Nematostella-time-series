@@ -74,9 +74,18 @@ class CameraAdapter(ABC):
             if "parameters" in info and "exposure" in info["parameters"]:
                 # Exposure is typically in milliseconds
                 return float(info["parameters"]["exposure"])
-        except:
+        except Exception:
             pass
         return 10.0  # Default fallback
+
+    def disable_auto_settings(self) -> dict:
+        """
+        Disable auto-gain and auto-exposure before recording.
+
+        Returns dict with applied settings and their success status so the
+        caller can log what actually happened.
+        """
+        return {}  # base class: no-op, subclasses override
 
 
 # ============================================================================
@@ -100,16 +109,23 @@ class HikGigECameraAdapter(CameraAdapter):
         self.camera_manager = camera_manager
         self.detector_name = detector_name
         self._last_frame = None
+        self._consecutive_zero_frames = 0
+        self._zero_frame_reacq_threshold = (
+            5  # re-init acquisition after this many consecutive zero frames
+        )
 
         # Try to find detector automatically if not specified
         if not self.detector_name and self.camera_manager:
             try:
-                # Get first available detector
-                detectors = list(self.camera_manager._detectorManagers.keys())
+                # ImSwitch DetectorsManager exposes getAllDeviceNames(); fall back to _subManagers
+                if hasattr(self.camera_manager, "getAllDeviceNames"):
+                    detectors = self.camera_manager.getAllDeviceNames()
+                else:
+                    detectors = list(self.camera_manager._subManagers.keys())
                 if detectors:
                     self.detector_name = detectors[0]
                     logger.info(f"Auto-selected detector: {self.detector_name}")
-            except:
+            except Exception:
                 pass
 
         logger.info(f"HIK GigE Camera Adapter initialized (detector={self.detector_name})")
@@ -128,7 +144,7 @@ class HikGigECameraAdapter(CameraAdapter):
         try:
             # Get current frame from camera manager
             # This assumes the camera is already running in live mode
-            detector = self.camera_manager._detectorManagers[self.detector_name]
+            detector = self.camera_manager[self.detector_name]
 
             # Try to get latest frame
             frame = detector.getLatestFrame()
@@ -137,12 +153,31 @@ class HikGigECameraAdapter(CameraAdapter):
                 logger.warning("Got None frame from camera")
                 return self._last_frame  # Return last known good frame
 
-            # Store as last frame
-            self._last_frame = frame
-
             # Ensure correct format (uint16 for HIK)
             if frame.dtype != np.uint16:
                 frame = frame.astype(np.uint16)
+
+            # Detect zeroed frames — HIK SDK returns an array of zeros when the
+            # acquisition buffer enters an inconsistent state after extended operation.
+            # These pass the None check but have mean=0.0, causing brightness retries.
+            # After threshold consecutive zero frames, trigger a re-acquisition cycle.
+            if frame.max() == 0:
+                self._consecutive_zero_frames += 1
+                logger.warning(
+                    f"Zero frame from camera ({self._consecutive_zero_frames} consecutive)"
+                )
+                if self._consecutive_zero_frames >= self._zero_frame_reacq_threshold:
+                    logger.warning(
+                        "Attempting camera re-acquisition to recover from zero-frame state..."
+                    )
+                    self._restart_acquisition(detector)
+                    self._consecutive_zero_frames = 0
+                return None  # Let brightness retry handle it
+            else:
+                self._consecutive_zero_frames = 0
+
+            # Store as last good frame
+            self._last_frame = frame
 
             logger.debug(f"Frame captured: {frame.shape}, dtype={frame.dtype}")
 
@@ -151,6 +186,32 @@ class HikGigECameraAdapter(CameraAdapter):
         except Exception as e:
             logger.error(f"Failed to capture frame: {e}")
             return None
+
+    def _restart_acquisition(self, detector) -> None:
+        """
+        Recover from zero-frame state by flushing the HIK SDK buffer.
+
+        Tries flushBuffers() first (non-disruptive). Falls back to a full
+        stopAcquisition / startAcquisition cycle if flushBuffers is unavailable.
+        """
+        import time
+
+        try:
+            if hasattr(detector, "flushBuffers"):
+                detector.flushBuffers()
+                logger.info("Camera buffer flushed (flushBuffers)")
+                time.sleep(0.1)
+            elif hasattr(detector, "stopAcquisition") and hasattr(detector, "startAcquisition"):
+                detector.stopAcquisition()
+                logger.info("Camera acquisition stopped for buffer reset")
+                time.sleep(0.2)
+                detector.startAcquisition()
+                logger.info("Camera acquisition restarted — buffer reset complete")
+                time.sleep(0.2)
+            else:
+                logger.warning("No buffer reset method available on detector")
+        except Exception as e:
+            logger.warning(f"Camera buffer reset failed: {e}")
 
     def is_available(self) -> bool:
         """
@@ -166,12 +227,11 @@ class HikGigECameraAdapter(CameraAdapter):
             return False
 
         try:
-            # Check if detector exists
-            if self.detector_name not in self.camera_manager._detectorManagers:
-                return False
-
-            # Check if detector is ready
-            detector = self.camera_manager._detectorManagers[self.detector_name]
+            # Check if detector exists (DetectorsManager supports __getitem__ / getAllDeviceNames)
+            if hasattr(self.camera_manager, "getAllDeviceNames"):
+                if self.detector_name not in self.camera_manager.getAllDeviceNames():
+                    return False
+            detector = self.camera_manager[self.detector_name]
 
             # Simple check - detector should have getLatestFrame method
             return hasattr(detector, "getLatestFrame")
@@ -196,7 +256,7 @@ class HikGigECameraAdapter(CameraAdapter):
 
         if self.is_available():
             try:
-                detector = self.camera_manager._detectorManagers[self.detector_name]
+                detector = self.camera_manager[self.detector_name]
 
                 # Try to get shape from last frame
                 if self._last_frame is not None:
@@ -211,13 +271,75 @@ class HikGigECameraAdapter(CameraAdapter):
                             "exposure": detector.getParameter("exposure"),
                             "gain": detector.getParameter("gain"),
                         }
-                    except:
+                    except Exception:
                         pass
 
             except Exception as e:
                 logger.debug(f"Could not get detailed camera info: {e}")
 
         return info
+
+    def disable_auto_settings(self) -> dict:
+        """
+        Disable auto-gain and auto-exposure on the HIK camera.
+
+        Calls setParameter() with GenICam standard names for auto-gain (GainAuto)
+        and auto-exposure (ExposureAuto). Also reads current gain/exposure values
+        so the caller can log them.
+
+        Returns:
+            Dict with keys: gain_auto_off (bool), exposure_auto_off (bool),
+            current_gain (float|None), current_exposure (float|None)
+        """
+        result = {
+            "gain_auto_off": False,
+            "exposure_auto_off": False,
+            "current_gain": None,
+            "current_exposure": None,
+        }
+
+        if not self.is_available():
+            logger.warning("disable_auto_settings: camera not available")
+            return result
+
+        try:
+            detector = self.camera_manager[self.detector_name]
+
+            if not hasattr(detector, "setParameter"):
+                logger.warning("disable_auto_settings: detector has no setParameter()")
+                return result
+
+            # Disable auto-gain
+            try:
+                detector.setParameter("GainAuto", "Off")
+                result["gain_auto_off"] = True
+                logger.info("✅ GainAuto set to Off")
+            except Exception as e:
+                logger.warning(f"Could not disable GainAuto: {e}")
+
+            # Disable auto-exposure
+            try:
+                detector.setParameter("ExposureAuto", "Off")
+                result["exposure_auto_off"] = True
+                logger.info("✅ ExposureAuto set to Off")
+            except Exception as e:
+                logger.warning(f"Could not disable ExposureAuto: {e}")
+
+            # Read back current values for logging
+            if hasattr(detector, "getParameter"):
+                try:
+                    result["current_gain"] = float(detector.getParameter("gain"))
+                except Exception:
+                    pass
+                try:
+                    result["current_exposure"] = float(detector.getParameter("exposure"))
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"disable_auto_settings failed: {e}")
+
+        return result
 
 
 # ============================================================================
@@ -243,6 +365,13 @@ class NapariViewerCameraAdapter(CameraAdapter):
         self._last_frame = None
         self._cached_layer = None  # Cache the layer once found
         self._layer_search_count = 0  # Track search attempts
+
+        # Zero-frame detection: HIK SDK returns all-zero arrays when the
+        # acquisition buffer enters an inconsistent state after extended use.
+        # We detect this from the napari layer and trigger a buffer flush
+        # on the underlying ImSwitch detector.
+        self._consecutive_zero_frames = 0
+        self._zero_frame_reacq_threshold = 5
 
         logger.info(f"Napari Viewer Camera Adapter initialized (layer={layer_name})")
 
@@ -294,12 +423,30 @@ class NapariViewerCameraAdapter(CameraAdapter):
             # Make a copy to avoid issues with live updates
             frame = frame.copy()
 
+            # Detect all-zero frames — ImSwitch pushes these to the layer when
+            # the HIK SDK acquisition buffer enters an inconsistent state.
+            if frame.max() == 0:
+                self._consecutive_zero_frames += 1
+                logger.warning(
+                    f"Zero frame from napari layer ({self._consecutive_zero_frames} consecutive)"
+                )
+                if self._consecutive_zero_frames >= self._zero_frame_reacq_threshold:
+                    logger.warning(
+                        "Attempting camera buffer flush to recover from zero-frame state..."
+                    )
+                    self._flush_imswitch_camera()
+                    self._consecutive_zero_frames = 0
+                return None  # Let brightness retry handle it
+            else:
+                self._consecutive_zero_frames = 0
+
             # Store as last frame
             self._last_frame = frame
 
-            # Ensure correct format
-            if frame.dtype != np.uint16:
-                frame = frame.astype(np.uint16)
+            logger.debug(
+                f"Captured frame: dtype={frame.dtype}, shape={frame.shape}, "
+                f"min={frame.min()}, max={frame.max()}, mean={frame.mean():.1f}"
+            )
 
             return frame
 
@@ -307,6 +454,43 @@ class NapariViewerCameraAdapter(CameraAdapter):
             logger.error(f"Failed to capture frame from Napari: {e}")
             # Return last frame as fallback
             return self._last_frame
+
+    def _flush_imswitch_camera(self) -> None:
+        """
+        Find the ImSwitch DetectorsManager via gc scan and call flushBuffers()
+        on the current detector to recover from the HIK SDK zero-frame state.
+        Frame reading remains through the napari layer to avoid threading conflicts.
+        """
+        import time
+
+        try:
+            import gc
+
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if not names:
+                        continue
+                    detector = obj[names[0]]
+                    if hasattr(detector, "flushBuffers"):
+                        detector.flushBuffers()
+                        logger.info("Camera buffer flushed via ImSwitch DetectorsManager")
+                        time.sleep(0.1)
+                    elif hasattr(detector, "stopAcquisition") and hasattr(
+                        detector, "startAcquisition"
+                    ):
+                        detector.stopAcquisition()
+                        time.sleep(0.2)
+                        detector.startAcquisition()
+                        logger.info("Camera acquisition restarted via ImSwitch DetectorsManager")
+                        time.sleep(0.2)
+                    return
+        except Exception as e:
+            logger.warning(f"Camera buffer flush failed: {e}")
 
     def is_available(self) -> bool:
         """
@@ -358,10 +542,41 @@ class NapariViewerCameraAdapter(CameraAdapter):
                 try:
                     info["shape"] = layer.data.shape
                     info["dtype"] = str(layer.data.dtype)
-                except:
+                except Exception:
                     pass
 
         return info
+
+    def get_exposure_ms(self) -> float:
+        """
+        Read camera exposure from the ImSwitch DetectorsManager.
+
+        Uses the same gc-scan approach as _flush_imswitch_camera() to locate
+        the active ImSwitch detector and calls getParameter("exposure") on it.
+        ImSwitch returns exposure in milliseconds (as displayed in its UI).
+
+        Returns:
+            Exposure time in ms, or 10.0 if the detector cannot be reached.
+        """
+        try:
+            import gc
+
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if not names:
+                        continue
+                    detector = obj[names[0]]
+                    if hasattr(detector, "getParameter"):
+                        value = detector.getParameter("exposure")
+                        return float(value)
+        except Exception as e:
+            logger.debug(f"get_exposure_ms via gc scan failed: {e}")
+        return 10.0  # fallback
 
     def _get_camera_layer(self):
         """
@@ -377,7 +592,7 @@ class NapariViewerCameraAdapter(CameraAdapter):
                 else:
                     logger.warning("Cached layer no longer in viewer, searching again...")
                     self._cached_layer = None
-            except:
+            except Exception:
                 self._cached_layer = None
 
         if not self.viewer:

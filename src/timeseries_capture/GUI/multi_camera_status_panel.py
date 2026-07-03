@@ -6,26 +6,14 @@ Displays status of all cameras in multi-camera setup.
 
 import logging
 
-try:
-    from qtpy.QtCore import Qt
-    from qtpy.QtWidgets import (
-        QGroupBox,
-        QHBoxLayout,
-        QLabel,
-        QScrollArea,
-        QVBoxLayout,
-        QWidget,
-    )
-except Exception:
-    from PyQt5.QtCore import Qt
-    from PyQt5.QtWidgets import (
-        QGroupBox,
-        QHBoxLayout,
-        QLabel,
-        QScrollArea,
-        QVBoxLayout,
-        QWidget,
-    )
+from qtpy.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +88,7 @@ class CameraStatusWidget(QWidget):
                 frames = stats.get("captured_frames", 0)
                 total = stats.get("total_frames", 0)
 
-                self.progress_label.setText(
-                    f"{progress:.1f}% ({frames}/{total} frames)"
-                )
+                self.progress_label.setText(f"{progress:.1f}% ({frames}/{total} frames)")
         else:
             self.status_indicator.setStyleSheet("color: yellow; font-size: 16px;")
             self.status_label.setText("Connected")
@@ -232,14 +218,9 @@ class MultiCameraStatusPanel(QWidget):
 
 if __name__ == "__main__":
     import sys
-    import time
 
-    try:
-        from PyQt5.QtCore import QTimer
-        from PyQt5.QtWidgets import QApplication
-    except Exception:
-        from qtpy.QtCore import QTimer
-        from qtpy.QtWidgets import QApplication
+    from qtpy.QtCore import QTimer
+    from qtpy.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
 

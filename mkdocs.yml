@@ -1,0 +1,113 @@
+site_name: Nematostella Toolkit
+site_description: >-
+  Open-source napari toolkit for Nematostella vectensis: synchronized
+  timelapse recording (IR + White LED, ESP32) and automated activity /
+  circadian analysis.
+site_author: Alexander Knauss
+site_url: https://s1alknau.github.io/Nematostella-time-series/
+
+repo_name: s1alknau/Nematostella-time-series
+repo_url: https://github.com/s1alknau/Nematostella-time-series
+edit_uri: edit/Nematostella-time-series-IR/docs/
+
+# docs_dir defaults to "docs" — the existing folder is reused.
+# Static assets already there (installer.html, firmware/, images/, 3D_Druck/)
+# are copied into the built site verbatim, so the firmware installer keeps working.
+
+theme:
+  name: material
+  language: en
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Home: index.md
+  - Recording Plugin:
+      - Overview: recording.md
+      - Hardware & Assembly: hardware.md
+      - Hardware Photos: images/README.md
+      - 3D-Printed Parts: 3D_Druck/README.md
+      - Firmware Installer: installer.html
+      - ESP32-S3-BOX-3 (Alternative): ESP32-S3-BOX-3_CONFIGURATION.md
+      - Circadian Protocol: circadian.md
+      - Changelog: changelog.md
+  - Analysis Plugin:
+      - Overview: analysis/index.md
+      - User Guide: analysis/user-guide.md
+      - Circadian Analysis: analysis/circadian-analysis.md
+      - Extended Analysis: analysis/extended-analysis.md
+      - Performance: analysis/performance.md
+      - AVI Integration: analysis/avi-integration.md
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/s1alknau/Nematostella-time-series
+      name: Recording plugin on GitHub
+    - icon: fontawesome/brands/github
+      link: https://github.com/s1alknau/napari-hdf5-activity
+      name: Analysis plugin on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/nematostella-time-series
+      name: nematostella-time-series on PyPI

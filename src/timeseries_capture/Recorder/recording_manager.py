@@ -9,50 +9,52 @@ Verantwortlich für:
 """
 
 import logging
+import os
+import sys
 import threading
 import time
 from typing import Optional
 
+import numpy as np
+
 from ..Datamanager import DataManager
 from .frame_capture import FrameCaptureService
 from .phase_manager import PhaseManager
-from .recording_state import RecordingConfig, RecordingState
+from .recording_state import ExperimentSchedule, RecordingConfig, RecordingState
+from .schedule_manager import ScheduleManager
 
 # Qt Signals (optional)
 try:
     from qtpy.QtCore import QObject
     from qtpy.QtCore import Signal as pyqtSignal
-except:
-    try:
-        from PyQt5.QtCore import QObject, pyqtSignal
-    except:
+except ImportError:
 
-        class QObject:
-            pass
+    class QObject:  # type: ignore[no-redef]
+        pass
 
-        class _SignalShim:
-            def __init__(self, *_a, **_k):
-                self._subs = []
+    class _SignalShim:
+        def __init__(self, *_a, **_k):
+            self._subs = []
 
-            def connect(self, slot):
-                if callable(slot):
-                    self._subs.append(slot)
+        def connect(self, slot):
+            if callable(slot):
+                self._subs.append(slot)
 
-            def emit(self, *args, **kwargs):
-                for fn in list(self._subs):
-                    try:
-                        fn(*args, **kwargs)
-                    except:
-                        pass
+        def emit(self, *args, **kwargs):
+            for fn in list(self._subs):
+                try:
+                    fn(*args, **kwargs)
+                except Exception:
+                    pass
 
-            def disconnect(self, slot=None):
-                if slot is None:
-                    self._subs.clear()
-                else:
-                    self._subs = [f for f in self._subs if f is not slot]
+        def disconnect(self, slot=None):
+            if slot is None:
+                self._subs.clear()
+            else:
+                self._subs = [f for f in self._subs if f is not slot]
 
-        def pyqtSignal(*_a, **_k):
-            return _SignalShim()
+    def pyqtSignal(*_a, **_k):  # type: ignore[no-redef]
+        return _SignalShim()
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +82,7 @@ class RecordingManager(QObject):
     frame_captured = pyqtSignal(int, int)  # current_frame, total_frames
     progress_updated = pyqtSignal(float)  # progress_percent
     phase_changed = pyqtSignal(str, int)  # phase_name, cycle_number
+    segment_changed = pyqtSignal(int, str)  # segment_index, segment_label
 
     error_occurred = pyqtSignal(str)  # error_message
 
@@ -94,11 +97,25 @@ class RecordingManager(QObject):
         self.frame_capture = frame_capture_service
         self.state = RecordingState()
         self.phase_manager: Optional[PhaseManager] = None
-        self.data_manager: Optional[DataManager] = None
+        self.schedule_manager: Optional[ScheduleManager] = None  # optional multi-segment
+        self.data_manager: Optional[DataManager] = None  # also assigned DataManagerZarr at runtime
 
         # Recording thread
         self._recording_thread: Optional[threading.Thread] = None
         self._stop_requested = False
+
+        # Cumulative signed drift and last actual frame interval (read by get_status())
+        self._cumulative_drift_sec: float = 0.0
+        self._last_capture_time: float = float("nan")
+        self._last_actual_interval_sec: float = float("nan")
+
+        # Last successful frame, kept for placeholder fallback when a capture
+        # fails.  Replicating the previous frame (instead of zeros) means the
+        # frame-difference based activity analysis sees |last - last| = 0 at
+        # the failed slot rather than a huge spike — no false-positive
+        # activity peaks in napari-hdf5-activity.
+        self._last_good_frame: Optional[np.ndarray] = None
+        self._placeholder_frame_count: int = 0
 
         logger.info("RecordingManager initialized")
 
@@ -106,12 +123,18 @@ class RecordingManager(QObject):
     # RECORDING CONTROL
     # ========================================================================
 
-    def start_recording(self, config: RecordingConfig) -> bool:
+    def start_recording(
+        self,
+        config: RecordingConfig,
+        schedule: Optional[ExperimentSchedule] = None,
+    ) -> bool:
         """
         Startet Recording.
 
         Args:
-            config: Recording-Konfiguration
+            config:   Recording-Konfiguration (always required)
+            schedule: Optional ExperimentSchedule for multi-segment recordings.
+                      When provided, config should be schedule.to_recording_config().
 
         Returns:
             True wenn erfolgreich gestartet
@@ -126,19 +149,46 @@ class RecordingManager(QObject):
             # Setup components
             self.state.set_config(config)
 
-            # Setup Phase Manager
-            if config.phase_enabled:
-                self.phase_manager = PhaseManager(config)
-            else:
+            # Setup Schedule Manager (multi-segment) OR classic Phase Manager
+            if schedule is not None:
+                self.schedule_manager = ScheduleManager(
+                    schedule,
+                    on_segment_changed=self._on_segment_changed,
+                )
                 self.phase_manager = None
+                logger.info(f"Using ScheduleManager: {len(schedule.segments)} segment(s)")
+            else:
+                self.schedule_manager = None
+                # Setup Phase Manager
+                if config.phase_enabled:
+                    self.phase_manager = PhaseManager(config)
+                else:
+                    self.phase_manager = None
 
             # Setup Data Manager
             from ..Datamanager import TelemetryMode
 
-            self.data_manager = DataManager(telemetry_mode=TelemetryMode.STANDARD, chunk_size=512)
+            if getattr(config, "output_format", "hdf5") == "zarr":
+                from ..Datamanager.data_manager_zarr import DataManagerZarr
+                from ..Datamanager.data_manager_zarr import TelemetryMode as ZarrTelemetryMode
+
+                self.data_manager = DataManagerZarr(  # type: ignore[assignment]
+                    telemetry_mode=ZarrTelemetryMode.STANDARD,
+                    img_chunk_frames=50,
+                    ts_chunk_size=512,
+                    save_as_uint8=getattr(config, "save_as_uint8", False),
+                )
+                logger.info("Using Zarr data manager")
+            else:
+                self.data_manager = DataManager(
+                    telemetry_mode=TelemetryMode.STANDARD,
+                    chunk_size=512,
+                    save_as_uint8=getattr(config, "save_as_uint8", False),
+                )
+                logger.info("Using HDF5 data manager")
 
             # Create recording file
-            recording_file = self.data_manager.create_recording_file(
+            recording_file = self.data_manager.create_recording_file(  # type: ignore[union-attr]
                 output_dir=config.output_dir,
                 experiment_name=config.experiment_name,
                 timestamped=True,
@@ -148,7 +198,7 @@ class RecordingManager(QObject):
                 raise RuntimeError("Failed to create recording file")
 
             # Set recording configuration
-            self.data_manager.set_recording_config(
+            self.data_manager.set_recording_config(  # type: ignore[union-attr]
                 {
                     "duration_minutes": config.duration_min,
                     "interval_seconds": config.interval_sec,
@@ -168,31 +218,15 @@ class RecordingManager(QObject):
                 }
             )
 
-            # Setup Frame Capture timing
-            # Get actual camera exposure time from ImSwitch
-            try:
-                camera_exposure_ms = self.frame_capture.camera.get_exposure_ms()
-                logger.info(f"Using camera exposure time: {camera_exposure_ms:.1f} ms")
-            except Exception as e:
-                logger.warning(f"Could not get camera exposure, using default: {e}")
-                camera_exposure_ms = 10.0
-
+            # ================================================================
+            # Setup Frame Capture timing (preliminary — confirmed after AGC disable)
+            # ================================================================
+            stab_ms = 1000  # LED stabilization before capture (always 1000 ms)
             if config.phase_enabled:
-                # Use stabilization from phase config
-                stab_ms = 1000  # Default LED stabilization time
-                # For phase recording, use camera trigger latency (time to wait after LED on)
-                # This should be: LED stabilization - camera exposure
-                # But we'll use the configured latency value
                 exp_ms = config.camera_trigger_latency_ms
             else:
-                # No phase recording: use actual camera exposure time
-                stab_ms = 1000  # LED stabilization before capture
-                exp_ms = int(camera_exposure_ms)  # Use actual camera exposure
-
+                exp_ms = 10  # Temporary default; replaced after AGC disable below
             self.frame_capture.set_timing(stab_ms, exp_ms)
-            logger.info(
-                f"Frame capture timing set: {stab_ms}ms stabilization + {exp_ms}ms trigger latency"
-            )
 
             # ================================================================
             # CRITICAL: Reset LED state cache before recording
@@ -200,6 +234,11 @@ class RecordingManager(QObject):
             # This ensures Frame 0 starts fresh with proper LED configuration
             self.frame_capture.reset_led_state()
             logger.info("LED state cache reset for new recording")
+
+            # Reset phase tracking so the first frame always triggers a phase
+            # transition — ensuring set_white_continuous() is called even if
+            # this recording starts in the same phase the previous one ended in.
+            self._last_phase = None
 
             # ================================================================
             # Initialize LED powers for dual mode (CRITICAL FIX)
@@ -262,6 +301,95 @@ class RecordingManager(QObject):
 
             logger.info("=" * 60)
 
+            # ================================================================
+            # DISABLE AUTO-GAIN / AUTO-EXPOSURE before recording starts
+            # ================================================================
+            # Global pixel drift (seen as linear ramp in all ROIs) is caused by
+            # camera AGC slowly adjusting gain across the recording.  Force both
+            # GainAuto and ExposureAuto to Off so every frame uses the same
+            # fixed gain/exposure settings.
+            try:
+                agc_result = self.frame_capture.camera.disable_auto_settings()
+                if agc_result.get("gain_auto_off") or agc_result.get("exposure_auto_off"):
+                    logger.info(
+                        f"Camera auto settings disabled: GainAuto={agc_result['gain_auto_off']}, "
+                        f"ExposureAuto={agc_result['exposure_auto_off']} | "
+                        f"gain={agc_result['current_gain']}, exposure_ms={agc_result['current_exposure']}"
+                    )
+                else:
+                    logger.warning(
+                        "⚠️  Could not disable camera auto settings "
+                        "(no-op on dummy/napari adapter or setParameter not available)"
+                    )
+            except Exception as e:
+                logger.warning(f"disable_auto_settings call failed: {e}")
+
+            # ================================================================
+            # RE-READ camera exposure from ImSwitch AFTER AGC is frozen
+            # ================================================================
+            # Reading before disable_auto_settings() may return an AGC-adjusted
+            # value; reading here returns the exposure actually used during recording.
+            try:
+                camera_exposure_ms = self.frame_capture.camera.get_exposure_ms()
+                logger.info(f"Camera exposure (from ImSwitch): {camera_exposure_ms:.1f} ms")
+                exp_ms = max(1, int(round(camera_exposure_ms)))
+                self.frame_capture.set_timing(stab_ms, exp_ms)
+            except Exception as e:
+                logger.warning(f"Could not read camera exposure from ImSwitch: {e}")
+                camera_exposure_ms = float(exp_ms)
+            logger.info(f"Frame capture timing: {stab_ms} ms stabilization + {exp_ms} ms exposure")
+
+            # ================================================================
+            # Sanity check: interval must exceed minimum capture-cycle duration
+            # ================================================================
+            # Capture cycle = effective stabilization (max of stab_ms and 2×exp)
+            #                 + 2 × buffer-flush waits (max of 50 ms and 1.5×exp)
+            #                 + camera readout (~exp_ms)
+            #                 + LED off + overhead (~100 ms).
+            # If interval_sec < this floor, frames cannot keep up and the actual
+            # interval will exceed the requested one (no drift, but a stretched cadence).
+            effective_stab_ms = max(stab_ms, 2 * exp_ms)
+            flush_wait_ms = max(50, int(exp_ms * 1.5))
+            min_capture_cycle_sec = (effective_stab_ms + 2 * flush_wait_ms + exp_ms + 100) / 1000.0
+            if config.interval_sec < min_capture_cycle_sec:
+                logger.warning(
+                    f"⚠️ interval_sec={config.interval_sec:.2f}s is shorter than the minimum "
+                    f"capture-cycle duration (~{min_capture_cycle_sec:.2f}s for exposure={exp_ms}ms). "
+                    f"Frames will be captured back-to-back and the actual interval will be "
+                    f"≈{min_capture_cycle_sec:.2f}s instead of the requested value."
+                )
+            else:
+                logger.info(
+                    f"✅ Timing budget OK: interval={config.interval_sec:.2f}s, "
+                    f"min cycle={min_capture_cycle_sec:.2f}s, headroom="
+                    f"{config.interval_sec - min_capture_cycle_sec:.2f}s"
+                )
+
+            # ================================================================
+            # Initial sensor query before recording starts
+            # ================================================================
+            # Force the counter so query_sensors_if_needed() always fires here,
+            # even if the previous recording ended mid-cycle.
+            if self.frame_capture:
+                self.frame_capture.reset_led_state()
+                logger.info("Querying initial sensor values...")
+                self.frame_capture.query_sensors_if_needed()
+                logger.info("Initial sensor query complete")
+
+            # ================================================================
+            # Set process priority to HIGH for stable timing
+            # ================================================================
+            self._set_high_priority()
+
+            # Reset cumulative drift and interval tracker for new recording
+            self._cumulative_drift_sec = 0.0
+            self._last_capture_time = float("nan")
+            self._last_actual_interval_sec = float("nan")
+
+            # Reset placeholder-frame reference (will be set on first success)
+            self._last_good_frame = None
+            self._placeholder_frame_count = 0
+
             # Start recording state
             self.state.start_recording()
 
@@ -271,11 +399,13 @@ class RecordingManager(QObject):
             # The Data Manager's recording_start_time was set earlier during
             # create_recording_file(), but we need it to match the actual
             # recording start time for proper timestamp calculation
-            self.data_manager.recording_start_time = self.state.start_time
+            self.data_manager.recording_start_time = self.state.start_time  # type: ignore[union-attr]
             logger.info(f"Data Manager start time synchronized: {self.state.start_time:.3f}")
 
-            # Start phase recording
-            if self.phase_manager:
+            # Start phase/schedule recording
+            if self.schedule_manager:
+                self.schedule_manager.start_phase_recording()
+            elif self.phase_manager:
                 self.phase_manager.start_phase_recording()
 
             # Start recording thread
@@ -383,8 +513,8 @@ class RecordingManager(QObject):
                 if self._stop_requested or self.state.is_paused():
                     continue
 
-                # Capture frame
-                self._capture_single_frame()
+                # Capture frame — pass deadline so per-frame drift can be recorded
+                self._capture_single_frame(deadline=next_frame_deadline)
 
                 # Query sensors BETWEEN frame captures (not during capture)
                 # This prevents timing interference with frame capture
@@ -403,7 +533,7 @@ class RecordingManager(QObject):
             self.error_occurred.emit(f"Recording error: {e}")
             self._finalize_recording()
 
-    def _capture_single_frame(self):
+    def _capture_single_frame(self, deadline: float = 0.0):
         """Captured ein einzelnes Frame"""
         try:
             # Check if this is the last frame BEFORE phase transition
@@ -416,11 +546,11 @@ class RecordingManager(QObject):
             led_type = "ir"
             dual_mode = False
 
-            if self.phase_manager and self.phase_manager.is_enabled():
+            # Use ScheduleManager when a schedule is active, else classic PhaseManager
+            active_manager = self.schedule_manager or self.phase_manager
+            if active_manager and active_manager.is_enabled():
                 # Get phase info, but prevent transition if this is the last frame
-                phase_info = self.phase_manager.get_current_phase_info(
-                    prevent_transition=is_last_frame
-                )
+                phase_info = active_manager.get_current_phase_info(prevent_transition=is_last_frame)
 
                 if phase_info:
                     led_type = phase_info.led_type
@@ -462,9 +592,9 @@ class RecordingManager(QObject):
 
             frame_number = self.state.current_frame + 1
             max_capture_retries = 3
-            brightness_threshold = (
-                self.state.config.brightness_validation_threshold
-            )  # Adaptive threshold
+            config = self.state.config
+            assert config is not None  # guaranteed: recording is active
+            brightness_threshold = config.brightness_validation_threshold
 
             logger.debug(
                 f"Capturing frame {frame_number}/{self.state.total_frames} (LED: {led_type}, dual_mode: {dual_mode})"
@@ -475,76 +605,130 @@ class RecordingManager(QObject):
                 )
 
             frame = None
-            metadata = None
+            metadata: dict = {}
 
-            for retry_attempt in range(max_capture_retries):
-                # Attempt frame capture
-                frame, metadata = self.frame_capture.capture_with_retry(
-                    led_type=led_type, dual_mode=dual_mode, max_retries=3
-                )
+            import numpy as np
 
-                if frame is None:
-                    logger.error("Frame capture failed")
-                    self.error_occurred.emit("Frame capture failed")
+            def _normalize_to_255(arr: np.ndarray) -> float:
+                mean = float(np.mean(arr))
+                if arr.dtype.kind == "u":
+                    return mean * 255.0 / float(np.iinfo(arr.dtype).max)
+                elif arr.dtype.kind == "f":
+                    return mean * 255.0
+                return mean
+
+            def _frame_mean(f: np.ndarray) -> float:
+                if config.use_full_frame_for_validation:
+                    return _normalize_to_255(f)
+                h, w = f.shape[:2]
+                roi_frac = config.roi_fraction
+                center_h, center_w = h // 2, w // 2
+                roi_h, roi_w = int(h * roi_frac), int(w * roi_frac)
+                roi_y1 = center_h - roi_h // 2
+                roi_x1 = center_w - roi_w // 2
+                return _normalize_to_255(f[roi_y1 : roi_y1 + roi_h, roi_x1 : roi_x1 + roi_w])
+
+            # One full LED pulse to capture the frame (includes 1 s stabilization).
+            # capture_with_retry handles camera-level failures (None returns).
+            frame, metadata = self.frame_capture.capture_with_retry(
+                led_type=led_type, dual_mode=dual_mode, max_retries=3
+            )
+            if metadata is None:
+                metadata = {}
+
+            # ----------------------------------------------------------------
+            # Capture failure → replicate the last good frame as placeholder.
+            # Replicating (not zeros) is critical so that frame-difference
+            # based activity analysis sees |last - last| = 0 at this slot
+            # instead of a giant spike against a zero-filled frame.
+            # napari-hdf5-activity does not handle index gaps, so we MUST
+            # produce something at this index.
+            # ----------------------------------------------------------------
+            if frame is None:
+                if self._last_good_frame is not None:
+                    logger.error(
+                        f"❌ Frame {frame_number} capture failed — "
+                        f"replicating last good frame as placeholder"
+                    )
+                    self.error_occurred.emit(
+                        f"Frame {frame_number} capture failed (placeholder written)"
+                    )
+                    # AsyncWriter.enqueue() copies the array, so passing the
+                    # cached frame directly is safe — no double-copy needed.
+                    frame = self._last_good_frame
+                    metadata["capture_method"] = "capture_failed_placeholder_replicated"
+                    metadata["success"] = False
+                    self._placeholder_frame_count += 1
+                else:
+                    # First-ever capture failed — no reference frame yet.
+                    # We MUST advance the counter so the next deadline is not
+                    # the same one we just missed (would tight-loop).  This is
+                    # the only path that can introduce an index gap; logged
+                    # explicitly so it's visible in postprocessing.
+                    logger.error(
+                        f"❌ Frame {frame_number} capture failed and no reference frame yet — "
+                        f"skipping (frame index will be missing)"
+                    )
+                    self.error_occurred.emit(
+                        f"Frame {frame_number} capture failed (no placeholder possible)"
+                    )
+                    self.state.increment_frame()
                     return
 
-                # Validate frame brightness (using same ROI as calibration)
-                import numpy as np
-
-                # Calculate mean intensity using same method as calibration
-                if self.state.config.use_full_frame_for_validation:
-                    # Use entire frame
-                    frame_mean = float(np.mean(frame))
-                else:
-                    # Use center ROI (same as calibration)
-                    h, w = frame.shape[:2]
-                    roi_frac = self.state.config.roi_fraction
-
-                    # Calculate ROI boundaries
-                    center_h = h // 2
-                    center_w = w // 2
-                    roi_h = int(h * roi_frac)
-                    roi_w = int(w * roi_frac)
-
-                    roi_y1 = center_h - roi_h // 2
-                    roi_y2 = roi_y1 + roi_h
-                    roi_x1 = center_w - roi_w // 2
-                    roi_x2 = roi_x1 + roi_w
-
-                    # Extract ROI and calculate mean
-                    roi_region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
-                    frame_mean = float(np.mean(roi_region))
-
-                # Check if frame is too dark (likely a timing issue)
-                if frame_mean < brightness_threshold:
-                    logger.warning(
-                        f"⚠️  Frame {frame_number} too dark (mean={frame_mean:.1f} < {brightness_threshold}), "
-                        f"retry {retry_attempt + 1}/{max_capture_retries}"
-                    )
-
-                    if retry_attempt < max_capture_retries - 1:
-                        # Wait a bit before retry to let system stabilize
-                        time.sleep(0.5)
-                        continue
-                    else:
-                        # Last retry failed - log error but save frame anyway
-                        logger.error(
-                            f"❌ Frame {frame_number} still dark (mean={frame_mean:.1f}) after {max_capture_retries} retries - saving anyway"
-                        )
-                        metadata["capture_method"] = "dark_frame_recovered"
-                        break
-                else:
-                    # Frame brightness OK
+            # Brightness check: if the frame is too dark (LED not yet stable,
+            # timing race, or stale buffer) re-read from the camera without
+            # re-firing the LED pulse.  Each re-read is cheap (~50 ms) so
+            # 3 retries add at most ~150 ms — well inside the 5 s interval.
+            frame_mean_val = _frame_mean(frame)
+            for retry_attempt in range(max_capture_retries):
+                if frame_mean_val >= brightness_threshold:
                     if retry_attempt > 0:
                         logger.info(
-                            f"✅ Frame {frame_number} recovered successfully (mean={frame_mean:.1f}) on retry {retry_attempt + 1}"
+                            f"✅ Frame {frame_number} recovered (mean={frame_mean_val:.1f}) "
+                            f"on re-read {retry_attempt}"
                         )
                     break
 
+                logger.warning(
+                    f"⚠️  Frame {frame_number} too dark (mean={frame_mean_val:.1f} < {brightness_threshold}), "
+                    f"re-read {retry_attempt + 1}/{max_capture_retries}"
+                )
+
+                if retry_attempt < max_capture_retries - 1:
+                    # Wait at least one full exposure period so ImSwitch's
+                    # LiveView worker actually produces a new frame.
+                    _exp_sec = self.frame_capture.exposure_ms / 1000.0
+                    time.sleep(max(0.05, _exp_sec * 1.2))
+                    reread = self.frame_capture.camera.capture_frame()
+                    if reread is not None:
+                        frame = reread
+                        frame_mean_val = _frame_mean(frame)
+                else:
+                    logger.error(
+                        f"❌ Frame {frame_number} still dark (mean={frame_mean_val:.1f}) "
+                        f"after {max_capture_retries} re-reads - saving anyway"
+                    )
+                    metadata["capture_method"] = "dark_frame_recovered"
+
             if frame is None:
-                logger.error("Frame capture failed after all retries")
-                self.error_occurred.emit("Frame capture failed")
-                return
+                # Defense-in-depth: should be unreachable since the brightness
+                # retry loop only assigns non-None reads.  Same placeholder
+                # strategy as the primary failure path above.
+                if self._last_good_frame is not None:
+                    logger.error(
+                        f"❌ Frame {frame_number} unexpectedly None after retries — "
+                        f"replicating last good frame"
+                    )
+                    self.error_occurred.emit("Frame capture failed (placeholder)")
+                    frame = self._last_good_frame
+                    metadata["capture_method"] = "capture_failed_placeholder_replicated"
+                    metadata["success"] = False
+                    self._placeholder_frame_count += 1
+                else:
+                    logger.error("Frame capture failed and no reference frame — skipping index")
+                    self.error_occurred.emit("Frame capture failed")
+                    self.state.increment_frame()
+                    return
 
             # ================================================================
             # ENRICH METADATA with missing timeseries fields
@@ -560,43 +744,33 @@ class RecordingManager(QObject):
                 metadata["phase_enabled"] = False
 
             # Add LED power info (actual powers used for this frame)
-            config = self.state.get_config()
             if config and phase_info and config.phase_enabled:
                 # Phase recording: Use per-phase powers
                 from .recording_state import PhaseType
 
                 if phase_info.phase == PhaseType.DARK:
-                    metadata["led_power"] = config.dark_phase_ir_power
                     metadata["ir_led_power"] = config.dark_phase_ir_power
                     metadata["white_led_power"] = 0
                 else:
                     # Light phase
                     if dual_mode:
-                        metadata["led_power"] = (
-                            config.light_phase_ir_power
-                        )  # Store IR power in legacy field
                         metadata["ir_led_power"] = config.light_phase_ir_power
                         metadata["white_led_power"] = config.light_phase_white_power
                     else:
-                        metadata["led_power"] = config.light_phase_white_power
                         metadata["ir_led_power"] = 0
                         metadata["white_led_power"] = config.light_phase_white_power
             elif config:
-                # Continuous recording: Use legacy single powers
+                # Continuous recording: Use single powers
                 if led_type == "ir" or dual_mode:
-                    metadata["led_power"] = config.ir_led_power
                     metadata["ir_led_power"] = config.ir_led_power
                     metadata["white_led_power"] = config.white_led_power if dual_mode else 0
                 elif led_type == "white":
-                    metadata["led_power"] = config.white_led_power
                     metadata["ir_led_power"] = 0
                     metadata["white_led_power"] = config.white_led_power
                 else:
-                    metadata["led_power"] = -1
                     metadata["ir_led_power"] = -1
                     metadata["white_led_power"] = -1
             else:
-                metadata["led_power"] = -1
                 metadata["ir_led_power"] = -1
                 metadata["white_led_power"] = -1
 
@@ -608,6 +782,32 @@ class RecordingManager(QObject):
             else:
                 metadata["capture_method"] = "unknown"
 
+            # Inject segment info when using a schedule
+            if self.schedule_manager:
+                metadata["segment_index"] = self.schedule_manager.current_segment_index
+                metadata["segment_label"] = self.schedule_manager.current_segment_label
+
+            # Add per-frame capture timing (elapsed since recording start + drift vs deadline)
+            # Use capture_complete_time (after camera.capture_frame() returned) — this is the
+            # actual moment the sensor was read, excluding LED stabilization overhead.
+            # Fall back to capture_start only if capture_complete_time is absent.
+            capture_time = metadata.get(
+                "capture_complete_time", metadata.get("capture_start", time.time())
+            )
+            metadata["capture_elapsed_sec"] = capture_time - self.state.start_time
+            metadata["frame_drift_sec"] = capture_time - deadline if deadline > 0 else float("nan")
+
+            # Accumulate signed drift: positive when interval too long, negative when too short
+            import math
+
+            _cfg = self.state.get_config()
+            interval_sec = _cfg.interval_sec if _cfg is not None else 0.0
+            if not math.isnan(self._last_capture_time):
+                actual_interval = capture_time - self._last_capture_time
+                self._last_actual_interval_sec = actual_interval
+                self._cumulative_drift_sec += actual_interval - interval_sec
+            self._last_capture_time = capture_time
+
             # Save frame
             frame_number = self.state.current_frame + 1
 
@@ -616,9 +816,32 @@ class RecordingManager(QObject):
                     frame=frame, frame_number=frame_number, metadata=metadata
                 )
 
+                # Always advance the frame counter, even on save-failure.
+                # A stuck counter would cause the loop to recompute the same
+                # missed deadline and tight-loop until the failure clears.
+                # On save-failure the timeseries entry will be missing for
+                # this index, but the deadline cadence is preserved.
+                self.state.increment_frame()
+
                 if success:
-                    # Increment frame counter
-                    self.state.increment_frame()
+                    # Cache the actual frame for placeholder fallback.  Skip
+                    # caching when this WAS the placeholder (don't re-cache a
+                    # replicated stale frame).  In-place copy to the existing
+                    # buffer when shape matches — avoids per-frame allocation
+                    # of multi-MB arrays over a long recording.
+                    if metadata.get("capture_method") != "capture_failed_placeholder_replicated":
+                        if (
+                            self._last_good_frame is None
+                            or self._last_good_frame.shape != frame.shape
+                            or self._last_good_frame.dtype != frame.dtype
+                        ):
+                            self._last_good_frame = frame.copy()
+                            logger.info(
+                                f"Placeholder reference set: shape={frame.shape}, "
+                                f"dtype={frame.dtype}"
+                            )
+                        else:
+                            np.copyto(self._last_good_frame, frame)
 
                     # Emit signal
                     self.frame_captured.emit(self.state.current_frame, self.state.total_frames)
@@ -631,15 +854,53 @@ class RecordingManager(QObject):
                     else:
                         logger.debug(f"Frame {frame_number} saved successfully")
                 else:
-                    logger.error(f"Failed to save frame {frame_number}")
+                    logger.error(
+                        f"Failed to save frame {frame_number} — counter advanced to keep cadence"
+                    )
 
         except Exception as e:
             logger.error(f"Error capturing frame: {e}")
             self.error_occurred.emit(f"Capture error: {e}")
 
+    def _set_high_priority(self):
+        """Set process priority to HIGH for stable frame timing"""
+        try:
+            if sys.platform == "win32":
+                import ctypes
+
+                # Get current process handle
+                handle = ctypes.windll.kernel32.GetCurrentProcess()
+                # HIGH_PRIORITY_CLASS = 0x00000080
+                ctypes.windll.kernel32.SetPriorityClass(handle, 0x00000080)
+                logger.info("✅ Process priority set to HIGH for stable timing")
+                print("✅ Process priority set to HIGH for stable timing")
+            else:
+                # Linux/macOS: use nice
+                os.nice(-10)  # Higher priority (requires root on Linux)
+                logger.info("✅ Process nice value set to -10")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not set high priority: {e}")
+            print(f"⚠️ Could not set high priority: {e}")
+
+    def _restore_normal_priority(self):
+        """Restore normal process priority after recording"""
+        try:
+            if sys.platform == "win32":
+                import ctypes
+
+                handle = ctypes.windll.kernel32.GetCurrentProcess()
+                # NORMAL_PRIORITY_CLASS = 0x00000020
+                ctypes.windll.kernel32.SetPriorityClass(handle, 0x00000020)
+                logger.info("Process priority restored to NORMAL")
+        except Exception as e:
+            logger.warning(f"Could not restore priority: {e}")
+
     def _finalize_recording(self):
         """Finalisiert Recording"""
         logger.info("Finalizing recording...")
+
+        # Restore normal priority
+        self._restore_normal_priority()
 
         try:
             # Turn off LED to save power
@@ -661,12 +922,15 @@ class RecordingManager(QObject):
                 "config": self.state.config.__dict__ if self.state.config else {},
             }
 
-            # Add phase summary
-            if self.phase_manager:
+            # Add phase / schedule summary
+            if self.schedule_manager:
+                final_info["schedule_summary"] = self.schedule_manager.get_phase_summary()
+            elif self.phase_manager:
                 final_info["phase_summary"] = self.phase_manager.get_phase_summary()
 
             # Add capture stats
             final_info["capture_stats"] = self.frame_capture.get_capture_stats()
+            final_info["placeholder_frame_count"] = self._placeholder_frame_count
 
             # Finalize data manager
             if self.data_manager:
@@ -682,6 +946,19 @@ class RecordingManager(QObject):
 
         except Exception as e:
             logger.error(f"Error finalizing recording: {e}")
+
+    def _on_segment_changed(self, new_index: int):
+        """
+        Called by ScheduleManager when a segment transition occurs.
+        Resets _last_phase so the first frame of the new segment triggers a
+        full LED power update, then emits the segment_changed signal.
+        """
+        self._last_phase = None
+        label = ""
+        if self.schedule_manager:
+            label = self.schedule_manager.current_segment_label
+        logger.info(f"Segment changed → {new_index}: {label!r}")
+        self.segment_changed.emit(new_index, label)
 
     def _set_phase_led_powers(self, phase_info, led_type: str, dual_mode: bool) -> bool:
         """
@@ -716,32 +993,57 @@ class RecordingManager(QObject):
             logger.info(f"🔄 Phase transition: {self._last_phase} → {current_phase}")
             self._last_phase = current_phase
 
+        # LED powers are only updated on phase transitions.
+        # Calling set_led_power() every frame causes a PWM glitch on the ESP32
+        # (analogWrite re-arms the timer, briefly outputting 0) which is visible
+        # as a short LED flicker during the continuous light phase.
+        if not phase_transition:
+            return False
+
+        # Detect whether white LED should stay on continuously for this segment:
+        #   1. Continuous segment (phase_enabled=False) with white or dual LED type
+        #   2. LD segment (phase_enabled=True) with dual_light_phase=True:
+        #      white LED = daylight stimulus → stays on throughout light phase,
+        #      IR pulses only for each frame capture
+        _continuous_light_segment = False
+        if self.schedule_manager is not None and self.schedule_manager.is_enabled():
+            _seg = self.schedule_manager._schedule.segments[self.schedule_manager._current_seg_idx]
+            _continuous_light_segment = (
+                not _seg.phase_enabled and _seg.continuous_led_type in ("white", "dual")
+            ) or (_seg.phase_enabled and _seg.dual_light_phase)
+
+        use_continuous = config.white_led_continuous or _continuous_light_segment
+
         # Determine which LED powers to set based on current phase
         if phase_info.phase == PhaseType.DARK:
-            # Dark phase: Use dark_phase_ir_power for IR LED
             ir_power = config.dark_phase_ir_power
-            white_power = 0  # White LED not used in dark phase
-
-            logger.debug(f"[PHASE POWER] Dark phase: Setting IR={ir_power}%")
+            logger.info(f"[PHASE POWER] Dark phase transition: Setting IR={ir_power}%")
             self.frame_capture.esp32.set_led_power(ir_power, "ir")
 
+            if use_continuous:
+                self.frame_capture.set_white_continuous(False)
+
         else:
-            # Light phase: Use light_phase powers
             ir_power = config.light_phase_ir_power
             white_power = config.light_phase_white_power
 
             if dual_mode:
-                # Dual LED mode: Set both powers
-                logger.debug(
-                    f"[PHASE POWER] Light phase (dual): Setting IR={ir_power}%, White={white_power}%"
+                logger.info(
+                    f"[PHASE POWER] Light phase transition (dual): IR={ir_power}%, White={white_power}%"
                 )
                 self.frame_capture.esp32.set_led_power(ir_power, "ir")
-                time.sleep(0.01)  # Small delay between commands
+                time.sleep(0.01)
                 self.frame_capture.esp32.set_led_power(white_power, "white")
             else:
-                # White-only light phase
-                logger.debug(f"[PHASE POWER] Light phase (white): Setting White={white_power}%")
+                logger.info(f"[PHASE POWER] Light phase transition (white): White={white_power}%")
                 self.frame_capture.esp32.set_led_power(white_power, "white")
+
+            if use_continuous:
+                self.frame_capture.set_white_continuous(True)
+                logger.info(
+                    f"[PHASE POWER] Continuous white/dual LED activated "
+                    f"({'schedule segment' if _continuous_light_segment else 'phase config'})"
+                )
 
         return phase_transition
 
@@ -759,6 +1061,11 @@ class RecordingManager(QObject):
 
         # Add capture stats
         status["capture_stats"] = self.frame_capture.get_capture_stats()
+
+        # Cumulative interval overrun since recording start
+        status["cumulative_drift_sec"] = self._cumulative_drift_sec
+        status["last_actual_interval_sec"] = self._last_actual_interval_sec
+        status["placeholder_frame_count"] = self._placeholder_frame_count
 
         return status
 

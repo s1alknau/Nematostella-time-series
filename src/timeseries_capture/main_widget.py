@@ -14,19 +14,17 @@ from pathlib import Path
 from typing import Optional
 
 # Qt imports
-try:
-    from qtpy.QtCore import QTimer
-    from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
-except:
-    from PyQt5.QtCore import QTimer
-    from PyQt5.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
+from qtpy.QtCore import QTimer
+from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
 
 # Import GUI components (from GUI subfolder)
 # Import controllers and adapters
 from .camera_adapters import create_camera_adapter
 from .esp32_gui_controller import ESP32GUIController
 from .GUI.esp32_connection_panel import ESP32ConnectionPanel
+from .GUI.experiment_designer import ExperimentDesignerWidget
 from .GUI.led_control_panel import LEDControlPanel
+from .GUI.live_analysis_panel import LiveAnalysisPanel
 from .GUI.log_panel import LogPanel
 from .GUI.phase_panel import PhaseConfigPanel
 from .GUI.recording_panel import RecordingControlPanel
@@ -70,6 +68,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.multi_camera_controller = None
         self.camera_system_config = None
         self._multi_camera_mode = False
+
+        # Live analysis worker (started when Zarr recording begins)
+        self._live_analysis_worker = None
 
         # Calibration results storage (for per-phase LED power)
         # These are set by calibration and used when starting phase recordings
@@ -115,6 +116,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.recording_panel = RecordingControlPanel()
         self.phase_panel = PhaseConfigPanel()
         self.led_panel = LEDControlPanel()
+        self.live_analysis_panel = LiveAnalysisPanel()
+        self.experiment_designer = ExperimentDesignerWidget()
         self.log_panel = LogPanel()
 
         # Add tabs
@@ -122,6 +125,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.tabs.addTab(self.recording_panel, "📹 Recording")
         self.tabs.addTab(self.phase_panel, "🌓 Phase Config")
         self.tabs.addTab(self.led_panel, "💡 LED Control")
+        self.tabs.addTab(self.live_analysis_panel, "📊 Live Analysis")
+        self.tabs.addTab(self.experiment_designer, "🗓 Schedule Designer")
         self.tabs.addTab(self.log_panel, "📋 System Log")
 
         # Multi-camera panels (will be populated after config is loaded)
@@ -151,6 +156,29 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.led_panel.led_off_requested.connect(self._on_led_off_requested)
         self.led_panel.led_power_changed.connect(self._on_led_power_changed)
         self.led_panel.calibration_requested.connect(self._on_calibration_requested)
+
+        # Live Analysis Panel
+        self.live_analysis_panel.capture_frame_requested.connect(self._on_capture_preview_frame)
+        self.live_analysis_panel.rois_detected.connect(self._on_rois_detected)
+
+        # Keep live analysis panel in sync with format selector
+        self.recording_panel.format_combo.currentIndexChanged.connect(
+            lambda: self.live_analysis_panel.set_output_format(
+                self.recording_panel.format_combo.currentData()
+            )
+        )
+        # Set initial state
+        self.live_analysis_panel.set_output_format(self.recording_panel.format_combo.currentData())
+
+        # Experiment Designer — sync output dir/interval from recording panel
+        self.experiment_designer.set_output_dir(
+            self.recording_panel.get_config().get("output_dir", "")
+        )
+        self.experiment_designer.set_interval(
+            self.recording_panel.get_config().get("interval_sec", 5)
+        )
+        self.experiment_designer.schedule_ready.connect(self._on_schedule_ready)
+        self.experiment_designer.stop_requested.connect(self._on_stop_recording_requested)
 
     def _load_camera_system_config(self):
         """Load camera system configuration if available"""
@@ -227,6 +255,35 @@ class NematostellaTimelapseCaptureWidget(QWidget):
     # HARDWARE INITIALIZATION
     # ========================================================================
 
+    @staticmethod
+    def _find_imswitch_detectors_manager():
+        """
+        Scan live Python objects for the ImSwitch DetectorsManager instance.
+
+        Used to find the HIK detector for buffer-recovery operations (flushBuffers)
+        when zero-frame conditions are detected in the NapariViewerCameraAdapter.
+        Frame reading itself always goes through the napari layer to avoid
+        threading conflicts with ImSwitch's LV worker.
+
+        Returns DetectorsManager or None if not found / ImSwitch not running.
+        """
+        try:
+            import gc
+
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if names:
+                        logger.info(f"Found ImSwitch DetectorsManager with detectors: {names}")
+                        return obj
+        except Exception as e:
+            logger.debug(f"DetectorsManager auto-detect failed: {e}")
+        return None
+
     def _initialize_hardware(self):
         """Initialize hardware components"""
         try:
@@ -248,11 +305,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             print(f"{'='*60}\n")
 
             if self.camera_manager:
-                # Use HIK GigE via ImSwitch
+                # Use HIK GigE via ImSwitch (direct SDK access)
                 self.camera_adapter = create_camera_adapter(
                     camera_type="hik", camera_manager=self.camera_manager
                 )
-                self.log_panel.add_log("✅ HIK GigE camera initialized", "SUCCESS")
+                self.log_panel.add_log("HIK GigE camera initialized via ImSwitch", "SUCCESS")
             elif self.viewer:
                 # Use Napari viewer (will auto-detect ImSwitch live layer)
                 self.camera_adapter = create_camera_adapter(
@@ -350,6 +407,18 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
         # Recording errors
         self.recording_controller.error_occurred.connect(self._on_recording_error)
+
+        # Zarr path ready → start live analysis worker
+        self.recording_controller.zarr_path_ready.connect(self._on_zarr_path_ready)
+
+        # Segment changes from schedule recording
+        if (
+            hasattr(self.recording_controller, "recording_manager")
+            and self.recording_controller.recording_manager is not None
+        ):
+            rm = self.recording_controller.recording_manager
+            if hasattr(rm, "segment_changed"):
+                rm.segment_changed.connect(self._on_segment_changed)
 
     def _start_status_updates(self):
         """Start periodic status updates"""
@@ -467,7 +536,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         f"📷 Calibration exposure: {self._calibration_exposure_ms:.1f} ms", "INFO"
                     )
 
-                    if exposure_diff > 0.5:  # More than 0.5ms difference
+                    if exposure_diff > 0.5:
                         self.log_panel.add_log(
                             f"⚠️ WARNING: Camera exposure changed by {exposure_diff:.1f} ms since calibration!",
                             "WARNING",
@@ -476,9 +545,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             f"⚠️ This will cause intensity mismatch! Calibration was done at {self._calibration_exposure_ms:.1f} ms.",
                             "WARNING",
                         )
-                        # Ask user if they want to continue
-                        from PyQt5.QtWidgets import QMessageBox
-
                         reply = QMessageBox.question(
                             self,
                             "Exposure Mismatch",
@@ -508,10 +574,15 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             # Get LED power settings from LED control panel
             led_powers = self.led_panel.get_led_powers()
 
+            phase_active = phase_config.get("enabled", False)
+
             # Merge configs
             full_config = {
                 **recording_config,
                 **phase_config,
+                "phase_enabled": phase_active,  # korrekter Key für RecordingConfig
+                "white_led_continuous": phase_active
+                and phase_config.get("white_led_continuous", False),
                 # Legacy single LED powers (for backward compatibility and continuous mode)
                 "ir_led_power": led_powers["ir"],
                 "white_led_power": led_powers["white"],
@@ -571,6 +642,40 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     self._show_error("Error", f"Cannot create output directory: {e}")
                     return
 
+            # Disk space check
+            try:
+                import shutil
+
+                free_bytes = shutil.disk_usage(output_dir).free
+                free_gb = free_bytes / 1e9
+                duration_min = full_config.get("duration_min", 60)
+                interval_sec = full_config.get("interval_sec", 5)
+                total_frames = int(duration_min * 60 / interval_sec)
+                bytes_per_pixel = 1 if full_config.get("save_as_uint8", False) else 2
+                # Conservative estimate: 2048×2048 frame
+                est_gb = total_frames * 2048 * 2048 * bytes_per_pixel / 1e9
+                self.log_panel.add_log(
+                    f"💾 Disk: {free_gb:.1f} GB free | Estimated usage: ~{est_gb:.1f} GB "
+                    f"({total_frames} frames × {bytes_per_pixel * 4} MB est.)",
+                    "INFO",
+                )
+                if free_gb < est_gb * 1.1:
+                    warn_msg = (
+                        f"Low disk space: {free_gb:.1f} GB free but ~{est_gb:.1f} GB estimated needed. "
+                        f"Recording may fail mid-run."
+                    )
+                    self.log_panel.add_log(f"⚠️ {warn_msg}", "WARNING")
+                    logger.warning(warn_msg)
+            except Exception as e:
+                logger.debug(f"Disk space check failed: {e}")
+
+            # Sync ROI masks from live analysis panel — ensures masks detected in a
+            # previous detection run (same session) are forwarded even if rois_detected
+            # signal was not re-emitted (user didn't re-detect before this recording).
+            current_masks = self.live_analysis_panel.get_masks()
+            if current_masks:
+                self.recording_controller.set_roi_masks(current_masks)
+
             # Start recording via controller
             self.log_panel.add_log("🎬 Starting recording...", "INFO")
             self.log_panel.add_log(f"Config: {full_config}", "DEBUG")
@@ -579,6 +684,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
             if success:
                 self.log_panel.add_log("✅ Recording started successfully", "SUCCESS")
+                if self.esp32_gui_controller:
+                    self.esp32_gui_controller.pause_monitoring()
             else:
                 self.log_panel.add_log("❌ Failed to start recording", "ERROR")
 
@@ -598,12 +705,19 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             # Merge configs
             from .Recorder import RecordingConfig
 
+            phase_active = phase_config.get("enabled", False)
+
+            self._recording_duration_min = recording_config["duration_min"]
             full_config = RecordingConfig(
                 duration_min=recording_config["duration_min"],
                 interval_sec=recording_config["interval_sec"],
                 experiment_name=recording_config["experiment_name"],
                 output_dir=recording_config["output_dir"],
-                phase_enabled=phase_config.get("phase_enabled", False),
+                output_format=recording_config.get("output_format", "hdf5"),
+                save_as_uint8=recording_config.get("save_as_uint8", False),
+                phase_enabled=phase_active,
+                white_led_continuous=phase_active
+                and phase_config.get("white_led_continuous", False),
                 light_duration_min=phase_config.get("light_duration_min", 30),
                 dark_duration_min=phase_config.get("dark_duration_min", 30),
                 ir_led_power=led_powers["ir"],
@@ -633,6 +747,35 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             else:
                 full_config.use_full_frame_for_validation = True
                 full_config.roi_fraction = 0.75
+
+            # Disk space check (multi-camera)
+            try:
+                import shutil
+
+                output_dir = Path(recording_config["output_dir"])
+                free_bytes = shutil.disk_usage(output_dir).free
+                free_gb = free_bytes / 1e9
+                duration_min = recording_config.get("duration_min", 60)
+                interval_sec = recording_config.get("interval_sec", 5)
+                n_cameras = (
+                    len(self.multi_camera_controller.camera_units)
+                    if self.multi_camera_controller
+                    and hasattr(self.multi_camera_controller, "camera_units")
+                    else 1
+                )
+                total_frames = int(duration_min * 60 / interval_sec)
+                bytes_per_pixel = 1 if recording_config.get("save_as_uint8", False) else 2
+                est_gb = n_cameras * total_frames * 2048 * 2048 * bytes_per_pixel / 1e9
+                self.log_panel.add_log(
+                    f"💾 Disk: {free_gb:.1f} GB free | Estimated usage: ~{est_gb:.1f} GB ({n_cameras} cameras)",
+                    "INFO",
+                )
+                if free_gb < est_gb * 1.1:
+                    warn_msg = f"Low disk space: {free_gb:.1f} GB free but ~{est_gb:.1f} GB estimated needed."
+                    self.log_panel.add_log(f"⚠️ {warn_msg}", "WARNING")
+                    logger.warning(warn_msg)
+            except Exception as e:
+                logger.debug(f"Disk space check failed: {e}")
 
             # Start all recordings
             self.log_panel.add_log("Starting multi-camera recording...", "INFO")
@@ -685,6 +828,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.log_panel.add_log("Stopping recording...", "INFO")
             self.recording_controller.stop_recording()
             self.log_panel.add_log("Recording stopped", "SUCCESS")
+            self.experiment_designer.set_recording_active(False)
+            if self.esp32_gui_controller:
+                self.esp32_gui_controller.resume_monitoring()
         except Exception as e:
             logger.error(f"Stop recording error: {e}", exc_info=True)
             self.log_panel.add_log(f"Stop error: {e}", "ERROR")
@@ -723,12 +869,19 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             # Update recording panel
             self.recording_panel.update_status(status)
 
+            # Stop live analysis worker when recording finishes
+            if not status.get("recording", False) and self._live_analysis_worker is not None:
+                self._stop_live_analysis_worker()
+                self.log_panel.add_log("📊 Live analysis worker stopped", "INFO")
+
             # Update status panel
             rec_status = {
                 "recording": status.get("recording", False),
                 "paused": status.get("paused", False),
                 "current_frame": status.get("current_frame", 0),
                 "total_frames": status.get("total_frames", 0),
+                "cumulative_drift_sec": status.get("cumulative_drift_sec", 0.0),
+                "last_actual_interval_sec": status.get("last_actual_interval_sec", float("nan")),
             }
             self.status_panel.update_recording_status(rec_status)
 
@@ -745,6 +898,141 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         """Handle recording error from controller"""
         self.log_panel.add_log(f"❌ Recording error: {error_msg}", "ERROR")
         self._show_error("Recording Error", error_msg)
+
+    # ========================================================================
+    # LIVE ANALYSIS (GUI Signals)
+    # ========================================================================
+
+    def _on_capture_preview_frame(self):
+        """Grab a live frame from the camera and send it to the live analysis panel."""
+        if not self.camera_adapter or not self.camera_adapter.is_available():
+            self.log_panel.add_log("⚠️ Camera not available for preview frame", "WARNING")
+            return
+        try:
+            frame = self.camera_adapter.capture_frame()
+            if frame is not None:
+                self.live_analysis_panel.set_preview_frame(frame)
+                self.log_panel.add_log("📷 Preview frame captured for ROI detection", "INFO")
+            else:
+                self.log_panel.add_log("⚠️ Camera returned no frame", "WARNING")
+        except Exception as exc:
+            self.log_panel.add_log(f"❌ Preview frame capture failed: {exc}", "ERROR")
+            logger.error(f"Preview frame capture failed: {exc}")
+
+    def _on_rois_detected(self, masks: list):
+        """ROI masks detected in live analysis panel — forward to recording controller."""
+        if self.recording_controller:
+            self.recording_controller.set_roi_masks(masks)
+            self.log_panel.add_log(f"✅ {len(masks)} ROI mask(s) stored for recording", "INFO")
+
+    def _on_zarr_path_ready(self, zarr_path: str):
+        """Zarr store is open — start live analysis worker."""
+        # Tell the panel the full recording duration so x-axis is fixed immediately
+        duration_min = getattr(self, "_recording_duration_min", None)
+        if duration_min is not None:
+            self.live_analysis_panel.set_recording_duration(duration_min)
+
+        # Pre-fill phase overlay from current phase panel config
+        # (only for plain recordings — schedule recordings call set_schedule() separately)
+        try:
+            self.live_analysis_panel.clear_schedule()
+            phase_cfg = self.phase_panel.get_config()
+            self.live_analysis_panel.set_phase_config(
+                phase_enabled=phase_cfg.get("enabled", False),
+                light_duration_min=phase_cfg.get("light_duration_min", 720),
+                dark_duration_min=phase_cfg.get("dark_duration_min", 720),
+                start_with_light=phase_cfg.get("start_with_light", True),
+            )
+        except Exception:
+            pass
+
+        masks = self.live_analysis_panel.get_masks()
+        if not masks:
+            self.log_panel.add_log(
+                "⚠️ Live analysis skipped: no ROIs detected. Use the Live Analysis tab first.",
+                "WARNING",
+            )
+            return
+
+        # Stop any existing worker
+        self._stop_live_analysis_worker()
+
+        from .Analysis.live_analysis_worker import LiveAnalysisWorker
+
+        self._live_analysis_worker = LiveAnalysisWorker(
+            zarr_path=zarr_path, masks=masks, interval_sec=20
+        )
+        self._live_analysis_worker.results_ready.connect(
+            self.live_analysis_panel.update_activity_plot
+        )
+        self._live_analysis_worker.start()
+        self.log_panel.add_log(
+            f"📊 Live analysis started ({len(masks)} ROIs, updating every 20s)", "INFO"
+        )
+        # Switch to live analysis tab
+        live_tab_index = self.tabs.indexOf(self.live_analysis_panel)
+        if live_tab_index >= 0:
+            self.tabs.setCurrentIndex(live_tab_index)
+
+    def _stop_live_analysis_worker(self):
+        """Stop and clean up the live analysis worker if running."""
+        if self._live_analysis_worker is not None:
+            self._live_analysis_worker.stop()
+            self._live_analysis_worker.wait(3000)
+            self._live_analysis_worker = None
+
+    # ========================================================================
+    # SCHEDULE DESIGNER (GUI Signals)
+    # ========================================================================
+
+    def _on_schedule_ready(self, schedule):
+        """Schedule Designer emitted a validated schedule — start it."""
+        if not self.recording_controller:
+            self._show_error("Error", "Recording controller not initialized.")
+            return
+
+        if not self.esp32_gui_controller or not self.esp32_gui_controller.is_connected():
+            self._show_error("Error", "ESP32 not connected. Please connect first.")
+            return
+
+        if not self.camera_adapter or not self.camera_adapter.is_available():
+            self._show_error("Error", "Camera not available.")
+            return
+
+        self.log_panel.add_log(
+            f"🗓 Starting schedule: {len(schedule.segments)} segment(s), "
+            f"total={schedule.total_duration_min()} min",
+            "INFO",
+        )
+        # Pre-load phase overlay from schedule so the plot is ready when zarr opens
+        self.live_analysis_panel.set_schedule(schedule)
+
+        # Sync ROI masks — same as for plain recordings
+        current_masks = self.live_analysis_panel.get_masks()
+        if current_masks:
+            self.recording_controller.set_roi_masks(current_masks)
+
+        success = self.recording_controller.start_schedule(schedule)
+        if success:
+            self.log_panel.add_log("✅ Schedule recording started", "SUCCESS")
+            self.experiment_designer.set_recording_active(True)
+            if self.esp32_gui_controller:
+                self.esp32_gui_controller.pause_monitoring()
+            # Wire segment_changed now that recording_manager is alive
+            rm = self.recording_controller.recording_manager
+            if rm is not None and hasattr(rm, "segment_changed"):
+                try:
+                    rm.segment_changed.connect(self._on_segment_changed)
+                except Exception:
+                    pass
+        else:
+            self.log_panel.add_log("❌ Failed to start schedule recording", "ERROR")
+            self.experiment_designer.set_recording_active(False)
+
+    def _on_segment_changed(self, new_index: int, label: str):
+        """Recording manager advanced to a new schedule segment."""
+        self.log_panel.add_log(f"🔄 Schedule segment {new_index + 1}: {label}", "INFO")
+        self.status_panel.update_phase_info({"current_phase": label, "cycle_number": new_index + 1})
 
     # ========================================================================
     # LED CONTROL (GUI Signals)
@@ -823,11 +1111,20 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             def run_calibration():
                 """Run calibration in background thread"""
                 try:
+                    # Create capture callback with buffer flush.
+                    # getLatestFrame() returns the most recent buffered frame which
+                    # may predate LED-on. Discard 2 frames so the measurement uses
+                    # a frame actually captured after the LED stabilized.
+                    import time as _time
+
                     from .Recorder.calibration_service import CalibrationService
 
-                    # Create capture callback
                     def capture_frame():
-                        """Capture frame from camera"""
+                        """Capture frame from camera.
+                        Wait long enough for ImSwitch to push a post-LED frame
+                        into the napari layer before reading it.
+                        """
+                        _time.sleep(0.5)
                         return self.camera_adapter.capture_frame()
 
                     # Create LED power callback
@@ -851,15 +1148,12 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     target_intensity = self.led_panel.get_target_intensity()
                     tolerance_percent = self.led_panel.get_tolerance_percent()
 
-                    # Read and log camera exposure time for calibration
+                    # Read camera exposure from ImSwitch
                     try:
                         camera_exposure_ms = self.camera_adapter.get_exposure_ms()
                         self.log_panel.add_log(
-                            f"📷 Camera exposure time: {camera_exposure_ms:.1f} ms", "INFO"
-                        )
-                        self.log_panel.add_log(
-                            "⚠️ IMPORTANT: Do NOT change camera exposure between calibration and recording!",
-                            "WARNING",
+                            f"📷 Camera exposure (from ImSwitch): {camera_exposure_ms:.1f} ms",
+                            "INFO",
                         )
                     except Exception as e:
                         self.log_panel.add_log(f"⚠️ Could not read camera exposure: {e}", "WARNING")
@@ -974,6 +1268,13 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                                 f"💾 Saved for LIGHT phase (dual): IR = {result.ir_power}%, White = {result.white_power}%",
                                 "INFO",
                             )
+
+                        # Push calibration values to the Schedule Designer
+                        self.experiment_designer.set_calibration_values(
+                            dark_ir=self._calibrated_dark_phase_ir_power,
+                            light_ir=self._calibrated_light_phase_ir_power,
+                            light_white=self._calibrated_light_phase_white_power,
+                        )
                     else:
                         self.log_panel.add_log(f"❌ {mode.upper()} calibration failed", "ERROR")
                         self.led_panel.add_calibration_result(
@@ -1089,7 +1390,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 try:
                     info = self.camera_adapter.get_camera_info()
                     camera_name = info.get("name", "Unknown")
-                except:
+                except Exception:
                     pass
 
             # Update status panel
@@ -1228,6 +1529,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                 self.multi_camera_controller.disconnect_all()
             except Exception as e:
                 logger.error(f"Multi-camera controller cleanup error: {e}")
+
+        # Stop live analysis worker
+        self._stop_live_analysis_worker()
 
         # Cleanup recording controller
         if self.recording_controller:

@@ -56,11 +56,30 @@ class ESP32Controller:
         if auto_connect:
             self.connect()
 
+        # Re-initialize timing automatically after a background reconnect
+        self.comm.on_reconnect = self._on_background_reconnect
+
         logger.info("ESP32Controller initialized")
 
     # ========================================================================
     # CONNECTION MANAGEMENT
     # ========================================================================
+
+    @property
+    def is_reconnecting(self) -> bool:
+        """True while a background reconnect is in progress."""
+        return self.comm.is_reconnecting
+
+    def _on_background_reconnect(self, success: bool):
+        """Called by ESP32Communication after each background reconnect attempt."""
+        if success:
+            # Re-send timing config so the ESP32 is ready for the next capture
+            try:
+                self.set_timing(1000, 10)
+                self.set_camera_type(CameraTypes.HIK_GIGE)
+                logger.info("✅ ESP32 re-initialized after background reconnect")
+            except Exception as e:
+                logger.warning(f"Re-init after reconnect failed: {e}")
 
     def connect(self, port: Optional[str] = None) -> bool:
         """
@@ -84,7 +103,7 @@ class ESP32Controller:
             # Query initial LED status
             try:
                 self.get_led_status()
-            except:
+            except Exception:
                 pass
 
             logger.info("ESP32 connected and initialized")
@@ -96,7 +115,7 @@ class ESP32Controller:
         # Turn off all LEDs before disconnect
         try:
             self.led_off()
-        except:
+        except Exception:
             pass
 
         self.comm.disconnect()
@@ -151,7 +170,7 @@ class ESP32Controller:
             return False
 
         # Wait for response
-        if not self.comm.read_until_response(expected_response, timeout=2.0):
+        if not self.comm.read_until_response(expected_response, timeout=0.5):
             logger.error(f"Failed to select LED type: {led_type}")
             return False
 
@@ -183,7 +202,7 @@ class ESP32Controller:
             return False
 
         # Wait for ACK
-        if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=2.0):
+        if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=0.5):
             logger.error("LED ON failed - no ACK")
             return False
 
@@ -341,7 +360,7 @@ class ESP32Controller:
             raise RuntimeError("Failed to send sync pulse command")
 
         # Wait for ACK
-        if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=2.0):
+        if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=1.0):
             raise RuntimeError("No ACK received for sync pulse")
 
         # Mark in state
@@ -442,7 +461,7 @@ class ESP32Controller:
             return False
 
         # Wait for response
-        if not self.comm.read_until_response(Responses.TIMING_SET, timeout=2.0):
+        if not self.comm.read_until_response(Responses.TIMING_SET, timeout=0.5):
             logger.error("Failed to set timing")
             return False
 
@@ -486,7 +505,7 @@ class ESP32Controller:
             return None
 
         # Read 5-byte response
-        response_data = self.comm.read_bytes(5, timeout=2.0)
+        response_data = self.comm.read_bytes(5, timeout=1.0)
 
         if not response_data or len(response_data) < 5:
             logger.error("No sensor data response")
@@ -650,7 +669,7 @@ class ESP32Controller:
         """Ensure cleanup on deletion"""
         try:
             self.cleanup()
-        except:
+        except Exception:
             pass
 
 

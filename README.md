@@ -1,4 +1,4 @@
-# Nematostella Timelapse Capture Plugin
+
 
 [![License MIT](https://img.shields.io/pypi/l/nematostella-time-series.svg?color=green)](https://github.com/s1alknau/nematostella-time-series/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/nematostella-time-series.svg?color=green)](https://pypi.org/project/nematostella-time-series)
@@ -9,15 +9,54 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 
 ---
 
+## Recent Updates (v2.5.0 - 2026-03-21)
+
+### v2.5.0 - Zarr Recording, Live Analysis & Web Firmware Installer
+- ✅ **Zarr Recording Format**: Save recordings as Zarr in addition to HDF5. Zarr allows concurrent read-while-write, enabling live analysis during an ongoing recording.
+- ✅ **Live Analysis Tab**: New "📊 Live Analysis" GUI tab — capture a preview frame, auto-detect ROIs via HoughCircles, then watch an activity plot update every 20 s while recording. Requires optional dependency `opencv-python`.
+- ✅ **HDF5 Timing Fix**: Replaced synchronous HDF5 writes with a write-behind queue (`AsyncHDF5Writer`). Recording thread enqueues in ~0.8 ms instead of blocking on 18 sequential I/O ops; prevents `actual_interval` spikes from 5 s → 10 s+ in multi-day recordings.
+- ✅ **Web Firmware Installer**: Flash ESP32 firmware directly from the browser at https://s1alknau.github.io/Nematostella-time-series/installer.html — no PlatformIO or Arduino IDE needed. Supports both boards (ESP32 DevKit and ESP32-S3-BOX-3). Chrome/Edge only.
+- ✅ **GitHub Actions CI**: New workflow `.github/workflows/firmware_build.yml` auto-builds firmware for both boards on every push and publishes binaries to `docs/firmware/`.
+
+See [CHANGELOG.md](CHANGELOG.md) for complete details.
+
+---
+
+## Recent Updates (v2.4.1 - 2026-01-05)
+
+🎉 **Black Frame Prevention & ESP32-S3 Support!**
+
+### v2.4.1 - Black Frame Prevention
+- ✅ **Automatic Brightness Validation**: Detects and recovers from black frames caused by timing delays
+- ✅ **Self-Healing Retry Mechanism**: Up to 3 automatic retries with 500ms stabilization delay
+- ✅ **Validated Performance**: Frame intensity σ=0.63, no black frames in production tests
+
+### v2.4.0 - Timing Precision Optimization
+- ✅ **Deadline-Based Sleep**: Eliminates jitter accumulation (85% improvement)
+- ✅ **Async HDF5 Flush**: Non-blocking I/O prevents 300-500ms spikes
+- ✅ **Optimized Statistics**: Frame calculations only in COMPREHENSIVE mode (-20-30ms)
+- ✅ **Validated Results**: σ=190ms timing variance over 58min (was ~1000ms spikes)
+
+### ESP32-S3-BOX-3 Support
+- ✅ **Unified Firmware**: Single firmware with compile-time auto-detection for both ESP32 and ESP32-S3
+- ✅ **Multi-Board Compatibility**: Works seamlessly with ESP32-DevKit and ESP32-S3-BOX-3
+
+See [CHANGELOG.md](CHANGELOG.md) for complete details.
+
+---
+
 ## Features
 
 - **Hardware-Synchronized LED Control**: Precise synchronization between camera exposure and LED illumination via ESP32 microcontroller
-- **Dual-LED Support**: Independent control of IR (850nm) and White (broad-spectrum) LEDs for multi-modal imaging
+- **Dual-LED Support**: Independent control of IR (850nm) exchangeable LEDs and White (broad-spectrum) LEDs for creating light stimulation and oblique lighting
 - **Phase-Based Recording**: Automated light/dark cycles for circadian rhythm studies
 - **Drift-Compensated Timing**: Frame timing measured from absolute recording start, preventing cumulative drift
 - **Environmental Monitoring**: Real-time temperature and humidity tracking via DHT22 sensor
 - **LED Calibration**: Interactive calibration system to normalize LED intensities across channels
-- **HDF5 Data Storage**: Efficient chunked storage with comprehensive metadata and timeseries data
+- **HDF5 Data Storage**: Efficient chunked storage with comprehensive metadata and timeseries data; write-behind queue (`AsyncHDF5Writer`) prevents I/O-induced interval spikes
+- **Zarr Recording Format**: Alternative to HDF5 with concurrent read-while-write support, enabling live analysis during recording
+- **Live Analysis Tab**: Auto-detect ROIs via HoughCircles on a preview frame and plot per-ROI activity every 20 s while recording (requires `opencv-python`)
+- **Web Firmware Installer**: Flash ESP32 firmware from the browser — no toolchain required. Visit https://s1alknau.github.io/Nematostella-time-series/installer.html in Chrome/Edge
 - **Real-Time Visualization**: Live frame display with recording statistics
 
 ---
@@ -69,34 +108,81 @@ Core dependencies:
 - qtpy
 - pymmcore-plus (for camera control)
 
+Optional dependencies:
+- `zarr` — required for Zarr recording format and live-analysis read-while-write
+- `opencv-python` — required for the Live Analysis tab (HoughCircles ROI detection)
+
 ---
 
 ## Hardware Requirements
 
 ### Required Components
 
-1. **ESP32 Microcontroller** (e.g., ESP32-DevKitC)
+1. **ESP32 Microcontroller**
+
+   **Option A: ESP32-DevKitC (Standard)**
    - Firmware: Custom firmware with LED control and sensor support
    - Firmware version: v2.2 or higher
+   - GPIO Pins Used: GPIO 4 (IR LED), GPIO 15 (White LED), GPIO 14 (DHT22)
+   - https://www.amazon.de/AZDelivery-Development-Anschluss-kompatibel-inklusive/dp/B0D8WDDGC3/ref=asc_df_B0D8WDDGC3?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312995674&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=129578&hvtargid=pla-4584413787761197&msclkid=d051c43db7391f3541afae31cde17710&th=1
+
+   **Option B: ESP32-S3-BOX-3 (Advanced)** ⭐ *New!*
+   - Development board with integrated 2.4" touchscreen display
+   - Requires ESP32-S3-BOX-3-DOCK accessory for GPIO access
+   - GPIO Pins Used: GPIO 10 (IR LED), GPIO 11 (White LED), GPIO 12 (DHT22)
+   - Optional: Local status display and touch control
+   - See [ESP32-S3-BOX-3 Configuration Guide](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details
 
 2. **LED System**
-   - **IR LED**: 850nm wavelength (e.g., TSAL6400)
-   - **White LED**: Broad-spectrum (e.g., high-CRI 5000K)
-   - LED drivers with PWM control (0-100%)
+   - **IR LED**: 850nm wavelength, 12V (e.g., LED Streifen 2538 120 LED/m IR 850nm) https://www.buyledstrip.com/de/led-streifen-2538-120-led-m-ir-850nm-je-50cm.html
+   - **White LED**: Broad-spectrum, 24V (e.g., 24 V COB 320 L/m iNextStation) https://www.amazon.de/dp/B0CT3B7K1D?ref_=ppx_hzsearch_conn_dt_b_fed_asin_title_1&th=1
+   - **Important**: IR and White LEDs use different voltages (12V vs 24V)
 
 3. **DHT22 Sensor**
-   - Temperature range: -40°C to 80°C (±0.5°C accuracy)
+   - Temperature range: -40°C to 80°C (±0.5°C accuracy) https://www.amazon.de/dp/B0F42HN92Q?ref=ppx_yo2ov_dt_b_fed_asin_title
    - Humidity range: 0-100% RH (±2-5% accuracy)
+   - DHT22 sensor board with integrated pull-up resistor (no external resistor needed)
 
-4. **Camera**
-   - Compatible with Micro-Manager device adapters
-   - Recommended: Cameras with hardware triggering support
+4. **Power Supplies and Mosfet logic level 3,3V **
+   - **ESP32 Power**: 5V via USB (from computer)
+   - **IR LED Power**: 12V DC, 2-5A power supply https://www.buyledstrip.com/de/netzteil-60-watt-12v-24v.html?id=173564582
+   - **White LED Power**: 24V DC, 2-5A power supply https://www.buyledstrip.com/de/netzteil-60-watt-12v-24v.html?id=173564582
+   - BOJACK IRLZ34N MOSFET 30 A 55 V IRLZ34NPBF https://www.amazon.de/dp/B0893WBH6H?ref=ppx_yo2ov_dt_b_fed_asin_title
+   - **Critical**: Common ground connection required between USB ground and both PSU grounds
+
+5. **Connectors, Wiring, Screw kit**
+   - **3x WAGO 221-413** COMPACT Lever Connectors (3-conductor) https://www.amazon.de/dp/B0CDPC692C?ref=ppx_yo2ov_dt_b_fed_asin_title
+   - Wire: PSU connector DC plug https://www.buyledstrip.com/de/55-mm-dc-buchse-weiblich.html
+   - Resistor 220 https://www.amazon.de/Elegoo-Widerst%C3%A4nde-Sortiment-St%C3%BCck-Metallfilm/dp/B072BHDBDG/ref=asc_df_B072BHDBDG?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312989902&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=192097&hvtargid=pla-4584413786304525&psc=1&msclkid=bc9a95dd8148109d2d6dffdc21218251
+   - Magnets https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1
+   - Connector whitelight LED https://www.amazon.de/dp/B0BJKC6WQJ?ref=ppx_yo2ov_dt_b_fed_asin_title
+   - Wires and connectors https://www.amazon.de/dp/B0B67KW6BC/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0B67KW6BC&pd_rd_w=Egnt7&content-id=amzn1.sym.99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_p=99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_r=B64Y7SJKH0MZRHKKB5XT&pd_rd_wg=B3gIN&pd_rd_r=712c8eed-6bdc-40b7-bd24-77516c8be8b2&aref=HdgOtKuxpu&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfdGhlbWF0aWM
+   - Glue https://www.amazon.de/dp/B0C6R9G4ZW?ref=nb_sb_ss_w_as-reorder_k0_1_8&amp=&crid=120N5DRLM9J5Q&sprefix=sekunden&th=1
+   - Hot glue gun https://www.amazon.de/RUNSAI-Hei%C3%9Fklebepistole-Klebepistole-Heissklebepistole-Klebepistolen/dp/B0FDGNZRPR/ref=sr_1_1_sspa?crid=1KQDWKVF8YWCF&dib=eyJ2IjoiMSJ9.WZlV9v1vUcb8kqQbh1nrqbNu4aSP8eWGOkJxBPx6pXaAq7WXuAwLiezS78mWRTujvlHkTBL7daUXeIjiXTyrWOddOLODKQmPlYpNsZW_5ppicYUQAVtQPU3qPni3-aGMC9EJg0Z5Rr3E0u-s4F_PClmALPQEc06K_QtDoRUi7WPbBDrYqO8xBe0cQ7--uichxZmXpGWsJwvbnravJGdN2Vzj142In4-RfgijVjdK69s.oydV89Yx8W2dxGRQ-1TWMTVTyLjj2DO2uT7NrHdBrMg&dib_tag=se&keywords=hotglue%2Bgun%2B7mm&qid=1778514033&sprefix=hotglue%2Caps%2C114&sr=8-1-spons&aref=T1O09xDQ0T&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1
+   - Screw Kit incl hex keys 
+   https://www.amazon.de/dp/B0CZSW8S66/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0CZSW8S66&pd_rd_w=sepag&content-id=amzn1.sym.bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_p=bf6dbf94-e926-4351-8952-c09f45cdef70&pf_rd_r=DCAXTTNQE08Z865MHAFS&pd_rd_wg=3wRol&pd_rd_r=6337fa24-4ceb-478e-8c50-316aa9eb6b8d&aref=1O1nyuJ2mQ&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw
+   
+6. **Camera**
+   - Hik Robotics MV-CS-013 60GN Near Infrared Request at  UC2 company https://openuc2.com/imprint/ or https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254
+   - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
+  
+7. 3D Printed Components from Print section in /docs directory
 
 ---
 
 ### Hardware Setup & Assembly
 
 #### Step 1: ESP32 Firmware Installation
+
+**Easiest method — Web Installer (no software required):**
+
+1. Open **Chrome** or **Edge** (Firefox is not supported)
+2. Visit **https://s1alknau.github.io/Nematostella-time-series/**
+3. Plug in your ESP32 via USB
+4. Select your board (ESP32 DevKit or ESP32-S3-BOX-3) and click **Connect & Flash**
+5. Done — the page guides you through the rest
+
+**Alternative — PlatformIO (for developers):**
 
 1. **Download Firmware**
    - Firmware located in: `Firmware/LED_Nematostella/`
@@ -105,144 +191,119 @@ Core dependencies:
 
 2. **Flash Firmware to ESP32**
    ```bash
-   # Using PlatformIO
+   # Using PlatformIO (ESP32 DevKit)
    cd Firmware/LED_Nematostella
-   pio run --target upload
+   pio run -e esp32dev --target upload
+
+   # For ESP32-S3-BOX-3:
+   pio run -e esp32-s3-box-3 --target upload
 
    # Or using Arduino IDE
    # Open src/main.cpp and upload to ESP32 board
    ```
 
-3. **Verify Firmware**
+3. **Verify Firmware** (optional)
    - Open Serial Monitor (115200 baud)
-   - You should see: `ESP32 Nematostella Controller v2.3`
+   - You should see: `ESP32 Nematostella Controller v2.4`
    - Type `STATUS` to verify all systems operational
 
-#### Step 2: LED System Assembly
+#### Step 2: LED System Assembly with IRLZ34N MOSFETs
 
-**IR LED Circuit:**
-```
-ESP32 GPIO 4 → LED Driver (PWM Input) → IR LED (850nm) → GND
-                     ↑
-                  Power Supply (12V recommended)
-```
+**MOSFET Specifications:**
+- Model: BOJACK IRLZ34N (IRLZ34NPBF)
+- Type: N-Channel Logic-Level MOSFET
+- Maximum Ratings: 30A, 55V
+- Gate Threshold: 1-2V (logic-level, works with 3.3V from ESP32)
+- Package: TO-220
 
-**White LED Circuit:**
-```
-ESP32 GPIO 15 → LED Driver (PWM Input) → White LED → GND
-                      ↑
-                   Power Supply (12V recommended)
-```
 
-**Recommended LED Drivers:**
-- PWM-compatible constant current drivers
-- Input: 5V PWM signal from ESP32
-- Output: Adjustable current (typically 350-700mA for high-power LEDs)
+
+<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/2b784ed2-0176-480f-b420-e1cafd119f22" />
+
+
+**MOSFET Connection Details:**
+1. **Gate Pin** → ESP32 GPIO (4 or 15) via 220Ω resistor 
+2. **Drain Pin** → LED Connection (-) [12V for IR, 24V for White]
+3. **Source Pin A/B 3** → Common Ground (WAGO #W2)
+4. **LED Connections:**
+   - IR LED: (+) from 12V PSU via WAGO #W1
+   - White LED: (+) from 24V PSU via WAGO #W3,
+5. DHT22
+   - GND Connected to common ground W2 or best direct to ESP32 GND
+   - VCC DHT connected to 3,3 V at ESP32
+   - Data Pin to Pin14
+
+
+**Important:**
+- IRLZ34N is **logic-level** compatible (works with 3.3V gate voltage)
+- No additional driver circuit needed between ESP32 and MOSFET
+- PWM frequency: 15kHz (set in firmware)
+- Can handle high-power LED strips (up to 30A theoretical, typically use 1-3A)
 
 **Safety Notes:**
 - ⚠️ IR LEDs are invisible - use IR viewer card to verify operation
-- Use appropriate current limiting to prevent LED damage
-- Ensure proper heat sinking for high-power LEDs
+- Use heatsink on MOSFET if driving >2A continuous (usually not the case)
+- Add flyback diode (1N4007) across LED if using inductive loads
+- Ensure common ground between ESP32, PSU, and MOSFETs
+- Use appropriate gauge wire for current loads
 
-#### Step 3: DHT22 Sensor Connection
 
-```
-DHT22 Sensor Pinout:
-Pin 1 (VCC)  → ESP32 3.3V
-Pin 2 (Data) → ESP32 GPIO 14 (+ 10kΩ pull-up resistor to 3.3V)
-Pin 3 (NC)   → Not connected
-Pin 4 (GND)  → ESP32 GND
-```
 
-**Pull-up Resistor:**
-- Required: 10kΩ resistor between Data pin and VCC
-- Ensures reliable sensor communication
+**Important Notes:**
+- DHT22 sensor board has **integrated pull-up resistor** - no external resistor needed
+- Direct 3-wire connection to ESP32
+- Use short wires (<40cm) for reliable communication
+
+**Power Supply Note:**
+- DHT22 datasheet specifies 3.3-6V operating range (5V optimal)
+- **This setup uses 3.3V** which provides excellent logic level compatibility:
+  - ✅ ESP32 GPIO operates at 3.3V logic
+  - ✅ DHT22 powered at 3.3V
+  - ✅ Integrated pull-up at 3.3V
+  - ✅ All signal levels perfectly matched
+- While 5V can provide slightly more stable readings, 3.3V works reliably and avoids any logic level conversion issues
+- Sensor has been tested extensively at 3.3V with stable temperature/humidity readings
 
 #### Step 4: Camera Integration
 
 **Supported Camera Types:**
-1. **Micro-Manager Compatible Cameras** (recommended)
-   - See [camera_adapters.py](src/timeseries_capture/camera_adapters.py)
-   - Examples: Hamamatsu, Andor, FLIR, Basler
 
-2. **HIK Vision Cameras**
-   - Custom adapter available in `Json+cam_manager/`
-   - See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
+**HIK Robotics Cameras** (tested and recommended):
+- **GigE (Ethernet) cameras**: Network-based cameras with high bandwidth
+- **USB cameras**: Direct USB connection for easy setup
+- Custom adapter available in `Json+cam_manager/`
+- See [example_uc2_ddorf_hik_imager_IR.json](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
+- See [camera_adapters.py](src/timeseries_capture/camera_adapters.py) for implementation details
 
 **Camera Positioning:**
 - Position camera to view sample chamber
 - Ensure LEDs illuminate sample area uniformly
-- Use IR-pass filter for IR-only imaging (optional)
 
-#### Step 5: Complete System Assembly
 
-1. **Mount Components:**
-   - ESP32 in accessible location for USB connection
-   - LEDs positioned for optimal sample illumination
-   - DHT22 sensor near sample chamber for accurate readings
-   - Camera mounted with stable positioning
-
-2. **Connect Power:**
-   - ESP32: USB power (5V, typically from computer)
-   - LED drivers: External 12V power supply
-   - Camera: Per manufacturer specifications
-
-3. **Cable Management:**
-   - Keep signal cables (PWM, DHT22) away from power cables
-   - Use shielded cables for long runs
-   - Secure all connections to prevent accidental disconnection
-
-4. **Initial Testing:**
-   ```bash
-   # Test ESP32 connection
-   python -m timeseries_capture.ESP32_Controller.esp32_connection_diagnostic
-
-   # Verify LED control
-   # In napari plugin: LED Control tab → Test IR/White LEDs
-
-   # Check sensor readings
-   # In napari plugin: Status tab → View temperature/humidity
-   ```
 
 ---
 
 ### Device Photos
 
-**Add your setup photos here to help others replicate the hardware configuration.**
+#### Complete System Overview
 
-#### Complete System
+![Overview of all components](docs/images/Overview_all_components.jpg)
 
-![Complete Nematostella Timelapse System](docs/images/system_complete.jpg)
-*Full system showing ESP32, LED array, camera, and sample chamber*
+#### Imager Body and Mirror
 
-#### ESP32 Controller Assembly
+![Imager body with mirror](docs/images/Imager_body_Mirror.jpg)
 
-![ESP32 with DHT22 and LED connections](docs/images/esp32_assembly.jpg)
-*ESP32 DevKit with DHT22 sensor and LED driver connections*
+#### Camera Rail Guide
 
-#### LED Illumination Setup
+![Camera rail guide](docs/images/Kamera_Railguide.jpg)
 
-![IR and White LED positioning](docs/images/led_setup.jpg)
-*Dual-LED array showing IR (850nm) and White LED positioning around sample chamber*
+#### Sample Mount with White Light Lid
 
-#### Sample Chamber Detail
+![Sample mount with white light lid](docs/images/Sample_Mount_White_Light_Lid.jpg)
 
-![Sample chamber with Nematostella](docs/images/sample_chamber.jpg)
-*Sample chamber showing Nematostella positioning and illumination*
+#### White Light Lid — Oblique Illumination
 
-#### Wiring Overview
-
-![Complete wiring diagram](docs/images/wiring_overview.jpg)
-*Overview of all connections: ESP32, LEDs, sensor, and camera*
-
-**Note:** *Photo placeholders above - replace with actual images of your setup. Recommended image directory: `docs/images/`*
-
-**Photo Guidelines:**
-- Use high-resolution images (1920x1080 or higher)
-- Include labels or annotations for key components
-- Show multiple angles for complex assemblies
-- Include close-ups of critical connections (DHT22, LED drivers)
-- Consider adding a scale reference (e.g., ruler) in photos
+![White light lid oblique illumination](docs/images/white_Light_lid_oblique_illumination.jpg)
 
 ---
 
@@ -252,30 +313,41 @@ Pin 4 (GND)  → ESP32 GND
 
 ```
 
+```
+
 #### Power Requirements
 
 | Component | Voltage | Current | Notes |
 |-----------|---------|---------|-------|
 | ESP32 | 5V USB | ~500mA | Powered via USB from computer |
-| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin |
-| IR LED | 12V | 350-700mA | Requires external power supply |
-| White LED | 12V | 350-700mA | Requires external power supply |
-| **Total** | - | **~1.5A** | External 12V PSU for LEDs |
+| DHT22 | 3.3V | 1-2mA | Powered from ESP32 3.3V pin (datasheet: 3.3-6V range, 5V optimal) |
+| IRLZ34N MOSFETs (2x) | 3.3V (gate) | <1mA each | Logic-level, driven by ESP32 GPIO |
+| IR LED Strip | 12V | 1-3A | Via IRLZ34N MOSFET, dedicated 12V PSU |
+| White LED Strip | 24V | 1-3A | Via IRLZ34N MOSFET, dedicated 24V PSU |
 
-**Recommended Power Supply:**
-- 12V DC, 2A minimum
-- Regulated output
-- Separate from computer/ESP32 power to avoid noise
+**Recommended Power Supplies:**
+- **12V PSU**: 2-5A for IR LED (regulated output)
+- **24V PSU**: 2-5A for White LED (regulated output)
+- Both PSUs separate from computer/ESP32 power to avoid noise
+- **Critical**: Common ground connection between both PSUs and ESP32 via WAGO #3
+
+**Connectors:**
+- WAGO 221-413 COMPACT Lever Connectors (3-conductor)
+- Used for safe wire connections (ESP32-MOSFET-LED-PSU)
+- Tool-free connection, reusable
+- Rated for 32A, 4mm² wire
 
 #### Signal Specifications
 
-**PWM Signals (GPIO 25, 26):**
+**PWM Signals (GPIO 4, 15):**
+- **GPIO 4**: IR LED MOSFET Gate
+- **GPIO 15**: White LED MOSFET Gate
 - Logic Level: 3.3V
-- Frequency: 1 kHz (configurable in firmware)
+- Frequency: 15 kHz (set in firmware)
 - Duty Cycle: 0-100% (controlled by plugin)
 - Rise/Fall Time: <1µs
 
-**DHT22 Communication:**
+**DHT22 Communication (GPIO 14):**
 - Protocol: Single-wire digital (proprietary)
 - Pull-up: 10kΩ to 3.3V (required)
 - Sampling Rate: ~0.5 Hz (one reading per 2 seconds max)
@@ -304,9 +376,9 @@ Pin 4 (GND)  → ESP32 GND
 - Verify GPIO pin assignments match firmware
 
 **DHT22 Returns 0.0 Values:**
-- Check 10kΩ pull-up resistor is installed
+- Check 10kΩ pull-up resistor is installed (or use DHT22 board with integrated pull-up)
 - Verify 3.3V power to sensor
-- Ensure data pin connected to GPIO 4
+- Ensure data pin connected to **GPIO 14** (not GPIO 4!)
 - Try different DHT22 sensor (failure rate ~5%)
 
 **LED Intensities Don't Match:**
@@ -371,42 +443,9 @@ In napari:
 
 ### Component Hierarchy
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   Main Widget (GUI)                     │
-├─────────────────────────────────────────────────────────┤
-│  ┌───────────────┐  ┌────────────────┐  ┌────────────┐ │
-│  │ Recording     │  │ ESP32 Control  │  │ Calibration│ │
-│  │ Panel         │  │ Panel          │  │ Panel      │ │
-│  └───────┬───────┘  └───────┬────────┘  └──────┬─────┘ │
-│          │                  │                   │       │
-└──────────┼──────────────────┼───────────────────┼───────┘
-           │                  │                   │
-           ▼                  ▼                   ▼
-    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │ Recording   │    │ ESP32 GUI   │    │ Calibration │
-    │ Controller  │◄───┤ Controller  │◄───┤ Service     │
-    └──────┬──────┘    └──────┬──────┘    └─────────────┘
-           │                  │
-           ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐
-    │ Recording   │    │    ESP32    │
-    │ Manager     │◄───┤ Controller  │
-    └──────┬──────┘    └──────┬──────┘
-           │                  │
-           ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐
-    │   Frame     │    │    ESP32    │
-    │  Capture    │◄───┤    Comm     │
-    └──────┬──────┘    └─────────────┘
-           │
-           ▼
-    ┌─────────────┐
-    │    Data     │
-    │  Manager    │
-    │   (HDF5)    │
-    └─────────────┘
-```
+<img width="715" height="595" alt="AdobeExpressPhotos_02f43629ad0644b1bb715cf363688806_CopyEdited" src="https://github.com/user-attachments/assets/8a1d89f4-7d10-430d-a4f3-4ff37531801a" />
+
+
 
 ### Key Components
 
@@ -433,7 +472,7 @@ In napari:
 **5. Data Manager** ([data_manager_hdf5.py](src/timeseries_capture/Datamanager/data_manager_hdf5.py))
 - HDF5 file creation and management
 - Chunked timeseries writing
-- Metadata organization
+
 
 ---
 
@@ -757,8 +796,8 @@ The ESP32 uses a **binary** command protocol over serial (115200 baud). Key comm
 | LED OFF | `0x00` | Turn off current LED | `0xAA` |
 | SELECT IR | `0x20` | Select IR LED | `0x30` |
 | SELECT WHITE | `0x21` | Select White LED | `0x31` |
-| SET IR POWER | `0x24` + power | Set IR LED power (0-100) | `0xAA` |
-| SET WHITE POWER | `0x25` + power | Set White LED power (0-100) | `0xAA` |
+| SET IR POWER | `0x24` + power | Set IR LED power (0–100) | `0xAA` |
+| SET WHITE POWER | `0x25` + power | Set White LED power (0–100) | `0xAA` |
 | SYNC CAPTURE | `0x0C` | Synchronized LED + camera capture | 15 bytes |
 | SYNC DUAL | `0x2C` | Dual-LED capture | 15 bytes |
 | STATUS | `0x02` | Get temperature / humidity / status | 5 bytes |
@@ -788,17 +827,34 @@ LED calibration ensures **consistent intensity** across:
 ### Calibration Types
 
 **1. IR-Only Calibration**
-- Adjusts IR LED power to reach target intensity
-- Used for IR-only recordings
+- Adjusts IR LED power to reach target intensity (200)
+- Used for: **IR-only recordings** OR **phase recordings with IR-only dark phase**
 
 **2. White-Only Calibration**
-- Adjusts White LED power to reach target intensity
-- Used for White-only recordings
+- Adjusts White LED power to reach target intensity (200)
+- Used for: **White-only recordings** OR **phase recordings with White-only light phase**
 
-**3. Dual Calibration** ⚠️
-- Calibrates IR and White LEDs separately
-- **Note**: When both LEDs are used together, intensities add up
-- **Recommendation**: Use separate IR/White calibrations for phase recordings
+**3. Dual LED Calibration** ⚠️
+- Calibrates **both LEDs simultaneously** to reach target intensity (200) when both are ON together
+- Turns on both IR and White LEDs, then adjusts their powers proportionally
+- Used for: **Continuous dual LED recordings** OR **phase recordings with dual LED light phase**
+
+### CRITICAL: Calibration Workflow for Phase Recordings
+
+Choose the correct calibration method based on your recording phases:
+
+| Recording Configuration | Calibration Method | Why |
+|------------------------|-------------------|-----|
+| **Continuous IR only** | `calibrate_ir()` | Single LED calibration |
+| **Continuous White only** | `calibrate_white()` | Single LED calibration |
+| **Continuous Dual LED** | `calibrate_dual()` | Both LEDs together |
+| **Phases: IR + White (separate)** | `calibrate_ir()` + `calibrate_white()` | Calibrate each LED individually |
+| **Phases: IR + Dual LED** | `calibrate_ir()` + `calibrate_dual()` | Calibrate IR alone, then both together |
+| **Phases: White + Dual LED** | `calibrate_white()` + `calibrate_dual()` | Calibrate White alone, then both together |
+
+**Common Mistake:**
+- ❌ Using `calibrate_dual()` for phase recording with separate IR/White phases
+- ✅ Use `calibrate_ir()` and `calibrate_white()` separately instead
 
 ### Calibration Algorithm
 
@@ -901,7 +957,7 @@ recording.h5
 │   └── frames                   # (N, H, W) dataset
 │       ├── dtype: uint16
 │       ├── shape: (frames, height, width)
-│       └── chunks: (1, H, W)
+│       └── chunks: adaptive (~4 MiB/chunk, multiple frames per chunk)
 │
 └── timeseries/                  # Timeseries data group
     ├── frame_index              # Frame numbers [0, 1, 2, ...]
@@ -1037,6 +1093,35 @@ with h5py.File('recording.h5', 'r') as f:
     plt.grid(True, alpha=0.3)
     plt.show()
 ```
+
+---
+
+## Live Analysis During Recording
+
+The plugin supports live activity analysis while a recording is running, provided you save in **Zarr format** (Zarr allows concurrent read-while-write, unlike HDF5 which locks the file).
+
+### Requirements
+
+Install the optional dependencies:
+```bash
+pip install zarr opencv-python
+```
+
+### Workflow
+
+1. **Start the plugin** and open the **📊 Live Analysis** tab.
+2. **Capture a preview frame** — click "Capture Preview" to grab a single frame from the camera without starting a recording.
+3. **Run ROI detection** — click "Detect ROIs" to run HoughCircles on the preview frame (the same algorithm used by `napari-hdf5-activity`). Detected ROI circles are overlaid on the preview image. Adjust the HoughCircles parameters (min/max radius, sensitivity) if detection results are poor.
+4. **Select recording format** — in the Recording Settings tab, choose **Zarr** as the output format. The ROI masks will be saved into the Zarr store alongside the image frames.
+5. **Start recording** — click Start Recording as normal. The Live Analysis tab will begin updating the per-ROI activity plot approximately every 20 seconds by reading frames from the live Zarr store.
+6. **Use the ROI dropdown** to display all ROI traces at once or isolate a single ROI for closer inspection.
+
+### Notes
+
+- The activity plot is updated every 20 s; this period is configurable in the plugin settings.
+- For HDF5 recordings, live analysis is not available because HDF5 files are locked during writing. Switch to Zarr format to enable it.
+- Zarr stores are written to a `.zarr` directory alongside the HDF5 file (or instead of it, depending on format selection).
+- ROI masks are stored under `rois/` inside the Zarr store and can be read by `napari-hdf5-activity` for post-hoc analysis.
 
 ---
 
@@ -1194,13 +1279,241 @@ If you use this plugin in your research, please cite:
 - **Discussions**: [GitHub Discussions](https://github.com/s1alknau/Nematostella-time-series/discussions)
 - **Email**: [your.email@domain.com]
 
+
+---
+
+## Quick Reference
+
+### ESP32 Firmware Installation (Detailed)
+
+**For Arduino IDE Users:**
+
+1. **Install ESP32 Support:**
+   ```
+   File → Preferences → Additional Board Manager URLs:
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+   Then: Tools → Board → Boards Manager → Install "esp32 by Espressif Systems"
+
+2. **Install DHT Library:**
+   ```
+   Tools → Manage Libraries → Search "DHT sensor library"
+   Install: "DHT sensor library by Adafruit" + "Adafruit Unified Sensor"
+   ```
+
+3. **Upload Firmware:**
+   ```
+   File → Open → Firmware/LED_Nematostella/src/main.cpp
+   Tools → Board → ESP32 Dev Module
+   Tools → Port → [Your ESP32 port]
+   Click Upload → Press RESET on ESP32 when done
+   ```
+
+4. **Verify:**
+   ```
+   Tools → Serial Monitor (115200 baud)
+   Expected: "ESP32 Nematostella Controller v2.4"
+   ```
+
+**Troubleshooting:**
+- **No port found?** Install CH340/CP2102 USB driver
+- **Upload fails?** Hold BOOT button during upload
+- **Compile error?** Check DHT library is installed
+
+See [Firmware/QUICK_START_GUIDE.md](Firmware/QUICK_START_GUIDE.md) for full step-by-step guide.
+
+### ESP32 Communication Protocol (Quick Reference)
+
+**Key Commands:**
+
+| Command | Hex | Description | Response |
+|---------|-----|-------------|----------|
+| LED ON | 0x01 | Turn on current LED | 0xAA |
+| LED OFF | 0x00 | Turn off current LED | 0xAA |
+| SELECT IR | 0x20 | Select IR LED | 0x30 |
+| SELECT WHITE | 0x21 | Select White LED | 0x31 |
+| SET IR POWER | 0x24 + power | Set IR LED power (0-100) | 0xAA |
+| SET WHITE POWER | 0x25 + power | Set White LED power (0-100) | 0xAA |
+| SYNC CAPTURE | 0x0C | Synchronized LED+camera capture | 15 bytes |
+| SYNC DUAL | 0x2C | Dual LED capture | 15 bytes |
+| STATUS | 0x02 | Get temp/humidity/status | 5 bytes |
+
+**Serial Settings:**
+- Baud Rate: 115200
+- Data: 8N1 (8 bits, no parity, 1 stop bit)
+- Timeout: 100ms
+
+**SYNC CAPTURE Response (15 bytes):**
+```
+[0x1B] [temp_high] [temp_low] [hum_high] [hum_low] [dur_high] [dur_low]
+[led_type] [ir_state] [white_state] [ir_power] [white_power] [stab_high] [stab_low]
+```
+
+See [Firmware/FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for complete protocol specification.
+
+### ESP32-S3-BOX-3 Configuration
+
+The plugin supports both standard ESP32-DevKit and ESP32-S3-BOX-3 boards.
+
+**ESP32-S3-BOX-3 Pin Mapping:**
+
+| Function | ESP32 DevKit | ESP32-S3-BOX-3 | Notes |
+|----------|--------------|----------------|-------|
+| IR LED PWM | GPIO 4 | **GPIO 10** | Via Pmod header |
+| White LED PWM | GPIO 15 | **GPIO 11** | Via Pmod header |
+| DHT22 Data | GPIO 14 | **GPIO 12** | Via Pmod header |
+
+**Key Differences:**
+- ESP32-S3-BOX-3 requires ESP32-S3-BOX-3-DOCK for GPIO access
+- Unified firmware auto-detects board type (compile-time)
+- 2.4" touchscreen available for optional status display
+- 16MB Flash, 16MB PSRAM (vs 4MB Flash on standard ESP32)
+
+**Firmware Configuration:**
+```cpp
+// Firmware auto-detects board and configures pins accordingly
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  #define IR_LED_PIN 10
+  #define WHITE_LED_PIN 11
+  #define DHT22_PIN 12
+#else
+  #define IR_LED_PIN 4
+  #define WHITE_LED_PIN 15
+  #define DHT22_PIN 14
+#endif
+```
+
+See [docs/ESP32-S3-BOX-3_CONFIGURATION.md](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for complete setup guide.
+
+### Pin Reference Card
+
+**ESP32 DevKit Standard:**
+```
+GPIO 4  → IR LED MOSFET Gate (PWM, 15kHz)
+GPIO 15 → White LED MOSFET Gate (PWM, 15kHz)
+GPIO 14 → DHT22 Data (with 10kΩ pull-up)
+3.3V    → DHT22 VCC
+GND     → DHT22 GND, Common Ground Hub (WAGO #3)
+```
+
+**MOSFET Connections:**
+```
+IRLZ34N (IR LED):
+  Gate   → ESP32 GPIO 4
+  Drain  → 12V PSU (+)
+  Source → Common Ground
+
+IRLZ34N (White LED):
+  Gate   → ESP32 GPIO 15
+  Drain  → 24V PSU (+)
+  Source → Common Ground
+```
+
+**Power Distribution:**
+```
+WAGO #1: 12V+ (IR LED)
+WAGO #2: 24V+ (White LED)
+WAGO #3: Common Ground (critical!)
+  - 12V PSU GND
+  - 24V PSU GND
+  - ESP32 GND
+  - Both MOSFET Sources
+  - Both LED cathodes (-)
+```
+
+
+---
+
+## Quick Reference
+
+### ESP32 Firmware Installation (Detailed)
+
+**For Arduino IDE Users:**
+
+1. **Install ESP32 Support:**
+   - File → Preferences → Additional Board Manager URLs:
+   ```
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+   - Tools → Board → Boards Manager → Install "esp32 by Espressif Systems"
+
+2. **Install DHT Library:**
+   - Tools → Manage Libraries → Search "DHT sensor library"
+   - Install: "DHT sensor library by Adafruit" + "Adafruit Unified Sensor"
+
+3. **Upload Firmware:**
+   - File → Open → Firmware/LED_Nematostella/src/main.cpp
+   - Tools → Board → ESP32 Dev Module
+   - Tools → Port → [Your ESP32 port]
+   - Click Upload → Press RESET on ESP32 when done
+
+4. **Verify:**
+   - Tools → Serial Monitor (115200 baud)
+   - Expected: "ESP32 Nematostella Controller v2.4"
+
+**Troubleshooting:**
+- **No port found?** Install CH340/CP2102 USB driver
+- **Upload fails?** Hold BOOT button during upload
+- **Compile error?** Check DHT library is installed
+
+See [Firmware/QUICK_START_GUIDE.md](Firmware/QUICK_START_GUIDE.md) for full guide.
+
+### ESP32 Communication Protocol (Quick Reference)
+
+**Key Commands:**
+
+| Command | Hex | Description | Response |
+|---------|-----|-------------|----------|
+| LED ON | 0x01 | Turn on current LED | 0xAA |
+| LED OFF | 0x00 | Turn off current LED | 0xAA |
+| SELECT IR | 0x20 | Select IR LED | 0x30 |
+| SELECT WHITE | 0x21 | Select White LED | 0x31 |
+| SET IR POWER | 0x24 + power | Set IR LED power (0-100) | 0xAA |
+| SET WHITE POWER | 0x25 + power | Set White LED power (0-100) | 0xAA |
+| SYNC CAPTURE | 0x0C | Synchronized LED+camera capture | 15 bytes |
+| SYNC DUAL | 0x2C | Dual LED capture | 15 bytes |
+| STATUS | 0x02 | Get temp/humidity/status | 5 bytes |
+
+**Serial Settings:** 115200 baud, 8N1, 100ms timeout
+
+**SYNC CAPTURE Response (15 bytes):** `[0x1B] [temp_high] [temp_low] [hum_high] [hum_low] [dur_high] [dur_low] [led_type] [ir_state] [white_state] [ir_power] [white_power] [stab_high] [stab_low]`
+
+See [Firmware/FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for complete protocol.
+
+### ESP32-S3-BOX-3 Configuration
+
+**Pin Mapping:**
+
+| Function | ESP32 DevKit | ESP32-S3-BOX-3 |
+|----------|--------------|----------------|
+| IR LED PWM | GPIO 4 | GPIO 10 |
+| White LED PWM | GPIO 15 | GPIO 11 |
+| DHT22 Data | GPIO 14 | GPIO 12 |
+
+Firmware auto-detects board type. ESP32-S3-BOX-3 has 16MB Flash/PSRAM and optional 2.4" touchscreen.
+
+See [docs/ESP32-S3-BOX-3_CONFIGURATION.md](docs/ESP32-S3-BOX-3_CONFIGURATION.md) for details.
+
+### Pin Reference Card
+
+**ESP32 DevKit:**
+- GPIO 4 → IR LED MOSFET Gate (PWM, 15kHz)
+- GPIO 15 → White LED MOSFET Gate (PWM, 15kHz)
+- GPIO 14 → DHT22 Data (with 10kΩ pull-up)
+
+**Power Distribution:**
+- WAGO #1: 12V+ (IR LED)
+- WAGO #2: 24V+ (White LED)
+- WAGO #3: Common Ground (12V GND + 24V GND + ESP32 GND + MOSFET Sources + LED cathodes)
+
 ---
 
 ## Acknowledgments
 
 - napari team for the excellent imaging platform
-- Micro-Manager project for device control
+- HIK Robotics for camera support and SDK
 - ESP32 community for microcontroller support
+- Open-source hardware and software communities
 
 ---
 

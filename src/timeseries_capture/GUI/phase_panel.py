@@ -54,6 +54,16 @@ class PhaseConfigPanel(QWidget):
         self.phase_enabled_check.toggled.connect(self._emit_config_changed)
         enable_layout.addWidget(self.phase_enabled_check)
 
+        self.white_led_continuous_check = QCheckBox("White LED continuous (day phase)")
+        self.white_led_continuous_check.setChecked(False)
+        self.white_led_continuous_check.setEnabled(False)
+        self.white_led_continuous_check.setToolTip(
+            "White LED stays on continuously throughout the entire light phase.\n"
+            "When disabled: White LED pulses briefly for each frame capture only."
+        )
+        self.white_led_continuous_check.toggled.connect(self._emit_config_changed)
+        enable_layout.addWidget(self.white_led_continuous_check)
+
         enable_group.setLayout(enable_layout)
         layout.addWidget(enable_group)
 
@@ -172,6 +182,9 @@ class PhaseConfigPanel(QWidget):
         self.starting_group.setEnabled(enabled)
         self.led_config_group.setEnabled(enabled)
         self.preview_group.setEnabled(enabled)
+        self.white_led_continuous_check.setEnabled(enabled)
+        if not enabled:
+            self.white_led_continuous_check.setChecked(False)
 
     def _update_cycle_info(self):
         """Update Cycle Info Label"""
@@ -232,6 +245,7 @@ class PhaseConfigPanel(QWidget):
         """Gibt aktuelle Phase-Konfiguration zurück"""
         return {
             "enabled": self.phase_enabled_check.isChecked(),
+            "white_led_continuous": self.white_led_continuous_check.isChecked(),
             "light_duration_min": self.light_duration_spin.value(),
             "dark_duration_min": self.dark_duration_spin.value(),
             "start_with_light": self.start_light_radio.isChecked(),

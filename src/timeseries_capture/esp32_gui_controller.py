@@ -219,7 +219,7 @@ class ESP32GUIController(QObject):
 
             # Build hardware info dict
             hw_info = {
-                "firmware": "ESP32 v2.2",  # Updated version
+                "firmware": "ESP32 v2.4",
                 "temperature": sensor_data["temperature"] if sensor_data else None,
                 "humidity": sensor_data["humidity"] if sensor_data else None,
                 "uptime": stats.get("uptime_seconds", 0),  # Fixed: use actual uptime
@@ -252,6 +252,25 @@ class ESP32GUIController(QObject):
             self._monitor_timer.stop()
             self._monitor_timer = None
             logger.debug("Background monitoring stopped")
+
+    def pause_monitoring(self):
+        """Pause background monitoring during recording.
+
+        The GUI monitor timer sends serial commands (get_sensor_data) that race
+        with the recording loop's select_led_type() ACK wait, causing 2s timeouts.
+        Call this when recording starts and resume_monitoring() when it stops.
+        """
+        if self._monitor_timer and self._monitor_timer.isActive():
+            self._monitor_timer.stop()
+            logger.info("ESP32 monitor paused for recording")
+
+    def resume_monitoring(self):
+        """Resume background monitoring after recording ends."""
+        if self._monitor_timer is not None and not self._monitor_timer.isActive():
+            self._monitor_timer.start(self._monitor_interval_ms)
+            logger.info("ESP32 monitor resumed after recording")
+        elif self._monitor_timer is None and self._is_connected:
+            self._start_monitoring()
 
     def _monitor_tick(self):
         """Periodic monitoring tick"""
@@ -496,7 +515,7 @@ class ESP32GUIController(QObject):
         if self.esp32:
             try:
                 self.esp32.cleanup()
-            except:
+            except Exception:
                 pass
             self.esp32 = None
 

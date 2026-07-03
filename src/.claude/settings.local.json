@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(winget search:*)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(dir \"W:\\\\Nematostella_AVI\\\\*.avi\" /b)",
+      "Bash(find:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd FFT significance testing and consolidate mathematical documentation\n\n- Implement permutation-based significance test for FFT analysis \\(1000 permutations\\)\n- Add p-value calculation and significance flags to FFT results\n- Remove ROI count from Fisher Z-transformation plot title\n- Consolidate mathematical documentation into main README with comprehensive TOC\n- Document complete formulas for movement analysis \\(Hough, thresholds, hysteresis\\)\n- Document rhythmic analysis methods \\(Fisher Z, FFT, Cosinor\\) with statistical tests\n- Add method comparison table and integrated workflow guidance\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(ruff check:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd FFT significance testing and consolidate mathematical documentation\n\n- Implement permutation-based significance test for FFT analysis \\(1000 permutations\\)\n- Add p-value calculation and significance flags to FFT results\n- Consolidate mathematical documentation into main README with comprehensive TOC\n- Document complete formulas for movement analysis \\(Hough, thresholds, hysteresis\\)\n- Document rhythmic analysis methods \\(Fisher Z, FFT, Cosinor\\) with statistical tests\n- Add method comparison table and integrated workflow guidance\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}

@@ -34,6 +34,7 @@ from ..main_widget import NematostellaTimelapseCaptureWidget, create_timelapse_w
 from .camera_selection_panel import CameraSelectionPanel
 from .esp32_connection_panel import ESP32ConnectionPanel
 from .led_control_panel import LEDControlPanel
+from .live_analysis_panel import LiveAnalysisPanel
 from .log_panel import LogPanel
 from .multi_camera_status_panel import MultiCameraStatusPanel
 from .phase_panel import PhaseConfigPanel
@@ -56,6 +57,7 @@ __all__ = [
     "ESP32ConnectionPanel",
     "StatusPanel",
     "LogPanel",
+    "LiveAnalysisPanel",
     # Multi-Camera Panels
     "CameraSelectionPanel",
     "MultiCameraStatusPanel",

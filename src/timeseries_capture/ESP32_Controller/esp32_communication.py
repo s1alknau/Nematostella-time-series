@@ -49,6 +49,13 @@ class ESP32Communication:
         self._last_successful_command = 0.0
         self._connection_start_time = 0.0  # Track connection uptime
 
+        # Background reconnect
+        self._reconnecting = False  # True while reconnect thread is running
+        self._reconnect_thread: Optional[threading.Thread] = None
+        self._reconnect_interval_sec = 10.0  # retry every 10s until success
+        # Optional callback: called with success=True/False after each attempt
+        self.on_reconnect: Optional[callable] = None
+
     def find_esp32_port(self) -> Optional[str]:
         """
         Findet ESP32 Port automatisch - VERBESSERT
@@ -144,7 +151,7 @@ class ESP32Communication:
                 try:
                     self.serial_connection.close()
                     logger.debug("Closed existing connection")
-                except:
+                except Exception:
                     pass
 
             # Determine port
@@ -191,12 +198,12 @@ class ESP32Communication:
 
                     self.serial_connection = serial.Serial(**serial_kwargs)
 
-                    # WICHTIG: Längerer Delay für ESP32 Boot
-                    logger.debug("Waiting for ESP32 to boot...")
-                    time.sleep(2.0)  # ERHÖHT von 0.5 auf 2.0 Sekunden
+                    # WICHTIG: ESP32 braucht ~3.5s für Boot + DHT22 Warmup
+                    logger.debug("Waiting for ESP32 to boot (3.5s for DHT22 warmup)...")
+                    time.sleep(3.5)
 
-                    # Clear any boot messages in buffer
-                    self.clear_buffers()
+                    # Clear boot messages aggressively
+                    self.clear_buffers(aggressive=True)
 
                     # Test if ESP32 responds
                     logger.debug("Testing ESP32 response...")
@@ -229,33 +236,47 @@ class ESP32Communication:
 
     def _test_connection(self) -> bool:
         """
-        Testet ob ESP32 antwortet (NEU)
+        Testet ob ESP32 antwortet mit Retry-Logik.
 
         Returns:
             True wenn ESP32 antwortet
         """
-        try:
-            # Send STATUS command (0x02)
-            self.serial_connection.write(bytes([0x02]))
-            self.serial_connection.flush()
+        for attempt in range(3):
+            try:
+                # Clear any leftover data before test
+                if self.serial_connection.in_waiting > 0:
+                    self.serial_connection.read(self.serial_connection.in_waiting)
+                    time.sleep(0.1)
 
-            # Wait for response (increased to 300ms for reliability)
-            time.sleep(0.3)
+                # Send STATUS command (0x02) - expects 5 bytes back
+                self.serial_connection.write(bytes([0x02]))
+                self.serial_connection.flush()
 
-            if self.serial_connection.in_waiting > 0:
-                response = self.serial_connection.read(self.serial_connection.in_waiting)
-                logger.debug(f"Test response: {response.hex()}")
-                # Valid responses are 0x10 (OFF) or 0x11 (ON)
-                if response and (response[0] == 0x10 or response[0] == 0x11):
-                    logger.debug("ESP32 responded correctly to STATUS")
-                    return True
+                # Wait for response with increasing timeout
+                wait_time = 0.5 + (attempt * 0.5)
+                time.sleep(wait_time)
 
-            logger.debug("No valid response from ESP32")
-            return False
+                if self.serial_connection.in_waiting > 0:
+                    response = self.serial_connection.read(self.serial_connection.in_waiting)
+                    logger.debug(f"Test response (attempt {attempt+1}): {response.hex()}")
 
-        except Exception as e:
-            logger.debug(f"Connection test failed: {e}")
-            return False
+                    # STATUS response is 5 bytes: [status][temp_h][temp_l][hum_h][hum_l]
+                    # Check if any byte is a valid status (0x10=OFF or 0x11=ON)
+                    for byte in response:
+                        if byte in (0x10, 0x11):
+                            logger.debug("ESP32 responded correctly to STATUS")
+                            return True
+
+                logger.debug(f"No valid response (attempt {attempt+1}/{3})")
+
+            except Exception as e:
+                logger.debug(f"Connection test attempt {attempt+1} failed: {e}")
+
+            if attempt < 2:
+                time.sleep(0.5)
+
+        logger.debug("No valid response from ESP32 after all attempts")
+        return False
 
     def disconnect(self):
         """Trennt Verbindung zum ESP32"""
@@ -295,7 +316,7 @@ class ESP32Communication:
                 _ = self.serial_connection.in_waiting
                 self.connected = True
                 return True
-            except:
+            except Exception:
                 self.connected = False
                 return False
 
@@ -392,53 +413,86 @@ class ESP32Communication:
 
     def read_bytes(self, count: int, timeout: Optional[float] = None) -> Optional[bytes]:
         """
-        Liest mehrere Bytes.
+        Reads exactly `count` bytes from the serial port without holding
+        _comm_lock during pyserial's blocking wait.
+
+        Mirrors read_until_response(): polls in_waiting + short sleep
+        outside the lock, so other threads can issue commands while a
+        slow ESP32 response is pending. This prevents the Windows USB
+        serial driver stall from holding _comm_lock for many seconds
+        (the same bug that caused 105 s frame-interval spikes before
+        read_until_response was rewritten).
 
         Args:
-            count: Anzahl zu lesender Bytes
-            timeout: Optional timeout override
+            count: Number of bytes to read
+            timeout: Total wait timeout in seconds (default 2.0)
 
         Returns:
-            Bytes oder None bei Fehler
+            Bytes object of length `count`, or None on timeout / partial read.
         """
-        with self._comm_lock:
-            if not self.is_connected():
-                return None
+        if timeout is None:
+            timeout = 2.0
 
-            try:
-                old_timeout = self.serial_connection.timeout
-                if timeout is not None:
-                    self.serial_connection.timeout = timeout
+        start_time = time.time()
+        buffer = bytearray()
 
-                data = self.serial_connection.read(count)
+        while (time.time() - start_time) < timeout and len(buffer) < count:
+            with self._comm_lock:
+                if not self.is_connected():
+                    return None
+                try:
+                    waiting = self.serial_connection.in_waiting
+                except Exception as e:
+                    logger.error(f"Error querying in_waiting: {e}")
+                    return None
 
-                if timeout is not None:
-                    self.serial_connection.timeout = old_timeout
+                if waiting > 0:
+                    needed = count - len(buffer)
+                    chunk = self.serial_connection.read(min(waiting, needed))
+                    if chunk:
+                        buffer.extend(chunk)
+                    if len(buffer) >= count:
+                        result = bytes(buffer[:count])
+                        logger.debug(f"Read {count} bytes: {result.hex()}")
+                        return result
+                    continue
+            # Lock released here — other threads can acquire while we wait
+            time.sleep(0.010)
 
-                if len(data) == count:
-                    logger.debug(f"Read {count} bytes: {data.hex()}")
-                    return data
+        if len(buffer) == count:
+            result = bytes(buffer)
+            logger.debug(f"Read {count} bytes: {result.hex()}")
+            return result
 
-                logger.warning(f"Expected {count} bytes, got {len(data)}")
-                return None
-
-            except Exception as e:
-                logger.error(f"Error reading bytes: {e}")
-                return None
+        logger.warning(
+            f"read_bytes: expected {count}, got {len(buffer)} within {timeout:.2f}s timeout"
+        )
+        # Drop partial bytes so they do not corrupt the next exchange
+        if buffer:
+            self.clear_buffers()
+        return None
 
     def read_until_response(
         self, expected_byte: int, timeout: float = 2.0, max_bytes: int = 100
     ) -> bool:
         """
-        Liest bis erwartetes Byte gefunden wird.
+        Polls for an expected byte using in_waiting to avoid blocking reads.
+
+        Uses a non-blocking poll (in_waiting check) + short sleep instead of
+        blocking serial.read(timeout=0.1).  This prevents Windows USB serial
+        driver stalls from holding _comm_lock for longer than the configured
+        timeout and causing multi-second frame interval spikes.
+
+        On timeout the input buffer is cleared to prevent stale ACK bytes
+        from corrupting the next command exchange.
 
         Args:
-            expected_byte: Erwartetes Response-Byte
-            timeout: Timeout in Sekunden
-            max_bytes: Maximale Anzahl zu lesender Bytes
+            expected_byte: Expected response byte
+            timeout: Total wait budget in seconds
+            max_bytes: Bail out after reading this many non-matching bytes
 
         Returns:
-            True wenn Response gefunden
+            True when expected_byte found, False on timeout/max_bytes/error
         """
         start_time = time.time()
         bytes_read = 0
@@ -446,17 +500,40 @@ class ESP32Communication:
         logger.debug(f"Waiting for response 0x{expected_byte:02X}...")
 
         while (time.time() - start_time) < timeout and bytes_read < max_bytes:
-            byte = self.read_byte(timeout=0.1)
-            if byte is None:
-                continue
+            with self._comm_lock:
+                if not self.is_connected():
+                    return False
+                try:
+                    waiting = self.serial_connection.in_waiting
+                except Exception as e:
+                    logger.debug(f"in_waiting check failed: {e}")
+                    return False
 
-            bytes_read += 1
+                if waiting > 0:
+                    # Read however many bytes are already buffered (non-blocking)
+                    chunk_size = min(waiting, max_bytes - bytes_read)
+                    try:
+                        data = self.serial_connection.read(chunk_size)
+                    except Exception as e:
+                        logger.debug(f"read failed: {e}")
+                        return False
 
-            if byte == expected_byte:
-                logger.debug(f"Found expected response 0x{expected_byte:02X}")
-                return True
+                    for byte in data:
+                        bytes_read += 1
+                        if byte == expected_byte:
+                            logger.debug(f"Found expected response 0x{expected_byte:02X}")
+                            return True
+
+                    # Bytes read but target not among them — keep polling
+                    continue
+
+            # No data yet — sleep briefly *without* holding the lock so other
+            # threads (e.g. recording loop) can use the port in between.
+            time.sleep(0.010)  # 10 ms poll interval
 
         logger.warning(f"Response 0x{expected_byte:02X} not found within timeout")
+        # Flush any late-arriving stale bytes so they don't corrupt the next command
+        self.clear_buffers()
         return False
 
     def clear_buffers(self, aggressive: bool = False) -> bool:
@@ -518,19 +595,69 @@ class ESP32Communication:
                 logger.debug(f"Buffer clear failed: {e}")
                 return False
 
+    @property
+    def is_reconnecting(self) -> bool:
+        """True while a background reconnect attempt is in progress."""
+        return self._reconnecting
+
     def _check_reconnect(self):
-        """Prüft ob Reconnect nötig ist - VERBESSERT"""
-        if self._consecutive_failures >= self._max_failures_before_reconnect:
-            logger.warning(
-                f"⚠️ {self._consecutive_failures} consecutive failures, attempting reconnect..."
-            )
-            old_port = self.port
-            self.disconnect()
-            time.sleep(1.0)  # Längerer Delay vor Reconnect
-            if self.connect(port=old_port):
-                logger.info("✅ Reconnect successful")
-            else:
-                logger.error("❌ Reconnect failed")
+        """
+        Trigger a background reconnect after consecutive failures.
+
+        Runs in a daemon thread so the recording loop is never blocked.
+        Retries every _reconnect_interval_sec until the connection is restored.
+        """
+        if self._consecutive_failures < self._max_failures_before_reconnect:
+            return
+        if self._reconnecting:
+            return  # already running
+
+        old_port = self.port
+        self._reconnecting = True
+        logger.warning(
+            f"⚠️ {self._consecutive_failures} consecutive failures — "
+            "starting background reconnect thread"
+        )
+
+        def _reconnect_loop():
+            attempt = 0
+            while self._reconnecting:
+                attempt += 1
+                logger.info(f"🔄 ESP32 reconnect attempt {attempt} (port={old_port})...")
+                try:
+                    self.disconnect()
+                    time.sleep(1.0)
+                    success = self.connect(port=old_port)
+                except Exception as e:
+                    success = False
+                    logger.warning(f"Reconnect attempt {attempt} raised: {e}")
+
+                if success:
+                    logger.info(f"✅ ESP32 reconnected after {attempt} attempt(s)")
+                    self._reconnecting = False
+                    self._consecutive_failures = 0
+                    if self.on_reconnect:
+                        try:
+                            self.on_reconnect(True)
+                        except Exception:
+                            pass
+                    return
+
+                logger.warning(
+                    f"❌ Reconnect attempt {attempt} failed — "
+                    f"retrying in {self._reconnect_interval_sec:.0f}s"
+                )
+                if self.on_reconnect:
+                    try:
+                        self.on_reconnect(False)
+                    except Exception:
+                        pass
+                time.sleep(self._reconnect_interval_sec)
+
+        self._reconnect_thread = threading.Thread(
+            target=_reconnect_loop, daemon=True, name="ESP32-Reconnect"
+        )
+        self._reconnect_thread.start()
 
     def get_connection_stats(self) -> dict:
         """
@@ -551,8 +678,6 @@ class ESP32Communication:
                 else -1
             ),
             "uptime_seconds": (
-                time.time() - self._connection_start_time
-                if self._connection_start_time > 0
-                else 0
+                time.time() - self._connection_start_time if self._connection_start_time > 0 else 0
             ),
         }

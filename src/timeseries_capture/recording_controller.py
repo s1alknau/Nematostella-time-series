@@ -11,11 +11,13 @@ Verantwortlich für:
 import logging
 from typing import Optional
 
+import numpy as np
 from qtpy.QtCore import QObject
 from qtpy.QtCore import Signal as pyqtSignal
 
 from .camera_adapters import CameraAdapter
 from .Recorder import FrameCaptureService, RecordingConfig, RecordingManager
+from .Recorder.recording_state import ExperimentSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ class RecordingController(QObject):
     # Signals für GUI Updates
     status_updated = pyqtSignal(dict)  # Recording status
     error_occurred = pyqtSignal(str)  # Error message
+    zarr_path_ready = pyqtSignal(str)  # Emitted when Zarr store is open (path for live analysis)
 
     def __init__(
         self,
@@ -52,6 +55,9 @@ class RecordingController(QObject):
         # Recording components (initialized when needed)
         self.frame_capture_service: Optional[FrameCaptureService] = None
         self.recording_manager: Optional[RecordingManager] = None
+
+        # ROI masks for live analysis (set before starting recording)
+        self._roi_masks: list[np.ndarray] = []
 
         logger.info("RecordingController initialized")
 
@@ -155,6 +161,7 @@ class RecordingController(QObject):
                 experiment_name=config_dict["experiment_name"],
                 output_dir=config_dict["output_dir"],
                 phase_enabled=phase_enabled,
+                white_led_continuous=config_dict.get("white_led_continuous", False),
                 light_duration_min=config_dict.get("light_duration_min", 30),
                 dark_duration_min=config_dict.get("dark_duration_min", 30),
                 start_with_light=config_dict.get("start_with_light", True),
@@ -166,6 +173,17 @@ class RecordingController(QObject):
                 dark_phase_ir_power=config_dict.get("dark_phase_ir_power", 100),
                 light_phase_ir_power=config_dict.get("light_phase_ir_power", 100),
                 light_phase_white_power=config_dict.get("light_phase_white_power", 50),
+                # Brightness validation
+                brightness_validation_threshold=config_dict.get(
+                    "brightness_validation_threshold", 10.0
+                ),
+                use_full_frame_for_validation=config_dict.get(
+                    "use_full_frame_for_validation", True
+                ),
+                roi_fraction=config_dict.get("roi_fraction", 0.75),
+                # Output format
+                output_format=config_dict.get("output_format", "hdf5"),
+                save_as_uint8=config_dict.get("save_as_uint8", False),
             )
 
             # Start recording
@@ -173,6 +191,17 @@ class RecordingController(QObject):
 
             if success:
                 logger.info("Recording started successfully")
+                # Save ROI masks and emit Zarr path for live analysis (Zarr format only)
+                if config.output_format == "zarr" and self._roi_masks:
+                    self._save_roi_masks_and_notify()
+                elif config.output_format != "zarr" and self._roi_masks:
+                    logger.warning(
+                        "ROIs detected but output format is not Zarr — live analysis unavailable. "
+                        "Switch to Zarr to enable live preview."
+                    )
+                    self.error_occurred.emit(
+                        "⚠️ Live analysis requires Zarr format. Switch to Zarr in the recording panel."
+                    )
             else:
                 logger.error("Failed to start recording")
                 self.error_occurred.emit("Failed to start recording")
@@ -183,6 +212,80 @@ class RecordingController(QObject):
             logger.error(f"Error starting recording: {e}")
             self.error_occurred.emit(f"Start error: {e}")
             return False
+
+    def start_schedule(self, schedule: ExperimentSchedule) -> bool:
+        """
+        Start a multi-segment experiment schedule.
+
+        Builds a RecordingConfig from the schedule (used for file creation /
+        LED init) and passes the full schedule to RecordingManager so it can
+        drive segment transitions automatically.
+        """
+        try:
+            error = schedule.validate()
+            if error:
+                logger.error(f"Invalid schedule: {error}")
+                self.error_occurred.emit(f"Invalid schedule: {error}")
+                return False
+
+            logger.info(
+                f"Starting schedule: {len(schedule.segments)} segment(s), "
+                f"total={schedule.total_duration_min()} min"
+            )
+
+            if not self.recording_manager:
+                if not self.initialize_recording_system():
+                    return False
+
+            config = schedule.to_recording_config()
+            success = self.recording_manager.start_recording(config, schedule=schedule)
+
+            if success:
+                logger.info("Schedule recording started successfully")
+                if config.output_format == "zarr" and self._roi_masks:
+                    self._save_roi_masks_and_notify()
+                elif config.output_format != "zarr" and self._roi_masks:
+                    logger.warning(
+                        "ROIs detected but schedule output format is not Zarr — live analysis unavailable."
+                    )
+            else:
+                logger.error("Failed to start schedule recording")
+                self.error_occurred.emit("Failed to start schedule recording")
+
+            return success
+
+        except Exception as exc:
+            logger.error(f"Error starting schedule: {exc}")
+            self.error_occurred.emit(f"Schedule start error: {exc}")
+            return False
+
+    # ========================================================================
+    # ROI MASK SUPPORT
+    # ========================================================================
+
+    def set_roi_masks(self, masks: list[np.ndarray]):
+        """
+        Store ROI masks detected by the live analysis panel.
+        Called before start_recording(); masks are saved to Zarr on recording start.
+        """
+        self._roi_masks = masks
+        logger.info(f"RecordingController: {len(masks)} ROI mask(s) stored")
+
+    def _save_roi_masks_and_notify(self):
+        """Save ROI masks to active Zarr store and emit zarr_path_ready signal."""
+        try:
+            dm = self.recording_manager.data_manager  # type: ignore[union-attr]
+            zarr_path = getattr(dm, "get_zarr_path", lambda: None)()
+            if zarr_path is None:
+                logger.warning("_save_roi_masks_and_notify: zarr path not available yet")
+                return
+            save_masks = getattr(dm, "save_roi_masks", None)
+            if save_masks:
+                save_masks(self._roi_masks)
+            self.zarr_path_ready.emit(zarr_path)
+            logger.info(f"Zarr path emitted for live analysis: {zarr_path}")
+        except Exception as exc:
+            logger.error(f"_save_roi_masks_and_notify failed: {exc}")
 
     def stop_recording(self):
         """Stoppt Recording"""

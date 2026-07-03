@@ -44,7 +44,16 @@ from .frame_capture import CameraAdapter, ESP32Adapter, FrameCaptureService
 from .multi_camera_controller import MultiCameraController
 from .phase_manager import PhaseManager
 from .recording_manager import RecordingManager
-from .recording_state import PhaseInfo, PhaseType, RecordingConfig, RecordingState, RecordingStatus
+from .recording_state import (
+    ExperimentSchedule,
+    PhaseInfo,
+    PhaseType,
+    RecordingConfig,
+    RecordingState,
+    RecordingStatus,
+    SegmentConfig,
+)
+from .schedule_manager import ScheduleManager
 
 # DataManager wird aus separatem Package importiert
 # from Datamanager import DataManager
@@ -63,8 +72,12 @@ __all__ = [
     "RecordingConfig",
     "PhaseType",
     "PhaseInfo",
-    # Phase Management
+    # Phase / Schedule Management
     "PhaseManager",
+    "ScheduleManager",
+    # Experiment Schedule
+    "ExperimentSchedule",
+    "SegmentConfig",
     # Frame Capture
     "FrameCaptureService",
     "ESP32Adapter",

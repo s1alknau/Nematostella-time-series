@@ -6,6 +6,8 @@ from pathlib import Path
 
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -46,7 +48,7 @@ class RecordingControlPanel(QWidget):
 
         # Duration
         self.duration_spin = QSpinBox()
-        self.duration_spin.setRange(1, 10000)
+        self.duration_spin.setRange(1, 100000)
         self.duration_spin.setValue(60)
         self.duration_spin.setSuffix(" min")
         self.duration_spin.setToolTip("Total recording duration in minutes")
@@ -88,6 +90,24 @@ class RecordingControlPanel(QWidget):
         dir_layout.addWidget(browse_btn)
 
         config_layout.addRow("Output Dir:", dir_layout)
+
+        # Output Format
+        self.format_combo = QComboBox()
+        self.format_combo.addItem("Zarr (.zarr)", "zarr")
+        self.format_combo.addItem("HDF5 (.h5)", "hdf5")
+        self.format_combo.setToolTip(
+            "Zarr: recommended — supports live analysis and long recordings\n"
+            "HDF5: legacy format, no live analysis preview"
+        )
+        config_layout.addRow("Format:", self.format_combo)
+
+        # Bit depth
+        self.uint8_checkbox = QCheckBox("Save as uint8 (half file size)")
+        self.uint8_checkbox.setToolTip(
+            "Convert 12-bit camera frames to 8-bit before saving.\n"
+            "Halves file size. ROI detection and analysis remain accurate."
+        )
+        config_layout.addRow("Bit Depth:", self.uint8_checkbox)
 
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
@@ -305,6 +325,8 @@ class RecordingControlPanel(QWidget):
             "interval_sec": self.interval_spin.value(),
             "experiment_name": self.experiment_name_edit.text(),
             "output_dir": self.output_dir_edit.text(),
+            "output_format": self.format_combo.currentData(),
+            "save_as_uint8": self.uint8_checkbox.isChecked(),
         }
 
     def update_status(self, status: dict):

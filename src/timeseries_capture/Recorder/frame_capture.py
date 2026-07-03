@@ -47,12 +47,13 @@ class FrameCaptureService:
         self._current_led_type = None  # 'ir', 'white', or 'dual'
         self._led_is_on = False
         self._pending_sync_complete = False  # Track if we need to read sync response
+        self._white_led_continuous = False  # White LED stays on during full light phase
 
         # Sensor data caching - query periodically to avoid delays
-        self._last_temperature = 0.0
-        self._last_humidity = 0.0
+        self._last_temperature = None  # None = not yet queried
+        self._last_humidity = None  # None = not yet queried
         self._sensor_query_interval = 5  # Query every N frames
-        self._frames_since_sensor_query = 0
+        self._frames_since_sensor_query = 5  # Force query on first call
 
         logger.info(
             f"FrameCaptureService initialized (stab={stabilization_ms}ms, exp={exposure_ms}ms)"
@@ -98,48 +99,83 @@ class FrameCaptureService:
             # =================================================================
             pulse_start = time.time()
 
-            # LED is OFF between frames, so we always need to turn it on
-            if not self._led_is_on:
-                # Turn ON LED (reuse existing LED type if possible)
-                # OPTIMIZATION: Use logger.debug for LED config change to reduce I/O overhead
-                if led_config_changed:
+            # If a background reconnect is in progress, skip LED commands entirely
+            # and capture whatever the camera has (frame will likely be dark and
+            # trigger the brightness retry, but we must not block the recording loop).
+            _esp32_reconnecting = (
+                hasattr(self.esp32, "is_reconnecting") and self.esp32.is_reconnecting
+            )
+            if _esp32_reconnecting:
+                logger.warning("[LED SKIP] ESP32 reconnect in progress — capturing without LED")
+
+            if not self._led_is_on and not _esp32_reconnecting:
+                stabilization_sec = self.stabilization_ms / 1000.0
+
+                if self._white_led_continuous:
+                    # White LED ist dauerhaft an (Tagphase-Modus)
+                    if dual_mode:
+                        # White läuft durch — nur IR zusätzlich einschalten
+                        logger.debug("[LED ON] Continuous White active – turning on IR only...")
+                        self.esp32.select_led_type("ir")
+                        self.esp32.led_on()
+                        time.sleep(stabilization_sec)
+                    else:
+                        # White-only: LED bereits an, kein weiterer Schritt nötig
+                        logger.debug(
+                            "[LED ON] Continuous White active – White already on, skip LED on"
+                        )
+                        # Keine Stabilisierungszeit nötig (LED war bereits stabil an)
+                else:
+                    # Normaler Modus: LED jetzt einschalten
+                    if led_config_changed:
+                        logger.debug(
+                            f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}"
+                        )
+                    else:
+                        logger.debug(
+                            f"[LED ON] Turning on {target_led_config} LED (same as previous)"
+                        )
+
+                    if dual_mode:
+                        logger.debug("[LED DUAL ON] Turning on both IR and White LEDs...")
+                        self.esp32.select_led_type("ir")
+                        self.esp32.led_on()
+                        time.sleep(0.01)
+                        self.esp32.select_led_type("white")
+                        self.esp32.led_on()
+                    else:
+                        logger.debug(f"[LED ON] Turning on {led_type} LED...")
+                        self.esp32.select_led_type(led_type)
+                        self.esp32.led_on()
+
+                    # Stabilization must cover at least one full exposure period
+                    # so the next frame the camera produces is fully exposed under
+                    # the stable LED. For short exposures the 1 s default dominates;
+                    # for long exposures (>500 ms) we extend to 2× exposure.
+                    exposure_sec = self.exposure_ms / 1000.0
+                    effective_stab_sec = max(stabilization_sec, 2.0 * exposure_sec)
+                    time.sleep(effective_stab_sec)
                     logger.debug(
-                        f"[LED CONFIG CHANGE] {self._current_led_type} → {target_led_config}"
+                        f"[LED STABLE] Stabilization complete after {effective_stab_sec:.3f}s "
+                        f"(default={stabilization_sec:.3f}s, exposure={exposure_sec:.3f}s)"
                     )
-                else:
-                    logger.debug(f"[LED ON] Turning on {target_led_config} LED (same as previous)")
 
-                if dual_mode:
-                    # Dual mode: Turn on both LEDs
-                    logger.debug("[LED DUAL ON] Turning on both IR and White LEDs...")
-                    # Select IR and turn on
-                    self.esp32.select_led_type("ir")
-                    self.esp32.led_on()
-                    # OPTIMIZATION: Reduce delay from 50ms to 10ms for faster phase transitions
-                    # ESP32 serial commands complete in <10ms, minimal delay needed
-                    time.sleep(0.01)
-                    # Select White and turn on
-                    self.esp32.select_led_type("white")
-                    self.esp32.led_on()
-                else:
-                    # Single LED mode
-                    logger.debug(f"[LED ON] Turning on {led_type} LED...")
-                    self.esp32.select_led_type(led_type)
-                    self.esp32.led_on()
+                    # Flush stale pre-LED frames from camera buffer.
+                    # getLatestFrame() returns the most recent buffered frame which
+                    # may have been captured before LED-on. The wait between flushes
+                    # must exceed one frame period so we actually advance to a new
+                    # frame; scale with exposure (camera FPS ≈ 1/exposure).
+                    flush_wait_sec = max(0.05, exposure_sec * 1.5)
+                    for _ in range(2):
+                        self.camera.capture_frame()
+                        time.sleep(flush_wait_sec)
+                    logger.debug(
+                        f"[BUFFER FLUSH] Stale pre-LED frames discarded (wait={flush_wait_sec:.3f}s)"
+                    )
 
-                # Update cached state
                 self._current_led_type = target_led_config
                 self._led_is_on = True
-
-                # ALWAYS wait for LED Stabilization (same time regardless of LED type or config change)
-                stabilization_sec = self.stabilization_ms / 1000.0
-                logger.debug(
-                    f"[LED STABILIZING] Waiting {stabilization_sec:.3f}s for LED to stabilize"
-                )
-                time.sleep(stabilization_sec)
-
                 stabilization_complete = time.time()
-                logger.debug(f"[LED STABLE] Stabilization complete at {stabilization_complete:.3f}")
             else:
                 # This should never happen - LED should be OFF between frames
                 logger.warning("[LED WARNING] LED was already ON - this should not happen!")
@@ -170,9 +206,9 @@ class FrameCaptureService:
             # to avoid timing interference with frame capture
             # This ensures sensors are queried after frame save, not during capture
 
-            # Use current cached sensor values
-            temperature = self._last_temperature
-            humidity = self._last_humidity
+            # Use current cached sensor values (use -1 if not yet queried)
+            temperature = self._last_temperature if self._last_temperature is not None else -1.0
+            humidity = self._last_humidity if self._last_humidity is not None else -1.0
 
             # Increment counter (actual query happens in recording_manager between frames)
             self._frames_since_sensor_query += 1
@@ -222,21 +258,34 @@ class FrameCaptureService:
             # =================================================================
             # SCHRITT 5: Turn OFF LED after capture
             # =================================================================
-            # LED should only be ON during capture, not between frames
-            if self._led_is_on:
+            if self._led_is_on and not _esp32_reconnecting:
                 try:
-                    if target_led_config == "dual":
-                        self.esp32.led_dual_off()
-                        logger.debug("[LED OFF] Both LEDs turned off after capture")
+                    if self._white_led_continuous:
+                        # White LED bleibt an — nur IR abschalten (falls Dual-Modus)
+                        if dual_mode:
+                            self.esp32.led_off("ir")
+                            logger.debug("[LED OFF] IR turned off (White stays on – continuous)")
+                        else:
+                            # White-only: White bleibt an, nichts abschalten
+                            logger.debug("[LED OFF] White stays on (continuous mode)")
                     else:
-                        self.esp32.led_off(led_type)
-                        logger.debug(f"[LED OFF] {led_type.upper()} LED turned off after capture")
+                        # Normaler Modus: alle LEDs abschalten
+                        if target_led_config == "dual":
+                            self.esp32.led_dual_off()
+                            logger.debug("[LED OFF] Both LEDs turned off after capture")
+                        else:
+                            self.esp32.led_off(led_type)
+                            logger.debug(
+                                f"[LED OFF] {led_type.upper()} LED turned off after capture"
+                            )
 
-                    # Mark LED as off, but keep config type for next frame
                     self._led_is_on = False
 
                 except Exception as e:
                     logger.warning(f"[LED OFF] Failed to turn off LED: {e}")
+                    # Always reset the state flag so the next frame retries LED setup
+                    # rather than assuming the LED is still on and skipping turn-on entirely.
+                    self._led_is_on = False
 
             return frame, metadata
 
@@ -270,7 +319,7 @@ class FrameCaptureService:
                     f"[RETRY] Capture attempt {attempt + 1}/{max_retries} failed, retrying..."
                 )
 
-            time.sleep(0.5)  # Kurze Pause vor Retry
+            time.sleep(0.1)  # Short pause before retry (LED already on, just wait for camera)
 
         logger.error(f"[FAILED] All {max_retries} capture attempts failed")
         return None, {
@@ -278,6 +327,17 @@ class FrameCaptureService:
             "success": False,
             "retries_exhausted": True,
         }
+
+    def reset_sensor_state(self):
+        """
+        Force sensor query on the next call to query_sensors_if_needed().
+
+        Call this at the start of each recording so that frame 0 always gets
+        a fresh temperature/humidity reading, regardless of where the counter
+        was left at the end of the previous recording.
+        """
+        self._frames_since_sensor_query = self._sensor_query_interval
+        logger.info("Sensor query counter reset — next query will fetch fresh data")
 
     def reset_led_state(self):
         """
@@ -287,10 +347,10 @@ class FrameCaptureService:
         This only resets the cache variables - it does NOT physically turn off the LED.
         """
         logger.info("Resetting LED state cache (LED remains physically unchanged)")
-        # Only reset cache variables - don't physically turn off LED
         self._current_led_type = None
         self._led_is_on = False
         self._pending_sync_complete = False
+        self._white_led_continuous = False
 
     def turn_off_led(self):
         """
@@ -302,8 +362,12 @@ class FrameCaptureService:
         Call this at the end of recording to save power.
         """
         try:
-            # CRITICAL: Don't check self._led_is_on - always try to turn off!
-            # The cached state may not match physical state if an error occurred
+            # White LED kontinuierlich? Explizit abschalten
+            if self._white_led_continuous:
+                self.esp32.led_off("white")
+                logger.info("Continuous White LED turned off after recording")
+                self._white_led_continuous = False
+            # Sonstige LEDs abschalten (immer versuchen, unabhängig vom Cache)
             if self._current_led_type == "dual":
                 self.esp32.led_dual_off()
                 logger.info("Both LEDs turned off after recording")
@@ -311,15 +375,38 @@ class FrameCaptureService:
                 self.esp32.led_off(self._current_led_type)
                 logger.info(f"{self._current_led_type.upper()} LED turned off after recording")
             else:
-                # Fallback: turn off both to be safe (we don't know which LED was on)
                 self.esp32.led_dual_off()
                 logger.info("LEDs turned off after recording (fallback - no LED type cached)")
         except Exception as e:
             logger.warning(f"Failed to turn off LED: {e}")
         finally:
-            # Always reset cached state
             self._led_is_on = False
             self._current_led_type = None
+            self._white_led_continuous = False
+
+    def set_white_continuous(self, enabled: bool):
+        """
+        Schaltet die White LED dauerhaft an oder aus (für Tagphase-Modus).
+
+        Wird von RecordingManager bei Phasenübergängen aufgerufen:
+        - enabled=True  → Tagphase beginnt: White LED dauerhaft AN
+        - enabled=False → Nachtphase beginnt: White LED AUS
+        """
+        if enabled and not self._white_led_continuous:
+            try:
+                self.esp32.select_led_type("white")
+                self.esp32.led_on()
+                self._white_led_continuous = True
+                logger.info("[WHITE CONTINUOUS] White LED turned ON (day phase start)")
+            except Exception as e:
+                logger.warning(f"[WHITE CONTINUOUS] Failed to turn on White LED: {e}")
+        elif not enabled and self._white_led_continuous:
+            try:
+                self.esp32.led_off("white")
+                self._white_led_continuous = False
+                logger.info("[WHITE CONTINUOUS] White LED turned OFF (night phase start)")
+            except Exception as e:
+                logger.warning(f"[WHITE CONTINUOUS] Failed to turn off White LED: {e}")
 
     def query_sensors_if_needed(self) -> bool:
         """
@@ -336,11 +423,26 @@ class FrameCaptureService:
         if should_query:
             try:
                 sensor_data = self.esp32.get_sensor_data()
+                logger.debug(f"[SENSOR] Raw data from ESP32: {sensor_data}")
                 if sensor_data:
-                    self._last_temperature = sensor_data.get("temperature", 0.0)
-                    self._last_humidity = sensor_data.get("humidity", 0.0)
+                    # Only update if we got valid values (not None, not 0)
+                    temp = sensor_data.get("temperature")
+                    hum = sensor_data.get("humidity")
+
+                    # Accept any non-None value — esp32_controller already validates and
+                    # clamps both readings to realistic sensor ranges before returning.
+                    if temp is not None:
+                        self._last_temperature = temp
+                    else:
+                        logger.debug("[SENSOR] Temperature is None, keeping previous")
+
+                    if hum is not None:
+                        self._last_humidity = hum
+                    else:
+                        logger.debug("[SENSOR] Humidity is None, keeping previous")
+
                     logger.debug(
-                        f"[SENSOR] T={self._last_temperature:.1f}°C, H={self._last_humidity:.1f}% (queried between frames)"
+                        f"[SENSOR] T={self._last_temperature}°C, H={self._last_humidity}% (queried between frames)"
                     )
                 else:
                     # Sensor read failed, keep previous values

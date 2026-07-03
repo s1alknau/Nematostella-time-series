@@ -6,28 +6,16 @@ GUI panel for selecting active camera in multi-camera setup.
 
 import logging
 
-try:
-    from qtpy.QtCore import Signal
-    from qtpy.QtWidgets import (
-        QComboBox,
-        QGroupBox,
-        QHBoxLayout,
-        QLabel,
-        QPushButton,
-        QVBoxLayout,
-        QWidget,
-    )
-except Exception:
-    from PyQt5.QtCore import pyqtSignal as Signal
-    from PyQt5.QtWidgets import (
-        QComboBox,
-        QGroupBox,
-        QHBoxLayout,
-        QLabel,
-        QPushButton,
-        QVBoxLayout,
-        QWidget,
-    )
+from qtpy.QtCore import Signal
+from qtpy.QtWidgets import (
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +111,7 @@ class CameraSelectionPanel(QWidget):
 
         # Update status
         num_cameras = len(cameras)
-        self.status_label.setText(
-            f"Loaded {num_cameras} camera{'s' if num_cameras != 1 else ''}"
-        )
+        self.status_label.setText(f"Loaded {num_cameras} camera{'s' if num_cameras != 1 else ''}")
 
         # Enable controls if multiple cameras
         if num_cameras > 1:
@@ -198,10 +184,7 @@ class CameraSelectionPanel(QWidget):
 if __name__ == "__main__":
     import sys
 
-    try:
-        from PyQt5.QtWidgets import QApplication
-    except Exception:
-        from qtpy.QtWidgets import QApplication
+    from qtpy.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
 

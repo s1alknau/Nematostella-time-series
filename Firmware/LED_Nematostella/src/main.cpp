@@ -9,9 +9,12 @@
 // ========================================================================
 // NEMATOSTELLA ESP32 FIRMWARE - PYTHON-COMPATIBLE VERSION
 // ========================================================================
-// Version: 2.3 - Multi-Board Auto-Detection
-// Date: 2025-12-15
-// NEW IN v2.3:
+// Version: 2.4 - Sensor improvements
+// Date: 2026-02-19
+// NEW IN v2.4:
+// - CMD_STATUS now reads fresh sensor values directly (not cached averages)
+// - Filtered values used only as fallback when sensor read fails
+// PREVIOUS (v2.3):
 // - Automatic board detection (ESP32 vs ESP32-S3)
 // - Auto-configured pin assignments based on detected board
 // - Single firmware for both ESP32 DevKit and ESP32-S3-BOX-3
@@ -175,7 +178,7 @@ void setup() {
 
   // Always print this first message (regardless of DEBUG_ENABLED)
   Serial.println("\n\n========================================");
-  Serial.println("ESP32 Nematostella Controller v2.3 STARTING");
+  Serial.println("ESP32 Nematostella Controller v2.4 STARTING");
   Serial.print("Board Type: ");
   Serial.println(BOARD_TYPE);
   Serial.println("========================================\n");
@@ -183,7 +186,7 @@ void setup() {
 
   // Display board information
   debugPrintln("========================================");
-  debugPrint("ESP32 Nematostella Controller v2.3");
+  debugPrint("ESP32 Nematostella Controller v2.4");
   debugPrintln("");
   debugPrint("Detected Board: ");
   debugPrintln(BOARD_TYPE);
@@ -305,9 +308,9 @@ void loop() {
       // ================================================================
       case CMD_STATUS:
         {
-          // Use cached sensor values for fast response (important for connection test)
-          float temp = getFilteredTemperature();
-          float hum = getFilteredHumidity();
+          // Actually read the sensor (not just cached values)
+          float temp, hum;
+          readSensorsWithValidation(temp, hum);
 
           // Convert to int16 (scaled by 10)
           int16_t temp_scaled = (int16_t)(temp * 10.0);
@@ -327,7 +330,7 @@ void loop() {
           sendRawByte(hum_scaled & 0xFF);
           Serial.flush();
 
-          debugPrintln("Status sent with cached sensor data");
+          debugPrintln("Status sent with fresh sensor data");
         }
         break;
 
@@ -875,10 +878,12 @@ bool readSensorsWithValidation(float &temperature, float &humidity) {
 
   if (valid) {
     addToSensorHistory(t, h);
-    temperature = getFilteredTemperature();
-    humidity = getFilteredHumidity();
+    // Return fresh values directly (not filtered average)
+    temperature = t;
+    humidity = h;
     return true;
   } else {
+    // Only use filtered values as fallback when reading fails
     temperature = getFilteredTemperature();
     humidity = getFilteredHumidity();
     return false;
@@ -918,11 +923,6 @@ float getFilteredHumidity() {
   }
   return sum / sensor_history.count;
 }
-
-// Zum Testen der Hardware ohne Plugin
-
-// Test Tempsensor
-// #include <DHT.h>
 // DHT dht(14, DHT22);
 
 // void setup() {
