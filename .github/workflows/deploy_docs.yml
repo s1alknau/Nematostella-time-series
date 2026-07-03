@@ -14,11 +14,19 @@ on:
       - ".github/workflows/deploy_docs.yml"
   workflow_dispatch:
 
+# Official GitHub Pages deployment (Settings -> Pages -> Source: "GitHub Actions").
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; don't cancel an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout recording plugin (this repo)
@@ -48,5 +56,21 @@ jobs:
           ANALYSIS_REPO: ${{ github.workspace }}/_analysis-src
         run: python scripts/sync_docs.py
 
-      - name: Build and deploy to gh-pages
-        run: mkdocs gh-deploy --force --clean
+      - name: Build site
+        run: mkdocs build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
