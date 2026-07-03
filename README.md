@@ -15,7 +15,7 @@ A professional napari plugin for synchronized timelapse recording of *Nematostel
 - ✅ **Zarr Recording Format**: Save recordings as Zarr in addition to HDF5. Zarr allows concurrent read-while-write, enabling live analysis during an ongoing recording.
 - ✅ **Live Analysis Tab**: New "📊 Live Analysis" GUI tab — capture a preview frame, auto-detect ROIs via HoughCircles, then watch an activity plot update every 20 s while recording. Requires optional dependency `opencv-python`.
 - ✅ **HDF5 Timing Fix**: Replaced synchronous HDF5 writes with a write-behind queue (`AsyncHDF5Writer`). Recording thread enqueues in ~0.8 ms instead of blocking on 18 sequential I/O ops; prevents `actual_interval` spikes from 5 s → 10 s+ in multi-day recordings.
-- ✅ **Web Firmware Installer**: Flash ESP32 firmware directly from the browser at https://s1alknau.github.io/Nematostella-time-series/ — no PlatformIO or Arduino IDE needed. Supports both boards (ESP32 DevKit and ESP32-S3-BOX-3). Chrome/Edge only.
+- ✅ **Web Firmware Installer**: Flash ESP32 firmware directly from the browser at https://s1alknau.github.io/Nematostella-time-series/installer.html — no PlatformIO or Arduino IDE needed. Supports both boards (ESP32 DevKit and ESP32-S3-BOX-3). Chrome/Edge only.
 - ✅ **GitHub Actions CI**: New workflow `.github/workflows/firmware_build.yml` auto-builds firmware for both boards on every push and publishes binaries to `docs/firmware/`.
 
 See [CHANGELOG.md](CHANGELOG.md) for complete details.
@@ -56,7 +56,7 @@ See [CHANGELOG.md](CHANGELOG.md) for complete details.
 - **HDF5 Data Storage**: Efficient chunked storage with comprehensive metadata and timeseries data; write-behind queue (`AsyncHDF5Writer`) prevents I/O-induced interval spikes
 - **Zarr Recording Format**: Alternative to HDF5 with concurrent read-while-write support, enabling live analysis during recording
 - **Live Analysis Tab**: Auto-detect ROIs via HoughCircles on a preview frame and plot per-ROI activity every 20 s while recording (requires `opencv-python`)
-- **Web Firmware Installer**: Flash ESP32 firmware from the browser — no toolchain required. Visit https://s1alknau.github.io/Nematostella-time-series/ in Chrome/Edge
+- **Web Firmware Installer**: Flash ESP32 firmware from the browser — no toolchain required. Visit https://s1alknau.github.io/Nematostella-time-series/installer.html in Chrome/Edge
 - **Real-Time Visualization**: Live frame display with recording statistics
 
 ---
@@ -204,7 +204,7 @@ Optional dependencies:
 
 3. **Verify Firmware** (optional)
    - Open Serial Monitor (115200 baud)
-   - You should see: `ESP32 LED Controller v2.2 Ready`
+   - You should see: `ESP32 Nematostella Controller v2.4`
    - Type `STATUS` to verify all systems operational
 
 #### Step 2: LED System Assembly with IRLZ34N MOSFETs
@@ -582,7 +582,7 @@ Python Plugin                ESP32 Firmware              Camera
     │                             │                         │
     │ 1. SET_TIMING               │                         │
     ├────────────────────────────>│                         │
-    │    (400ms stab, 5ms exp)    │                         │
+    │  (1000ms stab, 10ms exp)    │                         │
     │                             │                         │
     │ 2. SYNC_CAPTURE (0x0C)      │                         │
     ├────────────────────────────>│                         │
@@ -590,13 +590,13 @@ Python Plugin                ESP32 Firmware              Camera
     │                             ├─────────►               │
     │                             │ (GPIO 4 or 15)          │
     │                             │                         │
-    │                             │ [400ms stabilization]   │
+    │                             │ [1000ms stabilization]  │
     │                             │ ░░░░░░░░░░░░░░░░░░░░░  │
     │                             │                         │
     │ 3. Camera Trigger           │                         │
     ├─────────────────────────────┼────────────────────────>│
     │                             │                         │ Exposure
-    │                             │                         │ [5ms]
+    │                             │                         │ [10ms]
     │                             │                         │ ████
     │                             │                         │
     │                             │ LED OFF                 │
@@ -620,7 +620,7 @@ Python Plugin                ESP32 Firmware              Camera
     │                             │                         │
     ▼                             ▼                         ▼
 
-Total Duration: ~405ms (400ms stab + 5ms exposure)
+Total Duration: ~1010ms (1000ms stab + 10ms exposure)
 ```
 
 ### Detailed Timing Breakdown
@@ -636,27 +636,27 @@ Time (ms)    Event                          Component
     0        ESP32: LED ON (GPIO 4/15)      ESP32 → LED Driver
              ┌────────────────────────────────────────┐
              │   LED STABILIZATION PERIOD             │
-             │   (400ms - LED reaches stable output)  │
+             │   (1000ms - LED reaches stable output) │
              │   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
              └────────────────────────────────────────┘
-  400        ESP32: LED stabilized          ESP32
-  400        Camera: Exposure starts        Camera
+ 1000        ESP32: LED stabilized          ESP32
+ 1000        Camera: Exposure starts        Camera
              ┌────────────────┐
              │   EXPOSURE     │
-             │   (5ms)        │
+             │   (10ms)       │
              │   ████████     │
              └────────────────┘
-  405        Camera: Exposure complete      Camera
-  405        ESP32: LED OFF                 ESP32
-  405        ESP32: Read DHT22              ESP32 → DHT22
-  410        ESP32: Send response (15B)     ESP32 → Python
-  410        Python: Receive response       Plugin
-  410        Python: Snap frame             Plugin → Camera
-  415        Python: Receive frame data     Camera → Plugin
-  415        Python: Save to HDF5           Plugin → Disk
-  420        Frame cycle complete           ✓
+ 1010        Camera: Exposure complete      Camera
+ 1010        ESP32: LED OFF                 ESP32
+ 1010        ESP32: Read DHT22              ESP32 → DHT22
+ 1015        ESP32: Send response (15B)     ESP32 → Python
+ 1015        Python: Receive response       Plugin
+ 1015        Python: Snap frame             Plugin → Camera
+ 1020        Python: Receive frame data     Camera → Plugin
+ 1020        Python: Save to HDF5           Plugin → Disk
+ 1025        Frame cycle complete           ✓
 
-Total: ~420ms (405ms sync + 10ms capture + 5ms save)
+Total: ~1025ms (1010ms sync + 10ms capture + 5ms save)
 ```
 
 ### Phase-Based Timing (Light/Dark Cycles)
@@ -788,16 +788,21 @@ def capture_frame_with_led_sync(self, led_type: str, dual: bool = False):
 
 ### ESP32 Communication Protocol
 
-Commands sent via serial (115200 baud):
+The ESP32 uses a **binary** command protocol over serial (115200 baud). Key commands:
 
-| Command | Description | Response |
-|---------|-------------|----------|
-| `PULSE_BEGIN\n` | Start sync pulse | `PULSE_BEGIN_OK\n` |
-| `PULSE_BEGIN_DUAL\n` | Start dual-LED pulse | `PULSE_BEGIN_OK\n` |
-| `PULSE_COMPLETE\n` | End sync pulse | `PULSE_COMPLETE_OK\n` |
-| `SENSOR\n` | Read DHT22 sensor | `SENSOR T=22.5 H=45.2\n` |
-| `POWER_IR 75\n` | Set IR LED to 75% | `POWER_IR_OK\n` |
-| `POWER_WHITE 50\n` | Set White LED to 50% | `POWER_WHITE_OK\n` |
+| Command | Hex | Description | Response |
+|---------|-----|-------------|----------|
+| LED ON | `0x01` | Turn on current LED | `0xAA` |
+| LED OFF | `0x00` | Turn off current LED | `0xAA` |
+| SELECT IR | `0x20` | Select IR LED | `0x30` |
+| SELECT WHITE | `0x21` | Select White LED | `0x31` |
+| SET IR POWER | `0x24` + power | Set IR LED power (0–100) | `0xAA` |
+| SET WHITE POWER | `0x25` + power | Set White LED power (0–100) | `0xAA` |
+| SYNC CAPTURE | `0x0C` | Synchronized LED + camera capture | 15 bytes |
+| SYNC DUAL | `0x2C` | Dual-LED capture | 15 bytes |
+| STATUS | `0x02` | Get temperature / humidity / status | 5 bytes |
+
+The Python helpers `begin_sync_pulse()` / `wait_sync_complete()` wrap the binary `SYNC CAPTURE` (`0x0C` / `0x2C`) command. See the [Quick Reference](#esp32-communication-protocol-quick-reference) and [FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for the full protocol.
 
 ### Dual-LED Mode
 
@@ -952,7 +957,7 @@ recording.h5
 │   └── frames                   # (N, H, W) dataset
 │       ├── dtype: uint16
 │       ├── shape: (frames, height, width)
-│       └── chunks: (1, H, W)
+│       └── chunks: adaptive (~4 MiB/chunk, multiple frames per chunk)
 │
 └── timeseries/                  # Timeseries data group
     ├── frame_index              # Frame numbers [0, 1, 2, ...]
@@ -978,12 +983,12 @@ recording.h5
 
 Three modes balance data granularity vs file size:
 
-**MINIMAL** (default)
+**MINIMAL**
 - Essential fields only
 - Smallest file size
 - Suitable for long recordings
 
-**STANDARD**
+**STANDARD** (default)
 - Adds quality indicators
 - Timing drift tracking
 - Recommended for most users
@@ -1001,7 +1006,7 @@ import h5py
 
 with h5py.File('recording.h5', 'r') as f:
     # Load frame stack
-    frames = f['frames/frames'][:]  # (N, H, W) array
+    frames = f['images/frames'][:]  # (N, H, W) array
 
     # Load timeseries
     time = f['timeseries/recording_elapsed_sec'][:]
@@ -1307,7 +1312,7 @@ If you use this plugin in your research, please cite:
 4. **Verify:**
    ```
    Tools → Serial Monitor (115200 baud)
-   Expected: "ESP32 Nematostella Controller - Python Compatible v2.2"
+   Expected: "ESP32 Nematostella Controller v2.4"
    ```
 
 **Troubleshooting:**
@@ -1444,7 +1449,7 @@ WAGO #3: Common Ground (critical!)
 
 4. **Verify:**
    - Tools → Serial Monitor (115200 baud)
-   - Expected: "ESP32 Nematostella Controller - Python Compatible v2.2"
+   - Expected: "ESP32 Nematostella Controller v2.4"
 
 **Troubleshooting:**
 - **No port found?** Install CH340/CP2102 USB driver
