@@ -115,7 +115,7 @@ Core dependencies:
 
 3. **Verify Firmware**
    - Open Serial Monitor (115200 baud)
-   - You should see: `ESP32 LED Controller v2.2 Ready`
+   - You should see: `ESP32 Nematostella Controller v2.3`
    - Type `STATUS` to verify all systems operational
 
 #### Step 2: LED System Assembly
@@ -543,7 +543,7 @@ Python Plugin                ESP32 Firmware              Camera
     │                             │                         │
     │ 1. SET_TIMING               │                         │
     ├────────────────────────────>│                         │
-    │    (400ms stab, 5ms exp)    │                         │
+    │  (1000ms stab, 10ms exp)    │                         │
     │                             │                         │
     │ 2. SYNC_CAPTURE (0x0C)      │                         │
     ├────────────────────────────>│                         │
@@ -551,13 +551,13 @@ Python Plugin                ESP32 Firmware              Camera
     │                             ├─────────►               │
     │                             │ (GPIO 4 or 15)          │
     │                             │                         │
-    │                             │ [400ms stabilization]   │
+    │                             │ [1000ms stabilization]  │
     │                             │ ░░░░░░░░░░░░░░░░░░░░░  │
     │                             │                         │
     │ 3. Camera Trigger           │                         │
     ├─────────────────────────────┼────────────────────────>│
     │                             │                         │ Exposure
-    │                             │                         │ [5ms]
+    │                             │                         │ [10ms]
     │                             │                         │ ████
     │                             │                         │
     │                             │ LED OFF                 │
@@ -581,7 +581,7 @@ Python Plugin                ESP32 Firmware              Camera
     │                             │                         │
     ▼                             ▼                         ▼
 
-Total Duration: ~405ms (400ms stab + 5ms exposure)
+Total Duration: ~1010ms (1000ms stab + 10ms exposure)
 ```
 
 ### Detailed Timing Breakdown
@@ -597,27 +597,27 @@ Time (ms)    Event                          Component
     0        ESP32: LED ON (GPIO 4/15)      ESP32 → LED Driver
              ┌────────────────────────────────────────┐
              │   LED STABILIZATION PERIOD             │
-             │   (400ms - LED reaches stable output)  │
+             │   (1000ms - LED reaches stable output) │
              │   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
              └────────────────────────────────────────┘
-  400        ESP32: LED stabilized          ESP32
-  400        Camera: Exposure starts        Camera
+ 1000        ESP32: LED stabilized          ESP32
+ 1000        Camera: Exposure starts        Camera
              ┌────────────────┐
              │   EXPOSURE     │
-             │   (5ms)        │
+             │   (10ms)       │
              │   ████████     │
              └────────────────┘
-  405        Camera: Exposure complete      Camera
-  405        ESP32: LED OFF                 ESP32
-  405        ESP32: Read DHT22              ESP32 → DHT22
-  410        ESP32: Send response (15B)     ESP32 → Python
-  410        Python: Receive response       Plugin
-  410        Python: Snap frame             Plugin → Camera
-  415        Python: Receive frame data     Camera → Plugin
-  415        Python: Save to HDF5           Plugin → Disk
-  420        Frame cycle complete           ✓
+ 1010        Camera: Exposure complete      Camera
+ 1010        ESP32: LED OFF                 ESP32
+ 1010        ESP32: Read DHT22              ESP32 → DHT22
+ 1015        ESP32: Send response (15B)     ESP32 → Python
+ 1015        Python: Receive response       Plugin
+ 1015        Python: Snap frame             Plugin → Camera
+ 1020        Python: Receive frame data     Camera → Plugin
+ 1020        Python: Save to HDF5           Plugin → Disk
+ 1025        Frame cycle complete           ✓
 
-Total: ~420ms (405ms sync + 10ms capture + 5ms save)
+Total: ~1025ms (1010ms sync + 10ms capture + 5ms save)
 ```
 
 ### Phase-Based Timing (Light/Dark Cycles)
@@ -749,16 +749,21 @@ def capture_frame_with_led_sync(self, led_type: str, dual: bool = False):
 
 ### ESP32 Communication Protocol
 
-Commands sent via serial (115200 baud):
+The ESP32 uses a **binary** command protocol over serial (115200 baud). Key commands:
 
-| Command | Description | Response |
-|---------|-------------|----------|
-| `PULSE_BEGIN\n` | Start sync pulse | `PULSE_BEGIN_OK\n` |
-| `PULSE_BEGIN_DUAL\n` | Start dual-LED pulse | `PULSE_BEGIN_OK\n` |
-| `PULSE_COMPLETE\n` | End sync pulse | `PULSE_COMPLETE_OK\n` |
-| `SENSOR\n` | Read DHT22 sensor | `SENSOR T=22.5 H=45.2\n` |
-| `POWER_IR 75\n` | Set IR LED to 75% | `POWER_IR_OK\n` |
-| `POWER_WHITE 50\n` | Set White LED to 50% | `POWER_WHITE_OK\n` |
+| Command | Hex | Description | Response |
+|---------|-----|-------------|----------|
+| LED ON | `0x01` | Turn on current LED | `0xAA` |
+| LED OFF | `0x00` | Turn off current LED | `0xAA` |
+| SELECT IR | `0x20` | Select IR LED | `0x30` |
+| SELECT WHITE | `0x21` | Select White LED | `0x31` |
+| SET IR POWER | `0x24` + power | Set IR LED power (0-100) | `0xAA` |
+| SET WHITE POWER | `0x25` + power | Set White LED power (0-100) | `0xAA` |
+| SYNC CAPTURE | `0x0C` | Synchronized LED + camera capture | 15 bytes |
+| SYNC DUAL | `0x2C` | Dual-LED capture | 15 bytes |
+| STATUS | `0x02` | Get temperature / humidity / status | 5 bytes |
+
+The Python helpers `begin_sync_pulse()` / `wait_sync_complete()` wrap the binary `SYNC CAPTURE` (`0x0C` / `0x2C`) command. See the [Quick Reference](#esp32-communication-protocol-quick-reference) and [FIRMWARE_DOCUMENTATION.md](Firmware/FIRMWARE_DOCUMENTATION.md) for the full protocol.
 
 ### Dual-LED Mode
 
@@ -922,12 +927,12 @@ recording.h5
 
 Three modes balance data granularity vs file size:
 
-**MINIMAL** (default)
+**MINIMAL**
 - Essential fields only
 - Smallest file size
 - Suitable for long recordings
 
-**STANDARD**
+**STANDARD** (default)
 - Adds quality indicators
 - Timing drift tracking
 - Recommended for most users
@@ -945,7 +950,7 @@ import h5py
 
 with h5py.File('recording.h5', 'r') as f:
     # Load frame stack
-    frames = f['frames/frames'][:]  # (N, H, W) array
+    frames = f['images/frames'][:]  # (N, H, W) array
 
     # Load timeseries
     time = f['timeseries/recording_elapsed_sec'][:]
