@@ -22,8 +22,14 @@ illumination (IR + White) and ESP32-based hardware synchronization.
 
     ---
 
-    Independent IR (850 nm) and White (broad-spectrum) channels for oblique
-    lighting and light stimulation.
+    Independent IR (850 nm, exchangeable) and White (broad-spectrum) channels
+    for oblique lighting and light stimulation.
+
+-   :material-theme-light-dark:{ .lg .middle } &nbsp; **Phase-based recording**
+
+    ---
+
+    Automated light/dark cycles for circadian rhythm studies.
 
 -   :material-clock-outline:{ .lg .middle } &nbsp; **Drift-compensated timing**
 
@@ -32,14 +38,25 @@ illumination (IR + White) and ESP32-based hardware synchronization.
     Frame timing measured from absolute recording start — no cumulative drift
     over multi-day runs.
 
--   :material-database:{ .lg .middle } &nbsp; **Zarr & HDF5**
+-   :material-tune:{ .lg .middle } &nbsp; **LED calibration**
 
     ---
 
-    Concurrent read-while-write enables live analysis during an ongoing
-    recording.
+    Interactive calibration to normalize LED intensities across channels.
+
+-   :material-database:{ .lg .middle } &nbsp; **Zarr & HDF5 storage**
+
+    ---
+
+    Chunked HDF5 with a write-behind queue (`AsyncHDF5Writer`), plus Zarr with
+    concurrent read-while-write for live analysis.
 
 </div>
+
+Also included: real-time temperature/humidity monitoring (DHT22), a **Live
+Analysis** tab (auto ROI detection via HoughCircles, per-ROI activity every 20 s;
+needs `opencv-python`), a browser-based [firmware installer](installer.html),
+and live frame display with recording statistics.
 
 ## Get started
 
@@ -48,6 +65,17 @@ illumination (IR + White) and ESP32-based hardware synchronization.
     ```bash
     pip install nematostella-time-series
     ```
+
+    Development install:
+
+    ```bash
+    git clone https://github.com/s1alknau/Nematostella-time-series.git
+    cd nematostella-time-series
+    pip install -e .
+    ```
+
+    Requires Python ≥ 3.9 and napari ≥ 0.4.18. Optional: `zarr` (Zarr recording)
+    and `opencv-python` (Live Analysis tab).
 
 2. **Build the imager** — see [Hardware & Assembly](hardware.md), the
    [Hardware Photos](images/README.md) and the [3D-Printed Parts](3D_Druck/README.md).
