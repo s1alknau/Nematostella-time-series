@@ -1,0 +1,3042 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Open-source napari toolkit for Nematostella vectensis: synchronized timelapse recording (IR + White LED, ESP32) and automated activity / circadian analysis.">
+      
+      
+        <meta name="author" content="Alexander Knauss">
+      
+      
+        <link rel="canonical" href="https://s1alknau.github.io/Nematostella-time-series/analysis/user-guide/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../circadian-analysis/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>User Guide - Nematostella Toolkit</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#napari-hdf5-activity-user-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Nematostella Toolkit" class="md-header__button md-logo" aria-label="Nematostella Toolkit" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Nematostella Toolkit
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              User Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/s1alknau/Nematostella-time-series" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    s1alknau/Nematostella-time-series
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../recording/" class="md-tabs__link">
+          
+  
+  
+  Recording Plugin
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Analysis Plugin
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Nematostella Toolkit" class="md-nav__button md-logo" aria-label="Nematostella Toolkit" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Nematostella Toolkit
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/s1alknau/Nematostella-time-series" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    s1alknau/Nematostella-time-series
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recording Plugin
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Recording Plugin
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recording/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hardware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware & Assembly
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware Photos
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../3D_Druck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3D-Printed Parts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installer.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware Installer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ESP32-S3-BOX-3_CONFIGURATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ESP32-S3-BOX-3 (Alternative)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../circadian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Circadian Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis Plugin
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analysis Plugin
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#launching-the-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launching the Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin Layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Input Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loading-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading Data
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Loading Data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf5-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF5 Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zarr-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zarr Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#avi-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AVI Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#roi-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ROI Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#analysis-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Analysis Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#threshold-calculation-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threshold Calculation Methods
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Threshold Calculation Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-baseline-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Baseline Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-calibration-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Calibration Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-adaptive-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Adaptive Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Results Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generate-plots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generate Plots
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plot-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plot Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#customizing-plots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customizing Plots
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extended-analysis-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extended Analysis Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extended Analysis Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interpreting-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpreting Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-extended-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Extended Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frame-viewer-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Viewer Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Frame Viewer Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overview_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loading-data_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading Data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#navigation-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frame-information-panel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Information Panel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-1-basic-hdf5-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 1: Basic HDF5 Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-2-avi-batch-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 2: AVI Batch Processing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-3-calibration-based-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 3: Calibration-Based Comparison
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-4-long-term-adaptive-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 4: Long-Term Adaptive Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-and-tricks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips and Tricks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips and Tricks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#roi-detection_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ROI Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#movement-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extended-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extended Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frame-viewer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Viewer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#general" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard Shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support-and-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support and Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#glossary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Glossary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../circadian-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Circadian Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extended-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extended Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../avi-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AVI Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#launching-the-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launching the Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin Layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Input Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loading-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading Data
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Loading Data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf5-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF5 Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zarr-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zarr Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#avi-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AVI Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#roi-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ROI Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#analysis-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Analysis Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#threshold-calculation-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threshold Calculation Methods
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Threshold Calculation Methods">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-baseline-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Baseline Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-calibration-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Calibration Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-adaptive-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Adaptive Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Results Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generate-plots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generate Plots
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plot-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plot Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#customizing-plots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customizing Plots
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extended-analysis-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extended Analysis Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extended Analysis Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interpreting-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpreting Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-extended-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Extended Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frame-viewer-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Viewer Tab
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Frame Viewer Tab">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overview_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loading-data_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading Data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#navigation-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frame-information-panel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Information Panel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-1-basic-hdf5-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 1: Basic HDF5 Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-2-avi-batch-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 2: AVI Batch Processing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-3-calibration-based-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 3: Calibration-Based Comparison
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-4-long-term-adaptive-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example 4: Long-Term Adaptive Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-and-tricks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips and Tricks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips and Tricks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#roi-detection_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ROI Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#movement-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extended-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extended Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frame-viewer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Viewer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#general" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard Shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support-and-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support and Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#glossary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Glossary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/s1alknau/Nematostella-time-series/edit/Nematostella-time-series-IR/docs/analysis/user-guide.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="napari-hdf5-activity-user-guide">napari-hdf5-activity User Guide<a class="headerlink" href="#napari-hdf5-activity-user-guide" title="Permanent link">&para;</a></h1>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#getting-started">Getting Started</a></li>
+<li><a href="#input-tab">Input Tab</a></li>
+<li><a href="#analysis-tab">Analysis Tab</a></li>
+<li><a href="#results-tab">Results Tab</a></li>
+<li><a href="#extended-analysis-tab">Extended Analysis Tab</a></li>
+<li><a href="#frame-viewer-tab">Frame Viewer Tab</a></li>
+<li><a href="#workflow-examples">Workflow Examples</a></li>
+<li><a href="#tips-and-tricks">Tips and Tricks</a></li>
+</ol>
+<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
+<h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>napari</strong> installed (version &gt;= 0.4.17)</li>
+<li><strong>Python</strong> 3.8 or higher</li>
+<li><strong>napari-hdf5-activity</strong> plugin installed</li>
+</ul>
+<h3 id="launching-the-plugin">Launching the Plugin<a class="headerlink" href="#launching-the-plugin" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p>Open napari:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>napari
+</code></pre></div></p>
+</li>
+<li>
+<p>Activate the plugin:</p>
+</li>
+<li>Menu: <code>Plugins</code> → <code>napari-hdf5-activity: HDF5 Activity Analysis</code></li>
+<li>The plugin widget appears on the right side of the napari window</li>
+</ol>
+<h3 id="plugin-layout">Plugin Layout<a class="headerlink" href="#plugin-layout" title="Permanent link">&para;</a></h3>
+<p>The plugin has 5 tabs:
+- <strong>Input</strong>: File loading and ROI detection
+- <strong>Analysis</strong>: Movement analysis configuration
+- <strong>Results</strong>: Plot generation and data export
+- <strong>Extended Analysis</strong>: Circadian rhythm detection
+- <strong>Frame Viewer</strong>: Interactive dataset playback</p>
+<hr />
+<h2 id="input-tab">Input Tab<a class="headerlink" href="#input-tab" title="Permanent link">&para;</a></h2>
+<h3 id="loading-data">Loading Data<a class="headerlink" href="#loading-data" title="Permanent link">&para;</a></h3>
+<h4 id="hdf5-files">HDF5 Files<a class="headerlink" href="#hdf5-files" title="Permanent link">&para;</a></h4>
+<p><strong>Single File:</strong>
+1. Click <strong>"Load File"</strong>
+2. Select your <code>.h5</code> or <code>.hdf5</code> file
+3. Plugin automatically detects structure type (stacked frames vs. individual frames)
+4. First frame is displayed in the napari viewer</p>
+<p><strong>Directory of Files:</strong>
+1. Click <strong>"Load Directory"</strong>
+2. Select folder containing HDF5 files
+3. All HDF5 files are loaded
+4. Select a file from dropdown to view</p>
+<p><strong>Supported HDF5 Structures:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a># Stacked frames
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>/frames [dataset: (N, H, W)]
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a># Individual frames
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>/frames/
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  ├── frame_0000
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  ├── frame_0001
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  └── ...
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a># With metadata
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>/metadata (optional)
+</code></pre></div></p>
+<h4 id="zarr-files">Zarr Files<a class="headerlink" href="#zarr-files" title="Permanent link">&para;</a></h4>
+<p><strong>Directory Stores (.zarr directories):</strong>
+1. Click <strong>"Load File"</strong>
+2. Select the <code>.zarr</code> directory
+3. Plugin reads the Zarr array and treats it identically to an HDF5 stacked-frames dataset</p>
+<h4 id="avi-files">AVI Files<a class="headerlink" href="#avi-files" title="Permanent link">&para;</a></h4>
+<p><strong>Single Video:</strong>
+1. Click <strong>"Load File"</strong>
+2. Select <code>.avi</code> file
+3. First frame is extracted and displayed</p>
+<p><strong>Multiple Videos (Batch):</strong>
+1. Click <strong>"Load File"</strong>
+2. Hold <strong>Ctrl</strong> (Windows/Linux) or <strong>Cmd</strong> (Mac)
+3. Select multiple AVI files
+4. Videos are concatenated temporally:
+   - Video 1: 0 - 600 seconds
+   - Video 2: 600 - 1200 seconds
+   - Etc.</p>
+<p><strong>Memory Efficiency:</strong>
+- Only first frame is loaded initially (~2 MB instead of 500 MB)
+- Full dataset loaded during analysis</p>
+<h3 id="roi-detection">ROI Detection<a class="headerlink" href="#roi-detection" title="Permanent link">&para;</a></h3>
+<p><strong>What are ROIs?</strong>
+Regions of Interest (ROIs) are circular areas that represent individual organisms in your recording. The plugin detects these automatically using Hough Circle Transform.</p>
+<p><strong>Detection Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Typical Range</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Min Radius</strong></td>
+<td>300-400 px</td>
+<td>Minimum organism size</td>
+</tr>
+<tr>
+<td><strong>Max Radius</strong></td>
+<td>400-500 px</td>
+<td>Maximum organism size</td>
+</tr>
+<tr>
+<td><strong>DP Parameter</strong></td>
+<td>0.3-0.8</td>
+<td>Detection sensitivity (lower = more sensitive)</td>
+</tr>
+<tr>
+<td><strong>Min Distance</strong></td>
+<td>100-200 px</td>
+<td>Minimum separation between organisms</td>
+</tr>
+<tr>
+<td><strong>Param1</strong></td>
+<td>30-50</td>
+<td>Edge detection threshold</td>
+</tr>
+<tr>
+<td><strong>Param2</strong></td>
+<td>30-50</td>
+<td>Circle detection threshold</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Steps:</strong>
+1. Adjust parameters based on your organism size
+2. Click <strong>"Detect ROIs"</strong>
+3. ROIs appear as colored circles on the image
+4. Each ROI is automatically numbered and color-coded</p>
+<p><strong>Manual Adjustment:</strong>
+- If detection fails, try:
+  - Decrease DP parameter (more sensitive)
+  - Adjust radius range
+  - Check image contrast
+- You can re-run detection with new parameters (previous ROIs are cleared)</p>
+<p><strong>ROI Editor (fine-tuning positions):</strong>
+1. Click <strong>"Edit ROI Circles"</strong> — a napari Points layer appears showing ring symbols at each ROI center
+2. Drag points to correct positions (move only — resizing is not supported in the editor)
+3. Click <strong>"Apply Edits"</strong> — masks are rebuilt from the updated positions
+4. The editor layer is removed automatically after applying</p>
+<p><strong>ROI Visualization:</strong>
+- Each ROI has a unique color (repeated in plots)
+- ROI labels show the ID number
+- ROI layers can be toggled on/off in napari</p>
+<hr />
+<h2 id="analysis-tab">Analysis Tab<a class="headerlink" href="#analysis-tab" title="Permanent link">&para;</a></h2>
+<h3 id="basic-parameters">Basic Parameters<a class="headerlink" href="#basic-parameters" title="Permanent link">&para;</a></h3>
+<p><strong>Frame Interval (seconds):</strong>
+- Time between analyzed frames
+- Default: 5.0 seconds
+- HDF5: Usually specified in metadata
+- AVI: Calculated from video FPS and sampling interval</p>
+<p><strong>End Time (seconds):</strong>
+- Total duration to analyze
+- Default: Full recording
+- Useful for testing on subsets</p>
+<p><strong>Chunk Size:</strong>
+- Number of frames processed per batch
+- Default: 20 frames
+- Increase for faster processing (uses more memory)
+- Decrease if memory errors occur</p>
+<p><strong>Number of Processes:</strong>
+- Parallel processing workers
+- Default: 4
+- Set to number of CPU cores for maximum speed
+- Reduce if system becomes unresponsive</p>
+<h3 id="threshold-calculation-methods">Threshold Calculation Methods<a class="headerlink" href="#threshold-calculation-methods" title="Permanent link">&para;</a></h3>
+<p>The plugin offers three methods for determining movement thresholds:</p>
+<h4 id="1-baseline-method">1. Baseline Method<a class="headerlink" href="#1-baseline-method" title="Permanent link">&para;</a></h4>
+<p><strong>When to use:</strong>
+- Standard recordings with stable conditions
+- First-time analysis
+- Single recordings</p>
+<p><strong>Parameters:</strong>
+- <strong>Baseline Duration</strong>: Length of baseline period (default: 200 minutes)
+  - Should be long enough to capture typical activity
+  - Usually first portion of recording
+- <strong>Threshold Multiplier</strong>: Sensitivity factor (default: 0.10)
+  - Higher = less sensitive (fewer movements detected)
+  - Lower = more sensitive (more movements detected)</p>
+<p><strong>How it works:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Threshold = baseline_mean + (multiplier × baseline_std)
+</code></pre></div></p>
+<p><strong>Configuration:</strong>
+1. Navigate to <strong>"Baseline Method"</strong> tab
+2. Set baseline duration (minutes)
+3. Set threshold multiplier
+4. Enable/disable detrending
+5. Enable/disable jump correction</p>
+<h4 id="2-calibration-method">2. Calibration Method<a class="headerlink" href="#2-calibration-method" title="Permanent link">&para;</a></h4>
+<p><strong>When to use:</strong>
+- Multiple recordings with same experimental setup
+- Comparing across days or conditions
+- Standardized threshold across samples</p>
+<p><strong>Workflow:</strong>
+1. <strong>Load Calibration File:</strong>
+   - Click "Select Calibration File"
+   - Choose calibration recording (HDF5 or AVI)
+   - Click "Load Calibration Dataset"</p>
+<ol>
+<li><strong>Detect Calibration ROIs:</strong></li>
+<li>Switch to Input tab</li>
+<li>Detect ROIs on calibration data</li>
+<li>
+<p>Verify detection quality</p>
+</li>
+<li>
+<p><strong>Process Calibration Baseline:</strong></p>
+</li>
+<li>Return to Analysis → Calibration tab</li>
+<li>Click "Process Calibration Baseline"</li>
+<li>
+<p>Baseline statistics are calculated and stored</p>
+</li>
+<li>
+<p><strong>Load Main Dataset:</strong></p>
+</li>
+<li>Click "Select Main Dataset File"</li>
+<li>Choose experimental recording</li>
+<li>
+<p>Click "Load Main Dataset"</p>
+</li>
+<li>
+<p><strong>Detect Main ROIs:</strong></p>
+</li>
+<li>Switch to Input tab</li>
+<li>
+<p>Detect ROIs on main dataset</p>
+</li>
+<li>
+<p><strong>Analyze:</strong></p>
+</li>
+<li>Return to Analysis tab</li>
+<li>Click "Start Analysis"</li>
+<li>Calibration thresholds are applied</li>
+</ol>
+<p><strong>Parameters:</strong>
+- <strong>Calibration Multiplier</strong>: Threshold factor for calibration baseline
+- Same as threshold multiplier in baseline method</p>
+<p><strong>Advantages:</strong>
+- Consistent thresholds across recordings
+- Reduces batch effects
+- Standardized analysis pipeline</p>
+<h4 id="3-adaptive-method">3. Adaptive Method<a class="headerlink" href="#3-adaptive-method" title="Permanent link">&para;</a></h4>
+<p><strong>When to use:</strong>
+- Long recordings (&gt; 24 hours)
+- Variable environmental conditions
+- Gradual changes in activity levels</p>
+<p><strong>Parameters:</strong>
+- <strong>Adaptive Duration</strong>: Window size for moving baseline (minutes)
+  - Shorter = more responsive to changes
+  - Longer = more stable thresholds
+- <strong>Adaptive Multiplier</strong>: Sensitivity factor
+- <strong>Adaptive Recalculation Interval</strong>: How often to update baseline (minutes)</p>
+<p><strong>How it works:</strong>
+- Baseline is recalculated periodically
+- Uses sliding window approach
+- Adapts to gradual changes (e.g., developmental effects)</p>
+<p><strong>Configuration:</strong>
+1. Navigate to <strong>"Adaptive Method"</strong> tab
+2. Set adaptive duration
+3. Set recalculation interval
+4. Set multiplier</p>
+<h3 id="additional-options">Additional Options<a class="headerlink" href="#additional-options" title="Permanent link">&para;</a></h3>
+<p><strong>Enable Detrending:</strong>
+- Removes linear trends in the data
+- Useful for recordings with gradual brightness changes
+- Recommended: ON for most analyses</p>
+<p><strong>Enable Jump Correction:</strong>
+- Detects and corrects sudden shifts in baseline
+- Useful for recordings with technical artifacts
+- Recommended: ON if you observe sudden jumps</p>
+<h3 id="running-the-analysis">Running the Analysis<a class="headerlink" href="#running-the-analysis" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Ensure data and ROIs are loaded</li>
+<li>Select threshold method (Baseline/Calibration/Adaptive)</li>
+<li>Configure parameters</li>
+<li>Click <strong>"Start Analysis"</strong></li>
+<li>Progress bar shows processing status</li>
+<li>Analysis log displays in real-time</li>
+<li>When complete, navigate to Results tab</li>
+</ol>
+<p><strong>Processing Time:</strong>
+- Depends on: File size, number of ROIs, chunk size, number of processes
+- Typical: 1-5 minutes for 3-day recording with 6 ROIs</p>
+<hr />
+<h2 id="results-tab">Results Tab<a class="headerlink" href="#results-tab" title="Permanent link">&para;</a></h2>
+<h3 id="generate-plots">Generate Plots<a class="headerlink" href="#generate-plots" title="Permanent link">&para;</a></h3>
+<p>After analysis completes:</p>
+<ol>
+<li>Click <strong>"Generate Plots"</strong></li>
+<li>Plots are generated and displayed</li>
+<li>Each plot appears in a separate matplotlib figure</li>
+</ol>
+<h3 id="plot-types">Plot Types<a class="headerlink" href="#plot-types" title="Permanent link">&para;</a></h3>
+<p><strong>1. Movement Traces</strong>
+- Raw movement values over time
+- One line per ROI (color-coded)
+- Shows baseline threshold (dashed line)
+- Lighting conditions (yellow/gray background)</p>
+<p><strong>2. Activity Fraction</strong>
+- Percentage of time active per time bin
+- Binned data (default: 60-second bins)
+- Useful for comparing overall activity levels</p>
+<p><strong>3. Lighting Conditions</strong>
+- Light (yellow) and dark (gray) phases
+- Extracted from LED metadata (HDF5 only)
+- Manual annotation possible for AVI files</p>
+<p><strong>4. Sleep Pattern</strong>
+- Sleep bouts detected based on quiescence threshold
+- Horizontal bars indicate sleep episodes
+- Useful for visualizing circadian sleep patterns</p>
+<h3 id="customizing-plots">Customizing Plots<a class="headerlink" href="#customizing-plots" title="Permanent link">&para;</a></h3>
+<p><strong>Plot Options (checkboxes):</strong>
+- <strong>Show Baseline Mean</strong>: Display baseline threshold line
+- <strong>Show Deviation Band</strong>: Show ±1 SD band around baseline
+- <strong>Show Detection Threshold</strong>: Highlight threshold line
+- <strong>Show Threshold Stats</strong>: Add text annotations with threshold values</p>
+<p><strong>Adjusting Parameters:</strong>
+- <strong>Bin Size</strong>: Adjust time bins for activity fraction plots
+- <strong>Quiescence Threshold</strong>: Change sleep detection sensitivity
+- <strong>Sleep Threshold</strong>: Minimum duration to classify as sleep bout</p>
+<h3 id="exporting-results">Exporting Results<a class="headerlink" href="#exporting-results" title="Permanent link">&para;</a></h3>
+<p><strong>Excel Export:</strong>
+1. Click <strong>"Export to Excel"</strong>
+2. Choose save location
+3. Generated file includes multiple sheets:
+   - Movement_Data: Raw movement values
+   - Activity_Fraction: Activity percentage
+   - Sleep_Data: Sleep bout information
+   - Statistics: Summary statistics
+   - Parameters: Analysis configuration
+   - Metadata: File and recording info</p>
+<p><strong>CSV Export:</strong>
+- Same data as Excel, but in CSV format
+- Compatible with all analysis software</p>
+<p><strong>Plot Export:</strong>
+1. Click <strong>"Save All Plots"</strong>
+2. Choose save directory
+3. All plots saved as PNG and PDF
+4. High resolution (300 DPI) suitable for publication</p>
+<hr />
+<h2 id="extended-analysis-tab">Extended Analysis Tab<a class="headerlink" href="#extended-analysis-tab" title="Permanent link">&para;</a></h2>
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h3>
+<p>The Extended Analysis tab provides six complementary methods for detecting periodic patterns and synchronization in activity data. The primary period-detection method is the <strong>Chi² periodogram</strong> (Sokolove &amp; Bushell 1978), which uses a Bonferroni-corrected significance threshold (≈ 15.2 for α = 0.05, m = 100 tested periods). See the <a href="../extended-analysis/">Extended Analysis Guide</a> and <a href="../circadian-analysis/">Circadian Analysis Guide</a> for full method details.</p>
+<h3 id="prerequisites_1">Prerequisites<a class="headerlink" href="#prerequisites_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Main analysis must be completed first</li>
+<li>Sufficient recording duration (minimum 3-4 cycles)</li>
+<li>For 24h rhythm: At least 3 days of data</li>
+</ul>
+<h3 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h3>
+<p><strong>Period Range:</strong>
+- <strong>Minimum Period</strong>: Lower bound of search range (0-100 hours)
+  - Example: 12h for circadian/ultradian
+- <strong>Maximum Period</strong>: Upper bound of search range (0-100 hours)
+  - Example: 36h for circadian/infradian
+- <strong>Range selection tips:</strong>
+  - Circadian only: 18-30h
+  - Ultradian: 6-18h
+  - Broad search: 0-48h</p>
+<p><strong>Statistical Parameters:</strong>
+- <strong>Significance Level (α)</strong>: False positive rate (default: 0.05)
+  - 0.05 = 5% chance of false positive
+  - Decrease for more stringent testing (0.01)
+  - Increase for exploratory analysis (0.10)
+- <strong>Phase Threshold</strong>: Sleep/wake classification cutoff (default: 0.5)
+  - 0.5 = median split
+  - Higher = stricter wake criteria
+  - Lower = stricter sleep criteria</p>
+<h3 id="running-analysis">Running Analysis<a class="headerlink" href="#running-analysis" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Navigate to <strong>"Extended Analysis"</strong> tab</li>
+<li>Set period range based on expected rhythms</li>
+<li>Set significance level (usually 0.05)</li>
+<li>Set phase threshold (usually 0.5)</li>
+<li>Click <strong>"Run Circadian Analysis"</strong></li>
+<li>Wait for processing (typically 10-30 seconds)</li>
+<li>View results</li>
+</ol>
+<h3 id="interpreting-results">Interpreting Results<a class="headerlink" href="#interpreting-results" title="Permanent link">&para;</a></h3>
+<p><strong>Text Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ROI 1: SIGNIFICANT circadian rhythm detected
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  Dominant Period: 24.2 ± 0.8 hours
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  Z-score: 8.45 (p &lt; 0.001)
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  Predicted Sleep Phases:
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    - Phase 1: 0.0 - 12.1 hours
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    - Phase 2: 24.2 - 36.3 hours
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  Predicted Wake Phases:
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    - Phase 1: 12.1 - 24.2 hours
+</code></pre></div></p>
+<p><strong>Periodogram Plot:</strong>
+- <strong>X-axis</strong>: Period (hours)
+- <strong>Y-axis</strong>: Labeled "Z-score" but represents the chi-squared statistic Z(T) = n × (r_cos² + r_sin²)
+- <strong>Blue line</strong>: Z(T) values across all tested periods
+- <strong>Gray dashed line</strong>: Bonferroni-corrected significance threshold (≈ 15.2 for α=0.05, m=100)
+- <strong>Red/colored marker</strong>: Dominant period (peak Z(T))
+- <strong>Green title</strong>: Significant rhythm detected (Z(T) &gt; Bonferroni threshold)
+- <strong>Black title</strong>: No significant rhythm</p>
+<p><strong>Biological Interpretation:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Peak Location</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>24h</strong></td>
+<td>Circadian rhythm (day/night cycle)</td>
+</tr>
+<tr>
+<td><strong>12h</strong></td>
+<td>Ultradian rhythm (twice-daily activity)</td>
+</tr>
+<tr>
+<td><strong>48h+</strong></td>
+<td>Infradian rhythm (multi-day cycles)</td>
+</tr>
+<tr>
+<td><strong>No peak</strong></td>
+<td>Arrhythmic or irregular activity</td>
+</tr>
+</tbody>
+</table>
+<h3 id="exporting-extended-analysis">Exporting Extended Analysis<a class="headerlink" href="#exporting-extended-analysis" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Click <strong>"Export Circadian Results"</strong></li>
+<li>Choose save location</li>
+<li>Results saved as:</li>
+<li>CSV: Periodogram data for each ROI</li>
+<li>Excel: Summary tables with parameters and statistics</li>
+</ol>
+<hr />
+<h2 id="frame-viewer-tab">Frame Viewer Tab<a class="headerlink" href="#frame-viewer-tab" title="Permanent link">&para;</a></h2>
+<h3 id="overview_1">Overview<a class="headerlink" href="#overview_1" title="Permanent link">&para;</a></h3>
+<p>The Frame Viewer provides interactive exploration of your raw dataset with temporal context.</p>
+<h3 id="loading-data_1">Loading Data<a class="headerlink" href="#loading-data_1" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Navigate to <strong>"Frame Viewer"</strong> tab</li>
+<li>Click <strong>"Load Data"</strong></li>
+<li>Plugin loads the current dataset (HDF5 or AVI)</li>
+<li>First frame is displayed in a new layer: "Frame Viewer"</li>
+</ol>
+<p><strong>Time Overlay:</strong>
+- Red text in lower-left corner shows elapsed time
+- Format: <code>t = 125.0s (2.08min)</code>
+- Calculated from frame interval metadata</p>
+<h3 id="navigation-controls">Navigation Controls<a class="headerlink" href="#navigation-controls" title="Permanent link">&para;</a></h3>
+<p><strong>Slider:</strong>
+- Drag to navigate to any frame
+- Shows frame number and time</p>
+<p><strong>Button Controls:</strong>
+- <strong>|◀</strong>: Jump to first frame
+- <strong>◀</strong>: Previous frame
+- <strong>▶ Play</strong>: Start/pause playback
+- <strong>▶</strong>: Next frame
+- <strong>▶|</strong>: Jump to last frame</p>
+<p><strong>Playback Speed:</strong>
+- <strong>FPS Control</strong>: Adjust playback speed (1-60 FPS)
+- Default: 10 FPS
+- Higher FPS = faster playback
+- Lower FPS = frame-by-frame inspection</p>
+<h3 id="frame-information-panel">Frame Information Panel<a class="headerlink" href="#frame-information-panel" title="Permanent link">&para;</a></h3>
+<p>Displays statistics for current frame:
+- Frame number (e.g., 26 / 1000)
+- Time (seconds, minutes, hours)
+- Image shape (height x width)
+- Data type (uint8, uint16, etc.)
+- Min/Max pixel values
+- Mean pixel value</p>
+<h3 id="use-cases">Use Cases<a class="headerlink" href="#use-cases" title="Permanent link">&para;</a></h3>
+<p><strong>1. Verify ROI Detection:</strong>
+- Load data in Frame Viewer
+- Navigate through frames
+- Confirm ROIs track organisms correctly
+- Check for drift or occlusion</p>
+<p><strong>2. Identify Movement Events:</strong>
+- Play through recording
+- Observe when organisms move
+- Correlate with movement plots in Results tab</p>
+<p><strong>3. Visual Quality Control:</strong>
+- Check for technical artifacts
+- Identify frames with poor contrast
+- Detect position shifts or rotation</p>
+<p><strong>4. Presentation and Documentation:</strong>
+- Export frames at specific timepoints
+- Create screenshots for publications
+- Generate supplementary videos</p>
+<hr />
+<h2 id="workflow-examples">Workflow Examples<a class="headerlink" href="#workflow-examples" title="Permanent link">&para;</a></h2>
+<h3 id="example-1-basic-hdf5-analysis">Example 1: Basic HDF5 Analysis<a class="headerlink" href="#example-1-basic-hdf5-analysis" title="Permanent link">&para;</a></h3>
+<p><strong>Scenario:</strong> Single 3-day recording of Nematostella, 6 organisms</p>
+<p><strong>Steps:</strong>
+1. Load HDF5 file (Input tab)
+2. Detect ROIs (adjust min/max radius as needed)
+3. Configure analysis (Analysis tab):
+   - Frame interval: 5 seconds
+   - Baseline method: 200 minutes baseline, 0.10 multiplier
+   - Enable detrending: ON
+4. Start analysis
+5. Generate plots (Results tab)
+6. Export to Excel
+7. Run Extended Analysis (24h circadian rhythm expected)
+8. Export circadian results</p>
+<p><strong>Expected Output:</strong>
+- Movement traces showing day/night activity
+- Lighting conditions (if LED data available)
+- Sleep patterns with ~24h periodicity
+- Circadian analysis with significant 24h peak</p>
+<h3 id="example-2-avi-batch-processing">Example 2: AVI Batch Processing<a class="headerlink" href="#example-2-avi-batch-processing" title="Permanent link">&para;</a></h3>
+<p><strong>Scenario:</strong> 10 AVI files (1 hour each), total 10 hours</p>
+<p><strong>Steps:</strong>
+1. Load all AVI files as batch (Input tab)
+   - Hold Ctrl/Cmd and select all 10 files
+   - Plugin concatenates temporally
+2. Detect ROIs on first frame
+3. Configure analysis:
+   - Frame interval: 5 seconds (auto-calculated from FPS)
+   - Baseline method: Use first 30 minutes
+4. Start analysis (processes all 10 videos)
+5. Generate plots
+6. Export results</p>
+<p><strong>Expected Output:</strong>
+- Continuous 10-hour movement traces
+- Seamless transitions between videos
+- Consistent ROI tracking</p>
+<h3 id="example-3-calibration-based-comparison">Example 3: Calibration-Based Comparison<a class="headerlink" href="#example-3-calibration-based-comparison" title="Permanent link">&para;</a></h3>
+<p><strong>Scenario:</strong> Compare 5 experimental recordings using shared calibration</p>
+<p><strong>Steps:</strong></p>
+<p><strong>Day 0 - Calibration:</strong>
+1. Load calibration recording
+2. Detect ROIs
+3. Process calibration baseline (Analysis → Calibration tab)
+4. Save results</p>
+<p><strong>Day 1-5 - Experimental Recordings:</strong>
+For each recording:
+1. Load calibration file (Analysis → Calibration tab)
+2. Load calibration dataset
+3. Process calibration baseline (uses saved parameters)
+4. Load experimental recording
+5. Detect ROIs on experimental data
+6. Start analysis (uses calibration thresholds)
+7. Generate plots and export</p>
+<p><strong>Advantages:</strong>
+- Identical thresholds for all recordings
+- Comparable across days
+- Reduces variability</p>
+<h3 id="example-4-long-term-adaptive-analysis">Example 4: Long-Term Adaptive Analysis<a class="headerlink" href="#example-4-long-term-adaptive-analysis" title="Permanent link">&para;</a></h3>
+<p><strong>Scenario:</strong> 7-day developmental study with changing activity levels</p>
+<p><strong>Steps:</strong>
+1. Load 7-day HDF5 recording
+2. Detect ROIs
+3. Configure analysis:
+   - Adaptive method
+   - Adaptive duration: 6 hours
+   - Recalculation interval: 60 minutes
+   - Adaptive multiplier: 0.10
+4. Start analysis
+5. Generate plots
+6. Export results
+7. Extended analysis with broad period range (12-48h)</p>
+<p><strong>Expected Output:</strong>
+- Adaptive thresholds follow developmental changes
+- Long-term circadian stability analysis
+- Potential detection of developmental rhythm changes</p>
+<hr />
+<h2 id="tips-and-tricks">Tips and Tricks<a class="headerlink" href="#tips-and-tricks" title="Permanent link">&para;</a></h2>
+<h3 id="roi-detection_1">ROI Detection<a class="headerlink" href="#roi-detection_1" title="Permanent link">&para;</a></h3>
+<p><strong>Problem: Too many false positives</strong>
+- Increase DP parameter (e.g., 0.6 → 0.8)
+- Increase min distance between ROIs
+- Increase Param2 (circle detection threshold)</p>
+<p><strong>Problem: Missing ROIs</strong>
+- Decrease DP parameter (e.g., 0.5 → 0.3)
+- Expand radius range
+- Adjust edge detection (Param1)</p>
+<p><strong>Problem: Overlapping ROIs</strong>
+- Increase min distance
+- Manual exclusion (note ROI IDs to exclude)</p>
+<h3 id="movement-analysis">Movement Analysis<a class="headerlink" href="#movement-analysis" title="Permanent link">&para;</a></h3>
+<p><strong>Problem: Too sensitive (detecting noise)</strong>
+- Increase threshold multiplier
+- Increase baseline duration
+- Enable detrending</p>
+<p><strong>Problem: Too insensitive (missing movements)</strong>
+- Decrease threshold multiplier
+- Check ROI detection quality
+- Verify frame interval is correct</p>
+<p><strong>Problem: Analysis very slow</strong>
+- Increase chunk size (e.g., 50 → 100)
+- Reduce number of ROIs
+- Use subset of data (set End Time)</p>
+<p><strong>Problem: Memory errors</strong>
+- Decrease chunk size
+- Reduce number of processes
+- Close other applications
+- Analyze shorter segments</p>
+<h3 id="extended-analysis">Extended Analysis<a class="headerlink" href="#extended-analysis" title="Permanent link">&para;</a></h3>
+<p><strong>Problem: No significant rhythms</strong>
+- Recording too short (extend to 5-7 days)
+- Period range wrong (adjust min/max)
+- Significance level too strict (increase α to 0.10)
+- Organism arrhythmic (biological variation)</p>
+<p><strong>Problem: Multiple peaks</strong>
+- Identify dominant peak (highest Z-score)
+- Check for harmonics (24h peak + 12h peak)
+- Verify biological plausibility</p>
+<h3 id="frame-viewer">Frame Viewer<a class="headerlink" href="#frame-viewer" title="Permanent link">&para;</a></h3>
+<p><strong>Problem: Slow playback</strong>
+- Decrease FPS
+- Close other napari layers
+- Use smaller subset (crop spatially)</p>
+<p><strong>Problem: Time overlay incorrect</strong>
+- Verify frame interval in Analysis tab
+- Check HDF5 metadata
+- For AVI: Ensure correct FPS detection</p>
+<h3 id="general">General<a class="headerlink" href="#general" title="Permanent link">&para;</a></h3>
+<p><strong>Problem: Plugin freezes</strong>
+- Check napari console for errors
+- Restart napari
+- Update to latest plugin version</p>
+<p><strong>Problem: Plots don't appear</strong>
+- Check if matplotlib backend is working
+- Try closing and reopening Results tab
+- Regenerate plots</p>
+<p><strong>Problem: Export fails</strong>
+- Check write permissions for save directory
+- Ensure sufficient disk space
+- For Excel: Install pandas and openpyxl</p>
+<hr />
+<h2 id="keyboard-shortcuts">Keyboard Shortcuts<a class="headerlink" href="#keyboard-shortcuts" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Shortcut</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ctrl+O</strong></td>
+<td>Open file dialog (napari)</td>
+</tr>
+<tr>
+<td><strong>Ctrl+S</strong></td>
+<td>Save current layer (napari)</td>
+</tr>
+<tr>
+<td><strong>Ctrl+W</strong></td>
+<td>Close napari window</td>
+</tr>
+<tr>
+<td><strong>Space</strong></td>
+<td>Toggle playback (Frame Viewer, when focused)</td>
+</tr>
+<tr>
+<td><strong>←/→</strong></td>
+<td>Previous/next frame (Frame Viewer)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="support-and-resources">Support and Resources<a class="headerlink" href="#support-and-resources" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>GitHub Issues</strong>: https://github.com/s1alknau/napari-hdf5-activity/issues</li>
+<li><strong>Documentation</strong>: https://github.com/s1alknau/napari-hdf5-activity/docs</li>
+<li><strong>napari Hub</strong>: https://napari-hub.org/plugins/napari-hdf5-activity</li>
+<li><strong>napari Documentation</strong>: https://napari.org/</li>
+</ul>
+<hr />
+<h2 id="glossary">Glossary<a class="headerlink" href="#glossary" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>ROI</strong>: Region of Interest, circular area around an organism</li>
+<li><strong>HDF5</strong>: Hierarchical Data Format version 5, scientific data container</li>
+<li><strong>AVI</strong>: Audio Video Interleave, video file format</li>
+<li><strong>Baseline</strong>: Reference period for threshold calculation</li>
+<li><strong>Threshold</strong>: Movement detection cutoff value</li>
+<li><strong>Hysteresis</strong>: Two-threshold system for state detection</li>
+<li><strong>Circadian</strong>: ~24-hour biological rhythm</li>
+<li><strong>Ultradian</strong>: Biological rhythm &lt; 24 hours</li>
+<li><strong>Infradian</strong>: Biological rhythm &gt; 24 hours</li>
+<li><strong>Periodogram</strong>: Frequency-domain representation of timeseries</li>
+<li><strong>Z-score</strong>: Standardized measure of statistical significance</li>
+<li><strong>FPS</strong>: Frames per second</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../circadian-analysis/" class="md-footer__link md-footer__link--next" aria-label="Next: Circadian Analysis">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Circadian Analysis
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/s1alknau/Nematostella-time-series" target="_blank" rel="noopener" title="Recording plugin on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://github.com/s1alknau/napari-hdf5-activity" target="_blank" rel="noopener" title="Analysis plugin on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://pypi.org/project/nematostella-time-series" target="_blank" rel="noopener" title="nematostella-time-series on PyPI" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.action.edit", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

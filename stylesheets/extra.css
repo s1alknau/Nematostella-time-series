@@ -1,0 +1,57 @@
+/* ---- Nematostella Toolkit — modern polish ---------------------------- */
+
+:root {
+  --md-primary-fg-color:        #009688;
+  --md-primary-fg-color--light: #4db6ac;
+  --md-primary-fg-color--dark:  #00695c;
+  --md-accent-fg-color:         #00bcd4;
+}
+
+/* Landing page hero ---------------------------------------------------- */
+.md-typeset h1:first-of-type {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.hero-subtitle {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  max-width: 46rem;
+  color: var(--md-default-fg-color--light);
+  margin: 0.2rem 0 1.6rem;
+}
+
+.hero-footnote {
+  font-size: 0.75rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Grid cards ----------------------------------------------------------- */
+.md-typeset .grid.cards > ul > li {
+  border-radius: 0.8rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  padding: 1.1rem 1.2rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.10);
+  transform: translateY(-2px);
+}
+
+.md-typeset .grid.cards .lg.middle {
+  color: var(--md-primary-fg-color);
+}
+
+/* Sticky tabs get a subtle divider ------------------------------------ */
+.md-tabs {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Slightly wider content for a more spacious, modern feel -------------- */
+@media screen and (min-width: 76.25em) {
+  .md-grid {
+    max-width: 68rem;
+  }
+}

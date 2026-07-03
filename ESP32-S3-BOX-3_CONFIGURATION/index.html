@@ -1,0 +1,2062 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Open-source napari toolkit for Nematostella vectensis: synchronized timelapse recording (IR + White LED, ESP32) and automated activity / circadian analysis.">
+      
+      
+        <meta name="author" content="Alexander Knauss">
+      
+      
+        <link rel="canonical" href="https://s1alknau.github.io/Nematostella-time-series/ESP32-S3-BOX-3_CONFIGURATION/">
+      
+      
+        <link rel="prev" href="../installer.html">
+      
+      
+        <link rel="next" href="../circadian/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>ESP32-S3-BOX-3 (Alternative) - Nematostella Toolkit</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#esp32-s3-box-3-configuration-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Nematostella Toolkit" class="md-header__button md-logo" aria-label="Nematostella Toolkit" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Nematostella Toolkit
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ESP32-S3-BOX-3 (Alternative)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/s1alknau/Nematostella-time-series" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    s1alknau/Nematostella-time-series
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../recording/" class="md-tabs__link">
+          
+  
+  
+  Recording Plugin
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../analysis/" class="md-tabs__link">
+          
+  
+  
+  Analysis Plugin
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Nematostella Toolkit" class="md-nav__button md-logo" aria-label="Nematostella Toolkit" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Nematostella Toolkit
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/s1alknau/Nematostella-time-series" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    s1alknau/Nematostella-time-series
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recording Plugin
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Recording Plugin
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recording/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hardware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware & Assembly
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware Photos
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../3D_Druck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3D-Printed Parts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installer.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware Installer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ESP32-S3-BOX-3 (Alternative)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ESP32-S3-BOX-3 (Alternative)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gpio-pinout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPIO Pinout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GPIO Pinout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pmod-header-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pmod Header Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pmod Header Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#left-pmod-header-pin-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Left Pmod Header (PIN 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#right-pmod-header-pin-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Right Pmod Header (PIN 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-gpio-pins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available GPIO Pins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-peripheral-usage-do-not-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Internal Peripheral Usage (DO NOT USE)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pin-assignment-for-led-control-dht22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pin Assignment for LED Control &amp; DHT22
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pin Assignment for LED Control &amp; DHT22">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-gpio-pin-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended GPIO Pin Mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alternative-pin-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternative Pin Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wiring-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wiring Diagram
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Wiring Diagram">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mosfet-connection-updated-for-esp32-s3-box-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MOSFET Connection (Updated for ESP32-S3-BOX-3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dht22-sensor-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DHT22 Sensor Connection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-system-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete System Wiring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Firmware Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-changes-in-esp32-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required Changes in ESP32 Firmware
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#firmware-upload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware Upload
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#signal-specifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Signal Specifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#display-capabilities-optional-future-enhancement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Display Capabilities (Optional Future Enhancement)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Display Capabilities (Optional Future Enhancement)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#potential-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Potential Features:
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-esp32-vs-esp32-s3-box-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison: ESP32 vs ESP32-S3-BOX-3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../circadian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Circadian Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis Plugin
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analysis Plugin
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/circadian-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Circadian Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/extended-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extended Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analysis/avi-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AVI Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gpio-pinout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPIO Pinout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GPIO Pinout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pmod-header-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pmod Header Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pmod Header Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#left-pmod-header-pin-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Left Pmod Header (PIN 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#right-pmod-header-pin-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Right Pmod Header (PIN 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-gpio-pins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available GPIO Pins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-peripheral-usage-do-not-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Internal Peripheral Usage (DO NOT USE)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pin-assignment-for-led-control-dht22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pin Assignment for LED Control &amp; DHT22
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pin Assignment for LED Control &amp; DHT22">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-gpio-pin-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended GPIO Pin Mapping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alternative-pin-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternative Pin Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wiring-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wiring Diagram
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Wiring Diagram">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mosfet-connection-updated-for-esp32-s3-box-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MOSFET Connection (Updated for ESP32-S3-BOX-3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dht22-sensor-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DHT22 Sensor Connection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-system-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete System Wiring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Firmware Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-changes-in-esp32-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required Changes in ESP32 Firmware
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#firmware-upload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware Upload
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#signal-specifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Signal Specifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#display-capabilities-optional-future-enhancement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Display Capabilities (Optional Future Enhancement)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Display Capabilities (Optional Future Enhancement)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#potential-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Potential Features:
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-esp32-vs-esp32-s3-box-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison: ESP32 vs ESP32-S3-BOX-3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/s1alknau/Nematostella-time-series/edit/Nematostella-time-series-IR/docs/ESP32-S3-BOX-3_CONFIGURATION.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="esp32-s3-box-3-configuration-guide">ESP32-S3-BOX-3 Configuration Guide<a class="headerlink" href="#esp32-s3-box-3-configuration-guide" title="Permanent link">&para;</a></h1>
+<p>This document describes the hardware configuration for using the Espressif ESP32-S3-BOX-3 development board with the nematostella time-series imaging system.</p>
+<h2 id="hardware-overview">Hardware Overview<a class="headerlink" href="#hardware-overview" title="Permanent link">&para;</a></h2>
+<p>The <strong>ESP32-S3-BOX-3</strong> is an AIoT development platform featuring:
+- ESP32-S3-WROOM-1 module (Wi-Fi + Bluetooth 5 LE)
+- 16 MB Flash, 16 MB PSRAM
+- 2.4" 320x240 SPI touchscreen display
+- Integrated sensors (microphones, gyroscope, accelerometer)
+- USB Type-C connectivity</p>
+<p>The <strong>ESP32-S3-BOX-3-DOCK</strong> accessory provides:
+- Two Pmod™ compatible headers with 16 programmable GPIOs
+- USB Type-A host port
+- Additional USB Type-C power input</p>
+<h2 id="gpio-pinout">GPIO Pinout<a class="headerlink" href="#gpio-pinout" title="Permanent link">&para;</a></h2>
+<h3 id="pmod-header-configuration">Pmod Header Configuration<a class="headerlink" href="#pmod-header-configuration" title="Permanent link">&para;</a></h3>
+<p>The ESP32-S3-BOX-3-DOCK exposes two Pmod headers with the following pinout:</p>
+<h4 id="left-pmod-header-pin-1">Left Pmod Header (PIN 1)<a class="headerlink" href="#left-pmod-header-pin-1" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Row 1: G10  | G14  | G11  | G43/U0TXD | GND | 3V3
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>Row 2: G13  | G9   | G12  | G44/U0RXD | GND | 3V3
+</code></pre></div>
+<h4 id="right-pmod-header-pin-1">Right Pmod Header (PIN 1)<a class="headerlink" href="#right-pmod-header-pin-1" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Row 1: G21  | G19/USB- | G38  | G41  | GND | 3V3
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Row 2: G42  | G20/USB+ | G39  | G40  | GND | 3V3
+</code></pre></div>
+<h3 id="available-gpio-pins">Available GPIO Pins<a class="headerlink" href="#available-gpio-pins" title="Permanent link">&para;</a></h3>
+<p>Total of <strong>16 programmable GPIOs</strong> available:
+- G9, G10, G11, G12, G13, G14
+- G19, G20, G21
+- G38, G39, G40, G41, G42, G43, G44</p>
+<p><strong>Note:</strong> G19/G20 are shared with USB, and G43/G44 are shared with UART. Avoid using these unless you don't need USB host functionality or serial debugging.</p>
+<h3 id="internal-peripheral-usage-do-not-use">Internal Peripheral Usage (DO NOT USE)<a class="headerlink" href="#internal-peripheral-usage-do-not-use" title="Permanent link">&para;</a></h3>
+<p>The following GPIOs are <strong>reserved</strong> by internal peripherals on the ESP32-S3-BOX-3 main unit:</p>
+<p><strong>Display Controller:</strong>
+- GPIO4 (DC), GPIO5 (CS), GPIO6 (SDA), GPIO7 (SCK)
+- GPIO48 (RST), GPIO47 (CTRL)</p>
+<p><strong>Audio System:</strong>
+- GPIO2 (I²S_MCLK), GPIO17 (I²S_SCLK), GPIO45 (I²S_LRCK)
+- GPIO15 (codec data), GPIO46 (PA control)</p>
+<p><strong>I²C Bus (Sensors/Codec):</strong>
+- GPIO18 (I²C_SCL), GPIO8 (I²C_SDA)</p>
+<p><strong>Other:</strong>
+- GPIO1 (mute status)</p>
+<h2 id="pin-assignment-for-led-control-dht22">Pin Assignment for LED Control &amp; DHT22<a class="headerlink" href="#pin-assignment-for-led-control-dht22" title="Permanent link">&para;</a></h2>
+<h3 id="recommended-gpio-pin-mapping">Recommended GPIO Pin Mapping<a class="headerlink" href="#recommended-gpio-pin-mapping" title="Permanent link">&para;</a></h3>
+<p>For compatibility with the nematostella imaging system, we need 3 GPIO pins:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>ESP32 (Original)</th>
+<th>ESP32-S3-BOX-3 (New)</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IR LED Control</td>
+<td>GPIO 4</td>
+<td><strong>GPIO 10</strong></td>
+<td>PWM output for IR MOSFET gate</td>
+</tr>
+<tr>
+<td>White LED Control</td>
+<td>GPIO 15</td>
+<td><strong>GPIO 11</strong></td>
+<td>PWM output for White MOSFET gate</td>
+</tr>
+<tr>
+<td>DHT22 Data</td>
+<td>GPIO 14</td>
+<td><strong>GPIO 12</strong></td>
+<td>Digital I/O with pull-up</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rationale:</strong>
+- <strong>GPIO 10, 11, 12</strong> are sequential, easy to remember, and safe to use
+- All support PWM (LEDC peripheral on ESP32-S3)
+- GPIO 12 supports digital I/O with pull-up for DHT22
+- None conflict with internal peripherals</p>
+<h3 id="alternative-pin-options">Alternative Pin Options<a class="headerlink" href="#alternative-pin-options" title="Permanent link">&para;</a></h3>
+<p>If GPIO 10/11/12 are unavailable, use these alternatives:</p>
+<p><strong>Option 2:</strong>
+- IR LED: GPIO 38
+- White LED: GPIO 39
+- DHT22: GPIO 40</p>
+<p><strong>Option 3:</strong>
+- IR LED: GPIO 13
+- White LED: GPIO 14
+- DHT22: GPIO 9</p>
+<h2 id="wiring-diagram">Wiring Diagram<a class="headerlink" href="#wiring-diagram" title="Permanent link">&para;</a></h2>
+<h3 id="mosfet-connection-updated-for-esp32-s3-box-3">MOSFET Connection (Updated for ESP32-S3-BOX-3)<a class="headerlink" href="#mosfet-connection-updated-for-esp32-s3-box-3" title="Permanent link">&para;</a></h3>
+<p><strong>IR LED Circuit:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>                    ┌─────────────┐
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>ESP32-S3 GPIO 10 ──►│ Gate        │
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>(3.3V PWM)          │  IRLZ34N    │
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>                    │  MOSFET     │
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>                    │             │
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>12V PSU (+) ────────┤ Drain       │
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>                    │             │
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>                    │ Source      ├─────► IR LED Strip (+)
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>                    └─────────────┘
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>                                        IR LED Strip (-) ──► GND
+</code></pre></div></p>
+<p><strong>White LED Circuit:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>                    ┌─────────────┐
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>ESP32-S3 GPIO 11 ──►│ Gate        │
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>(3.3V PWM)          │  IRLZ34N    │
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>                    │  MOSFET     │
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>                    │             │
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>24V PSU (+) ────────┤ Drain       │
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>                    │             │
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>                    │ Source      ├─────► White LED Strip (+)
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>                    └─────────────┘
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>                                        White LED Strip (-) ──► GND
+</code></pre></div></p>
+<h3 id="dht22-sensor-connection">DHT22 Sensor Connection<a class="headerlink" href="#dht22-sensor-connection" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>DHT22 Sensor Board:
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>Pin 1 (VCC)  → ESP32-S3-BOX-3 DOCK 3V3 (Pmod header)
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>Pin 2 (Data) → ESP32-S3-BOX-3 GPIO 12
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>Pin 3 (GND)  → ESP32-S3-BOX-3 GND (Pmod header)
+</code></pre></div>
+<p><strong>Important Notes:</strong>
+- Use 3V3 and GND from the <strong>Pmod headers</strong>, not from internal ESP32-S3-BOX-3 pins
+- DHT22 sensor board should have <strong>integrated pull-up resistor</strong>
+- Keep wires short (&lt;30cm) for reliable communication</p>
+<h3 id="complete-system-wiring">Complete System Wiring<a class="headerlink" href="#complete-system-wiring" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>│   USB-C      │     │   12V PSU    │     │   24V PSU    │
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>│ (ESP32-S3    │     │  (IR LED)    │     │ (White LED)  │
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>│   BOX-3)     │     │              │     │              │
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>       │                    │                    │
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>       │ USB-C              │ 12V+               │ 24V+
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>       │                    │                    │
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>       ▼                    ▼                    ▼
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>   ┌────────────┐      ┌─────────┐         ┌─────────┐
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>   │ ESP32-S3-  │      │ WAGO #1 │         │ WAGO #2 │
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>   │ BOX-3-DOCK │      │(IR 12V+)│         │(W 24V+) │
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>   │            │      └────┬────┘         └────┬────┘
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>   │ GPIO 10────┼──────┐    │                   │
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>   │ GPIO 11────┼────┐ │    │                   │
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>   │ GPIO 12◄───┼─┐  │ │    │                   │
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>   │  3.3V──┬───┼─┼──┼─┘    │                   │
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>   │  GND─┬─┼───┼─┼──┘      │                   │
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>   │  GND─┼─┼───┼─┘         │                   │
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>   └──┬───┼─┼───┘           │                   │
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>      │   │ └──DHT22        │                   │
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>      │   │     VCC         │                   │
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>      │   │     Data        │                   │
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>      │   │     GND         └──►IR LED(+)      └──►White LED(+)
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>      │   │                      12V                24V
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>      │   │
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>      │   │            IR MOSFET         White MOSFET
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>      │   │            Gate◄─GPIO10      Gate◄─GPIO11
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>      │   │            Drain◄─12V PSU(+) Drain◄─24V PSU(+)
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>      │   │            Source─┐          Source─┐
+<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a>      │   │                   │                 │
+<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a>      ▼   ▼                   ▼                 ▼
+<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a>   ┌──────────────────────────────────────────────────────┐
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a>   │           WAGO #3 (Common Ground Hub)                │
+<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a>   │  [1] 12V PSU GND(-)  [2] 24V PSU GND(-)  [3] ESP32-S3 GND│
+<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a>   │                                                       │
+<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a>   │  Additional wires connected:                         │
+<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a>   │  - IR MOSFET Source                                  │
+<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a>   │  - White MOSFET Source                               │
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a>   │  - IR LED Cathode (-) 12V                            │
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a>   │  - White LED Cathode (-) 24V                         │
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a>   └──────────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>Key Points:</strong>
+- <strong>Power Sources</strong>: USB-C (ESP32-S3-BOX-3), 12V PSU (IR LED), 24V PSU (White LED)
+- DHT22 powered from <strong>Pmod header 3V3</strong>, not internal ESP32-S3-BOX-3
+- <strong>WAGO #1</strong>: 12V+ distribution - [1]=12V PSU(+), [2]=IR LED(+)
+- <strong>WAGO #2</strong>: 24V+ distribution - [1]=24V PSU(+), [2]=White LED(+)
+- <strong>WAGO #3</strong>: Common ground hub for all power sources
+- GPIO 10 → IR MOSFET Gate (direct wire from Pmod header)
+- GPIO 11 → White MOSFET Gate (direct wire from Pmod header)</p>
+<h2 id="firmware-configuration">Firmware Configuration<a class="headerlink" href="#firmware-configuration" title="Permanent link">&para;</a></h2>
+<h3 id="required-changes-in-esp32-firmware">Required Changes in ESP32 Firmware<a class="headerlink" href="#required-changes-in-esp32-firmware" title="Permanent link">&para;</a></h3>
+<p>The ESP32 firmware must be updated to use the new GPIO pin assignments:</p>
+<p><strong>File: <code>ESP32_firmware/src/config.h</code> (or equivalent)</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1">// Original ESP32 pin assignments</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1">// #define IR_LED_PIN 4</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1">// #define WHITE_LED_PIN 15</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1">// #define DHT22_PIN 14</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1">// ESP32-S3-BOX-3 pin assignments</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="cp">#define IR_LED_PIN 10      </span><span class="c1">// GPIO 10 via Pmod header</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="cp">#define WHITE_LED_PIN 11   </span><span class="c1">// GPIO 11 via Pmod header</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="cp">#define DHT22_PIN 12       </span><span class="c1">// GPIO 12 via Pmod header</span>
+</code></pre></div>
+<p><strong>PWM Configuration:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1">// PWM settings (unchanged from original)</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="cp">#define PWM_FREQUENCY 15000  </span><span class="c1">// 15 kHz</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="cp">#define PWM_RESOLUTION 8     </span><span class="c1">// 8-bit (0-255)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="cp">#define PWM_CHANNEL_IR 0</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="cp">#define PWM_CHANNEL_WHITE 1</span>
+</code></pre></div></p>
+<p><strong>DHT22 Configuration:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1">// DHT22 sensor (unchanged from original)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="cp">#define DHTTYPE DHT22</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">DHT</span><span class="w"> </span><span class="nf">dht</span><span class="p">(</span><span class="n">DHT22_PIN</span><span class="p">,</span><span class="w"> </span><span class="n">DHTTYPE</span><span class="p">);</span>
+</code></pre></div></p>
+<h3 id="firmware-upload">Firmware Upload<a class="headerlink" href="#firmware-upload" title="Permanent link">&para;</a></h3>
+<p><strong>Using Arduino IDE or PlatformIO:</strong></p>
+<ol>
+<li><strong>Select Board:</strong> ESP32-S3-Box (or ESP32S3 Dev Module)</li>
+<li><strong>Configure Partition Scheme:</strong> Default 4MB with spiffs</li>
+<li><strong>USB CDC on Boot:</strong> Enabled (for Serial over USB)</li>
+<li><strong>Upload Mode:</strong> UART0 (via USB-C)</li>
+</ol>
+<p><strong>Upload Process:</strong>
+1. Connect ESP32-S3-BOX-3 to computer via USB-C cable
+2. Hold <strong>BOOT</strong> button while pressing <strong>RESET</strong> button (if needed)
+3. Upload firmware from Arduino IDE or PlatformIO
+4. Monitor serial output at 115200 baud</p>
+<h2 id="signal-specifications">Signal Specifications<a class="headerlink" href="#signal-specifications" title="Permanent link">&para;</a></h2>
+<p><strong>PWM Signals (GPIO 10, 11):</strong>
+- <strong>GPIO 10</strong>: IR LED MOSFET Gate
+- <strong>GPIO 11</strong>: White LED MOSFET Gate
+- Logic Level: 3.3V
+- Frequency: 15 kHz (set in firmware)
+- Duty Cycle: 0-100% (controlled by plugin)
+- Rise/Fall Time: &lt;1µs</p>
+<p><strong>DHT22 Communication (GPIO 12):</strong>
+- Protocol: Single-wire digital (proprietary)
+- Pull-up: 10kΩ to 3.3V (integrated on DHT22 board)
+- Sampling Rate: ~0.5 Hz (one reading per 2 seconds max)
+- Data Format: 40-bit (16-bit humidity, 16-bit temp, 8-bit checksum)</p>
+<p><strong>Serial Communication:</strong>
+- Protocol: UART over USB-C
+- Baud Rate: 115200
+- Data Format: 8N1 (8 data bits, no parity, 1 stop bit)</p>
+<h2 id="display-capabilities-optional-future-enhancement">Display Capabilities (Optional Future Enhancement)<a class="headerlink" href="#display-capabilities-optional-future-enhancement" title="Permanent link">&para;</a></h2>
+<p>The ESP32-S3-BOX-3 includes a 2.4" touchscreen display that could be used for:</p>
+<h3 id="potential-features">Potential Features:<a class="headerlink" href="#potential-features" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Local Status Display</strong></li>
+<li>Current LED power levels</li>
+<li>Temperature and humidity readings</li>
+<li>Recording status (idle/recording)</li>
+<li>
+<p>Connection status (USB/network)</p>
+</li>
+<li>
+<p><strong>Touch Control Interface</strong></p>
+</li>
+<li>Manual LED power adjustment</li>
+<li>Test LED on/off</li>
+<li>View sensor readings</li>
+<li>
+<p>Emergency stop button</p>
+</li>
+<li>
+<p><strong>Data Visualization</strong></p>
+</li>
+<li>Real-time temperature/humidity graphs</li>
+<li>LED duty cycle indicators</li>
+<li>Recording progress bar</li>
+</ol>
+<p><strong>Note:</strong> Display functionality is <strong>optional</strong> and not required for basic operation. The system works identically to the standard ESP32 setup without using the display.</p>
+<h2 id="migration-checklist">Migration Checklist<a class="headerlink" href="#migration-checklist" title="Permanent link">&para;</a></h2>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Obtain ESP32-S3-BOX-3 and ESP32-S3-BOX-3-DOCK</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Update firmware pin definitions (GPIO 10, 11, 12)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Test PWM output on GPIO 10 and 11 with oscilloscope</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Verify DHT22 communication on GPIO 12</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Connect MOSFETs to Pmod header GPIOs</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Wire power distribution (WAGO connectors)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Test LED control and sensor readings</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Validate full system integration</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> (Optional) Implement local display features</li>
+</ul>
+<h2 id="comparison-esp32-vs-esp32-s3-box-3">Comparison: ESP32 vs ESP32-S3-BOX-3<a class="headerlink" href="#comparison-esp32-vs-esp32-s3-box-3" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>ESP32 DevKit</th>
+<th>ESP32-S3-BOX-3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Microcontroller</td>
+<td>ESP32</td>
+<td>ESP32-S3</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>4 MB</td>
+<td>16 MB</td>
+</tr>
+<tr>
+<td>PSRAM</td>
+<td>0 MB (usually)</td>
+<td>16 MB</td>
+</tr>
+<tr>
+<td>Display</td>
+<td>None</td>
+<td>2.4" 320x240 touchscreen</td>
+</tr>
+<tr>
+<td>GPIO Access</td>
+<td>Direct pins</td>
+<td>Via Pmod headers (DOCK)</td>
+</tr>
+<tr>
+<td>Pin Mapping</td>
+<td>GPIO 4, 15, 14</td>
+<td>GPIO 10, 11, 12</td>
+</tr>
+<tr>
+<td>USB</td>
+<td>Micro-USB (UART)</td>
+<td>USB-C (native USB)</td>
+</tr>
+<tr>
+<td>Enclosure</td>
+<td>Open dev board</td>
+<td>Enclosed with stand</td>
+</tr>
+<tr>
+<td>Additional Features</td>
+<td>None</td>
+<td>Sensors, speaker, microphones</td>
+</tr>
+</tbody>
+</table>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p><strong>LEDs not responding:</strong>
+- Verify GPIO 10/11 are correctly wired to MOSFET gates
+- Check PWM signal with oscilloscope (0-3.3V square wave at 15kHz)
+- Ensure firmware is compiled for ESP32-S3 target</p>
+<p><strong>DHT22 returns 0.0 values:</strong>
+- Verify 3.3V and GND from <strong>Pmod header</strong> (not internal ESP32-S3-BOX-3)
+- Check GPIO 12 connection
+- Ensure DHT22 board has integrated pull-up resistor</p>
+<p><strong>Cannot upload firmware:</strong>
+- Select correct board: ESP32-S3-Box or ESP32S3 Dev Module
+- Enable "USB CDC on Boot" in board settings
+- Try holding BOOT button while clicking Upload</p>
+<p><strong>Display interferes with operation:</strong>
+- Display uses GPIO 4-7, 47-48 internally - do not use these pins
+- If display shows garbage, it won't affect LED/sensor operation
+- Display can be safely ignored if not using it</p>
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://www.espressif.com/en/dev-board/esp32-s3-box-3-en">ESP32-S3-BOX-3 Official Page</a></li>
+<li><a href="https://github.com/espressif/esp-box">ESP32-S3-BOX GitHub Repository</a></li>
+<li><a href="https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf">ESP32-S3 Datasheet</a></li>
+<li><a href="https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/gpio.html">ESP-IDF GPIO Documentation</a></li>
+</ul>
+<hr />
+<p><strong>Last Updated:</strong> 2025-12-12</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../installer.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Firmware Installer">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Firmware Installer
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../circadian/" class="md-footer__link md-footer__link--next" aria-label="Next: Circadian Protocol">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Circadian Protocol
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/s1alknau/Nematostella-time-series" target="_blank" rel="noopener" title="Recording plugin on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://github.com/s1alknau/napari-hdf5-activity" target="_blank" rel="noopener" title="Analysis plugin on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://pypi.org/project/nematostella-time-series" target="_blank" rel="noopener" title="nematostella-time-series on PyPI" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.action.edit", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
