@@ -125,3 +125,15 @@ Firmware/LED_Nematostella/.claude/
 .claude/settings.local.json
 scripts/timing_simulation.py
 scripts/timing_simulation_result.png
+
+# MkDocs: sync-generated copies (source of truth is repo root)
+docs/changelog.md
+docs/circadian.md
+site/
+docs/analysis/user-guide.md
+docs/analysis/circadian-analysis.md
+docs/analysis/extended-analysis.md
+docs/analysis/performance.md
+docs/analysis/avi-integration.md
+docs/analysis/entrainment_protocol.txt
+docs/analysis/entrainment_protocol_EN.txt

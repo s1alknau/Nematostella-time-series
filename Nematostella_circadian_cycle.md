@@ -10,7 +10,7 @@ author_profile: true
   <tr>
     <td width="75%" valign="top">
       <p>The sea anemone <em>Nematostella vectensis</em> possesses conserved clock genes, displays light-entrained circadian locomotor rhythms, and exhibits sleep-like states linked to DNA repair, making it a key model for circadian regulation and sleep evolution. However, no existing platform integrates the timing precision, illumination control for scheduled experimental design, and automated behavioral analysis required for long-term studies.</p>
-      <p>We developed an open-source hardware&ndash;software system comprising an ESP32 microcontroller-based imaging unit with near-infrared and white-light illumination for entrainment, sub-second timing accuracy, and environmental logging (~600&nbsp;&euro; total cost), together with two napari plugins that automate the workflow from region-of-interest detection and movement quantification to circadian rhythm analysis, sleep-like state classification.</p>
+      <p>We developed an open-source hardware&ndash;software system built around an ESP32 microcontroller-based imaging unit, providing near-infrared and white-light illumination for entrainment, sub-second timing accuracy, and environmental logging at a total cost of ~600&nbsp;&euro;. Two companion napari plugins then automate the full workflow &mdash; from region-of-interest detection and movement quantification through circadian rhythm analysis to sleep-like state classification.</p>
       <h2>Software</h2>
       <ul>
         <li><b>Recording plugin</b> &mdash; <a href="https://github.com/s1alknau/Nematostella-time-series">Nematostella-time-series</a>: synchronized timelapse capture, LED control, ESP32 communication.</li>
@@ -21,7 +21,7 @@ author_profile: true
     <td width="25%" valign="top" align="center">
       <img src="https://raw.githubusercontent.com/s1alknau/Nematostella-time-series/Nematostella-time-series-IR/docs/images/Nematostella.png" alt="Nematostella vectensis" width="180" />
       <br/>
-      <em>An adult</em> Nematostella vectensis <em>recorded with the imager.</em>
+      <em>An adult</em> Nematostella vectensis.</em>
     </td>
   </tr>
 </table>
