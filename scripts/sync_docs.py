@@ -46,8 +46,10 @@ ANALYSIS_ASSETS = {
     "docs/entrainment_protocol_EN.txt": "entrainment_protocol_EN.txt",
 }
 
-# Rewrite internal links so they point at the renamed pages in docs/analysis/.
-# Applied in order to the copied markdown text.
+# Text rewrites applied to the copied analysis markdown (in order):
+#  - point internal links at the renamed pages in docs/analysis/
+#  - the Chi2 periodogram (Sokolove & Bushell 1978) is not Fisher's method,
+#    so drop "Fisher/" from the heading, TOC entry and its anchor link.
 LINK_REWRITES = [
     ("../EXTENDED_ANALYSIS.md", "extended-analysis.md"),
     ("EXTENDED_ANALYSIS.md", "extended-analysis.md"),
@@ -60,6 +62,9 @@ LINK_REWRITES = [
     ("docs/USER_GUIDE.md", "user-guide.md"),
     ("USER_GUIDE.md", "user-guide.md"),
     ("../README.md", "index.md"),
+    ("#fisherchi-periodogram", "#chi2-periodogram"),
+    ("Fisher/Chi² Periodogram", "Chi² Periodogram"),
+    ("Fisher/Chi² periodogram", "Chi² periodogram"),
 ]
 
 
