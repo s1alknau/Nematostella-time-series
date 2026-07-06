@@ -84,9 +84,9 @@ nav:
   - Home: index.md
   - Recording Plugin:
       - Overview: recording.md
+      - 3D-Printed Parts: 3D_Druck/README.md
       - Hardware & Assembly: hardware.md
       - Hardware Photos: images/README.md
-      - 3D-Printed Parts: 3D_Druck/README.md
       - Firmware Installer: installer.html
       - ESP32-S3-BOX-3 (Alternative): ESP32-S3-BOX-3_CONFIGURATION.md
       - Circadian Protocol: circadian.md

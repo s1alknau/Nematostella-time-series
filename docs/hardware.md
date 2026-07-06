@@ -19,22 +19,70 @@ environmental sensor. This is the **standard, recommended setup**.
 
 ## Required components
 
-| # | Component | Notes |
-|---|-----------|-------|
-| 1 | **ESP32-DevKitC** | Standard board. Firmware v2.2+. GPIO 4 (IR), 15 (White), 14 (DHT22). |
-| 2 | **IR LED strip** | 850 nm, **12 V** (e.g. 2538 120 LED/m IR) |
-| 3 | **White LED strip** | broad-spectrum COB, **24 V** |
-| 4 | **DHT22 sensor** | −40…80 °C (±0.5 °C), 0–100 % RH; board with integrated pull-up |
-| 5 | **2× IRLZ34N MOSFET** | logic-level, one per LED channel |
-| 6 | **3× WAGO 221-413** | lever connectors (12 V+, 24 V+, common ground) |
-| 7 | **220 Ω resistor** | gate series resistor |
-| 8 | **12 V + 24 V PSU** | 2–5 A each, regulated, separate from USB |
-| 9 | **Camera** | Hik Robotics MV-CS-013 60GN (NIR) |
-| 10 | **3D-printed parts** | see [3D-Printed Parts](3D_Druck/README.md) |
+Full parts list with ordering links (example vendors — equivalents work too).
+
+### 1. ESP32 microcontroller
+
+**Option A — ESP32-DevKitC (standard, recommended)**
+
+- Custom firmware with LED control and sensor support (v2.2 or higher)
+- GPIO pins: GPIO 4 (IR LED), GPIO 15 (White LED), GPIO 14 (DHT22)
+- Order: [AZDelivery ESP32 DevKitC (Amazon)](https://www.amazon.de/AZDelivery-Development-Anschluss-kompatibel-inklusive/dp/B0D8WDDGC3/ref=asc_df_B0D8WDDGC3?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312995674&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=129578&hvtargid=pla-4584413787761197&msclkid=d051c43db7391f3541afae31cde17710&th=1)
+
+**Option B — [ESP32-S3-BOX-3 (Alternative)](ESP32-S3-BOX-3_CONFIGURATION.md)**
+
+- Board with integrated 2.4" touchscreen; requires the ESP32-S3-BOX-3-DOCK for GPIO access
+- GPIO pins: GPIO 10 (IR LED), GPIO 11 (White LED), GPIO 12 (DHT22)
+- See the [ESP32-S3-BOX-3 configuration guide](ESP32-S3-BOX-3_CONFIGURATION.md)
+
+### 2. LED system
+
+- **IR LED** — 850 nm, **12 V** (e.g. LED Streifen 2538 120 LED/m IR 850 nm): [buyledstrip.com](https://www.buyledstrip.com/de/led-streifen-2538-120-led-m-ir-850nm-je-50cm.html)
+- **White LED** — broad-spectrum, **24 V** (e.g. 24 V COB 320 L/m iNextStation): [Amazon](https://www.amazon.de/dp/B0CT3B7K1D?ref_=ppx_hzsearch_conn_dt_b_fed_asin_title_1&th=1)
 
 !!! warning "Different LED voltages"
     IR and White LEDs run on **different voltages (12 V vs. 24 V)** — use two
     separate PSUs and never cross the rails.
+
+### 3. DHT22 sensor
+
+- Temperature −40…80 °C (±0.5 °C), humidity 0–100 % RH (±2–5 %)
+- Board with integrated pull-up resistor (no external resistor needed)
+- Order: [DHT22 sensor board (Amazon)](https://www.amazon.de/dp/B0F42HN92Q?ref=ppx_yo2ov_dt_b_fed_asin_title)
+
+### 4. Power supplies & MOSFETs (logic-level, 3.3 V)
+
+- **ESP32 power**: 5 V via USB (from the computer)
+- **IR LED power**: 12 V DC, 2–5 A: [buyledstrip.com](https://www.buyledstrip.com/de/netzteil-60-watt-12v-24v.html?id=173564582)
+- **White LED power**: 24 V DC, 2–5 A: [buyledstrip.com](https://www.buyledstrip.com/de/netzteil-60-watt-12v-24v.html?id=173564582)
+- **BOJACK IRLZ34N MOSFET** 30 A / 55 V (IRLZ34NPBF): [Amazon](https://www.amazon.de/dp/B0893WBH6H?ref=ppx_yo2ov_dt_b_fed_asin_title)
+
+!!! danger "Common ground required"
+    A common ground between USB/ESP32 ground and **both** PSU grounds is
+    mandatory.
+
+### 5. Connectors, wiring, screw kit
+
+- **3× WAGO 221-413** COMPACT lever connectors (3-conductor): [Amazon](https://www.amazon.de/dp/B0CDPC692C?ref=ppx_yo2ov_dt_b_fed_asin_title)
+- PSU connector DC plug: [buyledstrip.com](https://www.buyledstrip.com/de/55-mm-dc-buchse-weiblich.html)
+- 220 Ω resistor (gate series resistor): [Elegoo resistor kit (Amazon)](https://www.amazon.de/Elegoo-Widerst%C3%A4nde-Sortiment-St%C3%BCck-Metallfilm/dp/B072BHDBDG/ref=asc_df_B072BHDBDG?tag=bingshoppin0b-21&linkCode=df0&hvadid=80814312989902&hvnetw=o&hvqmt=e&hvbmt=be&hvdev=c&hvlocint=&hvlocphy=192097&hvtargid=pla-4584413786304525&psc=1&msclkid=bc9a95dd8148109d2d6dffdc21218251)
+- Magnets: [Amazon](https://www.amazon.de/dp/B0C84SYYRC?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1)
+- White-light LED connector: [Amazon](https://www.amazon.de/dp/B0BJKC6WQJ?ref=ppx_yo2ov_dt_b_fed_asin_title)
+- Wires and connectors: [Amazon](https://www.amazon.de/dp/B0B67KW6BC/ref=sspa_dk_detail_5?psc=1&pd_rd_i=B0B67KW6BC&pd_rd_w=Egnt7&content-id=amzn1.sym.99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_p=99a46b10-6bb0-41eb-aa22-b26ae1e31690&pf_rd_r=B64Y7SJKH0MZRHKKB5XT&pd_rd_wg=B3gIN&pd_rd_r=712c8eed-6bdc-40b7-bd24-77516c8be8b2&aref=HdgOtKuxpu&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfdGhlbWF0aWM)
+- Glue: [Amazon](https://www.amazon.de/dp/B0C6R9G4ZW?ref=nb_sb_ss_w_as-reorder_k0_1_8&crid=120N5DRLM9J5Q&sprefix=sekunden&th=1)
+- Hot glue gun: [Amazon](https://www.amazon.de/RUNSAI-Hei%C3%9Fklebepistole-Klebepistole-Heissklebepistole-Klebepistolen/dp/B0FDGNZRPR)
+- Screw kit incl. hex keys: [Amazon](https://www.amazon.de/dp/B0CZSW8S66)
+
+### 6. Camera
+
+- **Hik Robotics MV-CS-013 60GN** (near-infrared) — request via the UC2 company
+  ([imprint](https://openuc2.com/imprint/)) or
+  [annolution shop](https://www.annolution.com/shop/hikrobotarea-scan-camera-1-3mp-area-scan-camera-gige-nir-8254)
+- Product page: [hikrobotics.com](https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038)
+
+### 7. 3D-printed parts
+
+- See [3D-Printed Parts](3D_Druck/README.md) for all STL/STEP files and print settings.
 
 ## Pin reference — ESP32 DevKit
 
