@@ -43,6 +43,18 @@ jobs:
           path: _analysis-src
           fetch-depth: 1
 
+      # napari-lsft must be PUBLIC for this checkout to succeed with the default
+      # token. continue-on-error keeps the site deploying even if the repo is
+      # still private; sync_docs.py then just skips the LSFT page.
+      - name: Checkout LSFT plugin (napari-lsft)
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: s1alknau/napari-lsft
+          ref: main
+          path: _lsft-src
+          fetch-depth: 1
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -55,6 +67,7 @@ jobs:
       - name: Sync Markdown into docs/
         env:
           ANALYSIS_REPO: ${{ github.workspace }}/_analysis-src
+          LSFT_REPO: ${{ github.workspace }}/_lsft-src
         run: python scripts/sync_docs.py
 
       - name: Build site

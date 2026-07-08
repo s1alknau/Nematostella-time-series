@@ -100,6 +100,8 @@ nav:
       - Extended Analysis: analysis/extended-analysis.md
       - Performance: analysis/performance.md
       - AVI Integration: analysis/avi-integration.md
+  - LSFT Plugin:
+      - Overview: lsft/index.md
 
 extra:
   generator: false
@@ -110,6 +112,9 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/s1alknau/napari-hdf5-activity
       name: Analysis plugin on GitHub
+    - icon: fontawesome/brands/github
+      link: https://github.com/s1alknau/napari-lsft
+      name: LSFT plugin on GitHub
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/nematostella-time-series
       name: nematostella-time-series on PyPI
