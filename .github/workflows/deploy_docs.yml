@@ -6,6 +6,7 @@ on:
       - Nematostella-time-series-IR
     paths:
       - "docs/**"
+      - "overrides/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - "scripts/sync_docs.py"

@@ -16,6 +16,7 @@ edit_uri: edit/Nematostella-time-series-IR/docs/
 
 theme:
   name: material
+  custom_dir: overrides
   language: en
   font:
     text: Inter
