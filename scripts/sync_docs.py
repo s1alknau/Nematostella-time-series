@@ -79,6 +79,10 @@ LINK_REWRITES = [
     ("docs/USER_GUIDE.md", "user-guide.md"),
     ("USER_GUIDE.md", "user-guide.md"),
     ("../README.md", "index.md"),
+    # Example plots referenced by EXTENDED_ANALYSIS.md live at docs/images/extended/
+    # in the analysis repo; on the site the page sits in docs/analysis/, so point
+    # at the copies synced to docs/analysis/images/extended/.
+    ("docs/images/extended/", "images/extended/"),
     ("#fisherchi-periodogram", "#chi2-periodogram"),
     ("Fisher/Chi² Periodogram", "Chi² Periodogram"),
     ("Fisher/Chi² periodogram", "Chi² periodogram"),
@@ -153,6 +157,12 @@ def main() -> None:
                 print(f"WARNING: {src_rel} not found in analysis repo, skipping")
                 continue
             copy(src, DOCS / "analysis" / dst_name)
+
+        # Example plots embedded in EXTENDED_ANALYSIS.md (docs/images/extended/*.png)
+        ext_img_src = analysis_repo / "docs" / "images" / "extended"
+        if ext_img_src.is_dir():
+            for img in sorted(ext_img_src.glob("*.png")):
+                copy(img, DOCS / "analysis" / "images" / "extended" / img.name)
 
     lsft_repo = resolve_lsft_repo()
     if lsft_repo is None:
