@@ -35,6 +35,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      # NOTE: docs pulled from napari-hdf5-activity are fetched fresh at build
+      # time. Pushing changes to that repo does NOT auto-trigger this workflow —
+      # re-run it (Actions -> "Deploy MkDocs site" -> Run workflow) or push here
+      # to publish updated analysis/User-Guide docs.
       - name: Checkout analysis plugin (napari-hdf5-activity)
         uses: actions/checkout@v4
         with:
