@@ -443,7 +443,7 @@ In napari:
 
 ### Component Hierarchy
 
-<img width="715" height="595" alt="AdobeExpressPhotos_02f43629ad0644b1bb715cf363688806_CopyEdited" src="https://github.com/user-attachments/assets/8a1d89f4-7d10-430d-a4f3-4ff37531801a" />
+![Software architecture of the Nematostella Timelapse Capture plugin: UI layer (widgets + controllers), core-logic layer (Recording Manager, Frame Capture, Data Manager, ESP32 stack), and the shared status panel](docs/images/diagrams/software-architecture.png)
 
 
 
@@ -571,123 +571,11 @@ The plugin uses **hardware-synchronized LED control** to ensure precise timing b
 
 ### Timing Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    COMPLETE FRAME CYCLE                         │
-└─────────────────────────────────────────────────────────────────┘
-
-Python Plugin                ESP32 Firmware              Camera
-─────────────                ──────────────              ──────
-
-    │                             │                         │
-    │ 1. SET_TIMING               │                         │
-    ├────────────────────────────>│                         │
-    │  (1000ms stab, 10ms exp)    │                         │
-    │                             │                         │
-    │ 2. SYNC_CAPTURE (0x0C)      │                         │
-    ├────────────────────────────>│                         │
-    │                             │ LED ON                  │
-    │                             ├─────────►               │
-    │                             │ (GPIO 4 or 15)          │
-    │                             │                         │
-    │                             │ [1000ms stabilization]  │
-    │                             │ ░░░░░░░░░░░░░░░░░░░░░  │
-    │                             │                         │
-    │ 3. Camera Trigger           │                         │
-    ├─────────────────────────────┼────────────────────────>│
-    │                             │                         │ Exposure
-    │                             │                         │ [10ms]
-    │                             │                         │ ████
-    │                             │                         │
-    │                             │ LED OFF                 │
-    │                             ├─────────►               │
-    │                             │                         │
-    │                             │ Read DHT22              │
-    │                             │ ──────►                 │
-    │                             │                         │
-    │ 4. Response (15 bytes)      │                         │
-    │<────────────────────────────┤                         │
-    │   (temp, humidity, timing)  │                         │
-    │                             │                         │
-    │ 5. Snap Frame               │                         │
-    ├─────────────────────────────┼────────────────────────>│
-    │                             │                         │
-    │ 6. Frame Data               │                         │
-    │<────────────────────────────┼─────────────────────────┤
-    │                             │                         │
-    │ 7. Save to HDF5             │                         │
-    │ (with metadata)             │                         │
-    │                             │                         │
-    ▼                             ▼                         ▼
-
-Total Duration: ~1010ms (1000ms stab + 10ms exposure)
-```
-
-### Detailed Timing Breakdown
-
-```
-Frame Capture Timeline (Single Frame)
-═══════════════════════════════════════════════════════════════
-
-Time (ms)    Event                          Component
-─────────    ─────────────────────────────  ──────────────────
-    0        Python: Send SYNC_CAPTURE      Plugin
-    0        ESP32: Receive command         ESP32
-    0        ESP32: LED ON (GPIO 4/15)      ESP32 → LED Driver
-             ┌────────────────────────────────────────┐
-             │   LED STABILIZATION PERIOD             │
-             │   (1000ms - LED reaches stable output) │
-             │   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
-             └────────────────────────────────────────┘
- 1000        ESP32: LED stabilized          ESP32
- 1000        Camera: Exposure starts        Camera
-             ┌────────────────┐
-             │   EXPOSURE     │
-             │   (10ms)       │
-             │   ████████     │
-             └────────────────┘
- 1010        Camera: Exposure complete      Camera
- 1010        ESP32: LED OFF                 ESP32
- 1010        ESP32: Read DHT22              ESP32 → DHT22
- 1015        ESP32: Send response (15B)     ESP32 → Python
- 1015        Python: Receive response       Plugin
- 1015        Python: Snap frame             Plugin → Camera
- 1020        Python: Receive frame data     Camera → Plugin
- 1020        Python: Save to HDF5           Plugin → Disk
- 1025        Frame cycle complete           ✓
-
-Total: ~1025ms (1010ms sync + 10ms capture + 5ms save)
-```
+![Single-LED frame-capture timing for two consecutive frames](docs/images/diagrams/timing-single.png)
 
 ### Phase-Based Timing (Light/Dark Cycles)
 
-```
-Phase Recording Timeline (60s Light + 60s Dark @ 5s interval)
-═══════════════════════════════════════════════════════════════════
-
-Phase    Time Range    Frames    LED State    Mean Intensity
-─────    ──────────    ───────   ─────────    ──────────────
-LIGHT    0-60s         12        WHITE ON     ~240
-                                 ┌──────┐
-                                 │██████│ 5s intervals
-                                 └──────┘
-
-DARK     60-120s       12        IR ON        ~195
-                                 ┌──────┐
-                                 │░░░░░░│ 5s intervals
-                                 └──────┘
-
-Transition at t=60s:
-    59.5s  ─┐ WHITE LED ON
-    59.9s   │ Frame capture
-    60.0s  ─┴ WHITE LED OFF
-           ─┐ Phase transition
-    60.0s   │ ESP32: Select IR LED (0x20)
-    60.0s  ─┴ IR LED selected
-    60.5s  ─┐ IR LED ON
-    60.9s   │ Frame capture
-    61.0s  ─┴ IR LED OFF
-```
+![Dual-LED phase-recording protocol: alternating IR dark phases and white-LED light phases](docs/images/diagrams/timing-dual.png)
 
 ### Drift Compensation Mechanism
 
@@ -816,6 +704,10 @@ pulse_start = esp32.begin_sync_pulse(dual=True)
 ---
 
 ## Calibration System
+
+![LED calibration and image-recording pipeline](docs/images/diagrams/calibration-recording.png)
+
+*Frames are acquired according to the current light/dark phase (IR-only in scotophase, white in photophase) with per-frame brightness validation.*
 
 ### Purpose
 

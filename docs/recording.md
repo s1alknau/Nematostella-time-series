@@ -58,6 +58,34 @@ Analysis** tab (auto ROI detection via HoughCircles, per-ROI activity every 20 s
 needs `opencv-python`), a browser-based [firmware installer](installer.html),
 and live frame display with recording statistics.
 
+## How it works
+
+The plugin is organized as a layered recording architecture: a napari **UI layer**
+of widgets and controllers on top of a **core-logic layer** that drives frame
+capture, ESP32 LED synchronization and HDF5/Zarr storage.
+
+![Software architecture of the Nematostella Timelapse Capture plugin](images/diagrams/software-architecture.png)
+
+### Frame timing
+
+Each frame follows a hardware-synchronized cycle. Inter-frame intervals are
+referenced to the absolute recording start to avoid cumulative drift; the host
+plugin keeps full timing control and drives the ESP32 as a remote LED switch.
+
+![Single-LED frame-capture timing for two consecutive frames](images/diagrams/timing-single.png)
+
+For circadian protocols the plugin alternates IR-only dark phases and white-LED
+light phases, each containing multiple frames at a configurable interval.
+
+![Dual-LED phase-recording protocol](images/diagrams/timing-dual.png)
+
+### Calibration & recording pipeline
+
+Before recording, LED powers are calibrated to a common target intensity; during
+recording each frame is brightness-validated as it is written to disk.
+
+![LED calibration and image-recording pipeline](images/diagrams/calibration-recording.png)
+
 ## Get started
 
 1. **Install**
