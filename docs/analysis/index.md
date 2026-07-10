@@ -39,6 +39,16 @@ recordings — the companion to the [Recording Plugin](../recording.md).
 
 </div>
 
+## How it works
+
+The analysis plugin is organized as a modular pipeline. Data sources (HDF5/Zarr
+image stacks and their telemetry) feed a core set of modules — ROI detection,
+activity extraction and the circadian analysis engine (Chi² periodogram, FFT,
+cosinor, coherence). A Plot/Export module renders activity traces and
+periodograms and writes CSV and figure exports.
+
+![Software architecture of the napari-hdf5-activity analysis plugin](../images/diagrams/analysis-architecture.png)
+
 ## Get started
 
 1. **Install**
