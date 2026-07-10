@@ -57,6 +57,12 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  # Interactive STL viewer for the 3D-printed parts page (ES module; uses the
+  # three.js import map declared in overrides/main.html).
+  - path: javascripts/stl-viewer.js
+    type: module
+
 plugins:
   - search
 

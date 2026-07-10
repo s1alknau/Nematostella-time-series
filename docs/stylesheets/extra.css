@@ -55,3 +55,110 @@
     max-width: 68rem;
   }
 }
+
+/* Interactive STL viewer ---------------------------------------------- */
+.md-typeset .stl-thumb {
+  cursor: pointer;
+  display: inline-block;
+  position: relative;
+  border-radius: 0.4rem;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.md-typeset .stl-thumb:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+}
+.md-typeset .stl-thumb img {
+  border-radius: 0.4rem;
+  display: block;
+}
+/* "3D" badge to signal interactivity */
+.md-typeset .stl-thumb::after {
+  content: "◻ 3D";
+  position: absolute;
+  right: 0.25rem;
+  bottom: 0.25rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: var(--md-primary-fg-color);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.5rem;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.stlv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  padding: 1.2rem;
+}
+.stlv-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 96vw);
+  max-height: 92vh;
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  border-radius: 0.7rem;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.stlv-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+.stlv-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.stlv-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.stlv-close:hover {
+  color: var(--md-accent-fg-color);
+}
+.stlv-canvas {
+  position: relative;
+  width: 100%;
+  height: 70vh;
+  min-height: 260px;
+}
+.stlv-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+.stlv-spinner,
+.stlv-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.85rem;
+}
+.stlv-hint {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.72rem;
+  color: var(--md-default-fg-color--light);
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  text-align: center;
+}
