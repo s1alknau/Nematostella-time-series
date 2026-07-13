@@ -68,9 +68,22 @@
   transform: translateY(-2px);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
 }
-.md-typeset .stl-thumb img {
-  border-radius: 0.4rem;
+.md-typeset .stl-thumb-canvas {
   display: block;
+  width: 150px;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 340 / 240;
+  border-radius: 0.4rem;
+  background: var(--md-default-fg-color--lightest);
+}
+/* gentle pulse until the browser has rendered the preview */
+.md-typeset .stl-thumb:not(.stl-thumb--ready) .stl-thumb-canvas {
+  animation: stlv-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stlv-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 /* "3D" badge to signal interactivity */
 .md-typeset .stl-thumb::after {
