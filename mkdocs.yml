@@ -96,8 +96,9 @@ nav:
       - Hardware & Assembly: hardware.md
       - Firmware Installer: installer.html
       - ESP32-S3-BOX-3 (Alternative): ESP32-S3-BOX-3_CONFIGURATION.md
-      - Circadian Protocol: circadian.md
-      - Entrainment Protocol: analysis/entrainment-protocol.md
+      - Protocols:
+          - Circadian Protocol: circadian.md
+          - Entrainment Protocol: analysis/entrainment-protocol.md
       - Changelog: changelog.md
   - Analysis Plugin:
       - Overview: analysis/index.md
