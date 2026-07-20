@@ -218,7 +218,9 @@ Optional dependencies:
 
 
 
-<img width="4080" height="3060" alt="20260505_105739" src="https://github.com/user-attachments/assets/2b784ed2-0176-480f-b420-e1cafd119f22" />
+![Assembled LED driver stage — dual IRLZ34N MOSFETs with WAGO connectors](docs/images/LED_driver_stage_wiring.jpg)
+
+*Assembled LED driver stage — dual IRLZ34N MOSFETs with WAGO connectors (W1 = 12 V, W2 = GND, W3 = 24 V).*
 
 
 **MOSFET Connection Details:**

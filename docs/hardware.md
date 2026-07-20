@@ -107,7 +107,7 @@ directly from an ESP32 GPIO — no gate driver needed.
 - Gate threshold: 1–2 V (logic-level, works with 3.3 V from the ESP32)
 - Package: TO-220
 
-![IRLZ34N MOSFET wiring for the LED system](https://github.com/user-attachments/assets/2b784ed2-0176-480f-b420-e1cafd119f22){ loading=lazy }
+![IRLZ34N MOSFET wiring for the LED system](images/LED_driver_stage_wiring.jpg){ loading=lazy }
 
 *Assembled LED driver stage — dual IRLZ34N MOSFETs with WAGO connectors.*
 
