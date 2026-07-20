@@ -66,7 +66,7 @@ periodograms and writes CSV and figure exports.
 
 - [User Guide](user-guide.md) — step-by-step walkthrough of the GUI tabs.
 - [Circadian Analysis](circadian-analysis.md) — activity over light/dark cycles.
-- [Entrainment Protocol](entrainment-protocol.md) — experimental LD/DD design for entrainment studies.
+- [Entrainment Protocol](../circadian.md#entrainment-protocol) — experimental LD/DD design for entrainment studies (part of the Circadian Protocol page).
 - [Extended Analysis](extended-analysis.md) — in-depth analysis reference.
 - [Performance Optimizations](performance.md) — multiprocessing & tuning.
 - [AVI Integration](avi-integration.md) — working with AVI recordings.

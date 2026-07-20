@@ -204,6 +204,32 @@
       color: #58a6ff;
       text-decoration: none;
     }
+    .page-nav {
+      display: flex;
+      gap: 12px;
+      margin-top: 28px;
+    }
+    .page-nav a {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 12px 16px;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      background: #161b22;
+      color: #c9d1d9;
+      text-decoration: none;
+      transition: border-color .15s, background .15s;
+    }
+    .page-nav a:hover {
+      border-color: #1f6feb;
+      background: #1f6feb22;
+    }
+    .page-nav a.next { text-align: right; }
+    .page-nav .dir { font-size: 0.75rem; color: #8b949e; }
+    .page-nav .title { font-weight: 600; color: #58a6ff; }
+    @media (max-width: 480px) { .page-nav { flex-direction: column; } }
   </style>
 </head>
 <body>
@@ -257,6 +283,17 @@
       <li>Click <strong>Connect &amp; Install</strong> again</li>
     </ol>
   </div>
+
+  <nav class="page-nav">
+    <a class="prev" href="hardware/">
+      <span class="dir">&larr; Previous</span>
+      <span class="title">Hardware &amp; Assembly</span>
+    </a>
+    <a class="next" href="circadian/">
+      <span class="dir">Next &rarr;</span>
+      <span class="title">Circadian Protocol</span>
+    </a>
+  </nav>
 
   <footer>
     Firmware is auto-built from
