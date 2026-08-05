@@ -39,7 +39,7 @@ jobs:
       # time. Pushing changes to that repo does NOT auto-trigger this workflow —
       # re-run it (Actions -> "Deploy MkDocs site" -> Run workflow) or push here
       # to publish updated analysis docs (User Guide, Circadian Analysis, AVI,
-      # Extended Analysis).
+      # Extended Analysis) after they change in napari-hdf5-activity.
       - name: Checkout analysis plugin (napari-hdf5-activity)
         uses: actions/checkout@v4
         with:
