@@ -395,10 +395,10 @@ Optional dependencies:
 
 ## Quick Start
 
-### 1. Launch napari with Plugin
+### 1. Launch ImSwitch with Plugin
 
 ```bash
-napari
+imswitch
 ```
 
 In napari:
