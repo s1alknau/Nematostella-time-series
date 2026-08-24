@@ -88,7 +88,54 @@ recording each frame is brightness-validated as it is written to disk.
 
 ## Get started
 
-1. **Install**
+The imager runs as one stack: **ImSwitch** drives the HIK GigE camera and pushes
+the live image into napari, and this plugin reads its frames from that napari
+layer while it controls the ESP32. ImSwitch, napari and the plugin therefore
+have to be installed **into the same environment**, and all requirements have to
+be in place *before* ImSwitch is started for the first time.
+
+!!! tip "Full walkthrough"
+    [Software Setup](software-setup.md) explains every step below in detail,
+    including how to verify the camera, what each field of the setup JSON means,
+    and a troubleshooting table.
+
+1. **Create the `imswitch21` conda environment** — one environment for ImSwitch,
+   napari and the plugin.
+
+    ```bash
+    conda create -n imswitch21 python=3.11 -y
+    conda activate imswitch21
+    ```
+
+    Use this environment for every step below and for every later start.
+
+2. **Install the Hik Robotics SDK** — the camera is driven by ImSwitch's
+   `HikCamManager`, which binds to Hikrobot's **MVS SDK**. Install the MVS
+   package from the
+   [Hikrobot download center](https://www.hikrobotics.com/en/machinevision/service/download)
+   *before* ImSwitch, then check in the MVS client that the camera is listed
+   (camera and network adapter must be in the same subnet).
+
+3. **Install ImSwitch** — the [openUC2 fork](https://github.com/openUC2/ImSwitch)
+   provides `HikCamManager` and the UC2 `ESP32Manager`.
+
+    ```bash
+    git clone https://github.com/openUC2/ImSwitch.git
+    cd ImSwitch
+    pip install -e .
+    ```
+
+    The first start creates `Documents/ImSwitchConfig/` with the
+    `imcontrol_setups/` folder used in the next step.
+
+4. **Add the camera setup file to `imcontrol_setups`** — copy
+   [`Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json`](https://github.com/s1alknau/Nematostella-time-series/blob/Nematostella-time-series-IR/Json%2Bcam_manager/example_uc2_ddorf_hik_imager_IR.json)
+   into `Documents/ImSwitchConfig/imcontrol_setups/`, adjust `serialport`
+   (ESP32 port) and `cameraListIndex`, then select it in ImSwitch as the active
+   setup and restart.
+
+5. **Install the plugin and its requirements** — still inside the activated
+   `imswitch21` environment:
 
     ```bash
     pip install nematostella-time-series
@@ -98,23 +145,36 @@ recording each frame is brightness-validated as it is written to disk.
 
     ```bash
     git clone https://github.com/s1alknau/Nematostella-time-series.git
-    cd nematostella-time-series
+    cd Nematostella-time-series
     pip install -e .
     ```
 
-    Requires Python ≥ 3.9 and napari ≥ 0.4.18. Optional: `zarr` (Zarr recording)
-    and `opencv-python` (Live Analysis tab).
+    Requires Python ≥ 3.10 and napari ≥ 0.4.19. Optional: `opencv-python` for
+    the Live Analysis tab (`pip install -e ".[opencv]"`).
 
-2. **Build the imager** — see [Hardware & Assembly](hardware.md), the
+6. **Build the imager** — see [Hardware & Assembly](hardware.md), the
    [Hardware Photos](images/README.md) and the [3D-Printed Parts](3D_Druck/README.md).
 
-3. **Flash the ESP32** — open the [Firmware Installer](installer.html) in
+7. **Flash the ESP32** — open the [Firmware Installer](installer.html) in
    Chrome/Edge (no toolchain required). The
    [ESP32-S3-BOX-3 (Alternative)](ESP32-S3-BOX-3_CONFIGURATION.md) board is also
    supported.
 
-4. **Record** — launch napari and open *Plugins → Nematostella Timelapse
-   Recording*.
+8. **Record** — start ImSwitch from the `imswitch21` environment, load the setup
+   and start the live view:
+
+    ```bash
+    conda activate imswitch21
+    imswitch
+    ```
+
+    Then open *Plugins → Nematostella Timelapse Recording* in the napari viewer
+    and connect the ESP32 in the plugin's **ESP32 Connection** tab. Without a
+    HIK camera, start a plain `napari` session instead.
+
+!!! note "Without a HIK camera"
+    The plugin also runs in a plain `napari` session — steps 2–4 are only needed
+    for the ImSwitch/HIK GigE camera path.
 
 !!! tip "Full assembly instructions"
     The complete, step-by-step hardware assembly guide lives in the
@@ -124,6 +184,7 @@ recording each frame is brightness-validated as it is written to disk.
 
 ## Next steps
 
+- Follow the detailed [Software Setup](software-setup.md) if anything above fails.
 - Analyze your recordings with the [Analysis Plugin](analysis/index.md).
 - Review the light/dark [Circadian Protocol](circadian.md).
 - See the [Changelog](changelog.md) for release history.

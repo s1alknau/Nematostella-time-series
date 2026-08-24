@@ -91,6 +91,7 @@ nav:
   - Home: index.md
   - Recording Plugin:
       - Overview: recording.md
+      - Software Setup: software-setup.md
       - 3D-Printed Parts: 3D_Druck/README.md
       - Hardware Photos: images/README.md
       - Hardware & Assembly: hardware.md

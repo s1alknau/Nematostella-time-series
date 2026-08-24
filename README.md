@@ -83,19 +83,89 @@ See [CHANGELOG.md](CHANGELOG.md) for complete details.
 
 ## Installation
 
-### Standard Installation
+> **Read this first if you use the HIK GigE camera:** the plugin gets its frames
+> from the napari layer that **ImSwitch** publishes and controls the ESP32 itself.
+> ImSwitch, napari and this plugin must therefore live in **one** Python
+> environment, and *all* requirements must be installed **before** ImSwitch is
+> started for the first time.
+>
+> A detailed walkthrough (camera verification, every field of the setup JSON,
+> troubleshooting) is on the documentation site:
+> [Software Setup](https://s1alknau.github.io/Nematostella-time-series/software-setup/).
+
+### 1. Create the `imswitch21` conda environment
+
+```bash
+conda create -n imswitch21 python=3.11 -y
+conda activate imswitch21
+```
+
+Use this environment for every step below and for every later start of
+ImSwitch/napari.
+
+### 2. Install the Hik Robotics SDK
+
+The MV-CS013-60GN camera is driven by ImSwitch's `HikCamManager`, which binds to
+Hikrobot's **MVS SDK** — without it ImSwitch cannot open the camera. Download the
+MVS package for your OS from the
+[Hikrobot download center](https://www.hikrobotics.com/en/machinevision/service/download)
+and install it *before* ImSwitch. Then open the MVS client and verify the camera
+is listed: GigE cameras only appear when the camera IP and the network adapter
+are in the same subnet (jumbo frames / MTU 9000 recommended).
+
+### 3. Install ImSwitch (openUC2 fork)
+
+The [openUC2 fork](https://github.com/openUC2/ImSwitch) provides `HikCamManager`
+and the UC2 `ESP32Manager`:
+
+```bash
+git clone https://github.com/openUC2/ImSwitch.git
+cd ImSwitch
+pip install -e .
+```
+
+The first start of ImSwitch creates `Documents/ImSwitchConfig/` with the
+`imcontrol_setups/` subfolder used in the next step.
+
+### 4. Add the camera setup JSON to `imcontrol_setups`
+
+Copy [`Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json`](Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json)
+into the ImSwitch setups folder:
+
+```powershell
+# Windows
+copy Json+cam_manager\example_uc2_ddorf_hik_imager_IR.json "%USERPROFILE%\Documents\ImSwitchConfig\imcontrol_setups\"
+```
+
+```bash
+# macOS / Linux
+cp "Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json" ~/Documents/ImSwitchConfig/imcontrol_setups/
+```
+
+The file defines the HIK detector (`HikCamManager`, exposure/gain defaults) and
+the ESP32 serial device (`ESP32Manager`). Adjust `serialport` to your ESP32 port
+(`COMx` on Windows, `/dev/ttyUSB0` on Linux) and `cameraListIndex` if more than
+one HIK camera is attached. Then select the file in ImSwitch as the active setup
+(*Settings → setup file*) and restart ImSwitch.
+
+### 5. Install the recording plugin
+
+Inside the activated `imswitch21` environment:
 
 ```bash
 pip install nematostella-time-series
 ```
 
-### Development Installation
+Development install:
 
 ```bash
 git clone https://github.com/s1alknau/Nematostella-time-series.git
-cd nematostella-time-series
+cd Nematostella-time-series
 pip install -e .
 ```
+
+Without a HIK camera the plugin also runs in a plain `napari` session — steps 2–4
+are only needed for the ImSwitch/HIK GigE camera path.
 
 ### Dependencies
 
@@ -397,8 +467,25 @@ Optional dependencies:
 
 ### 1. Launch ImSwitch with Plugin
 
+Everything runs from the `imswitch21` environment created in
+[Installation](#installation):
+
+```bash
+conda activate imswitch21
+```
+
+With the HIK GigE camera, start ImSwitch, load the
+`example_uc2_ddorf_hik_imager_IR` setup and start the live view, so the camera
+image appears as a napari layer:
+
 ```bash
 imswitch
+```
+
+Without a HIK camera, a plain napari session is enough:
+
+```bash
+napari
 ```
 
 In napari:

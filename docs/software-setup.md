@@ -1,0 +1,312 @@
+# Software Setup — ImSwitch, HIK SDK & Plugin
+
+This page is the long form of the [Get started](recording.md#get-started) list on
+the overview page: everything that has to be installed, in which order, and how
+to verify each step before moving on.
+
+## How the pieces fit together
+
+The recording plugin does **not** talk to the camera directly. ImSwitch owns the
+camera and publishes every live frame into the napari viewer; the plugin reads
+its frames from that napari layer and drives the ESP32 (LEDs, sensors) itself
+over the serial port:
+
+```
+HIK MV-CS013-60GN ──GigE──▶ MVS SDK ──▶ ImSwitch (HikCamManager)
+                                             │
+                                             ▼  live image
+                                        napari layer
+                                             │  layer.data
+                                             ▼
+                            Nematostella Timelapse Recording  ──▶ HDF5 / Zarr
+                                             │
+                                             ▼  USB serial (COMx)
+                                          ESP32  ──▶ IR / White LED, DHT22
+```
+
+Two consequences drive the whole installation:
+
+1. **ImSwitch, napari and the plugin run in the same Python process**, so they
+   must be installed into the **same environment** — here the conda environment
+   `imswitch21`.
+2. **All requirements must be installed before ImSwitch is started for the first
+   time.** Installing packages into a running environment does not retrofit them
+   into the running ImSwitch/napari session, and a half-installed environment is
+   the most common cause of "the plugin does not show up in the Plugins menu".
+
+## Prerequisites
+
+| Component | Requirement |
+| --- | --- |
+| Operating system | Windows 10/11, Linux or macOS (Windows is the reference setup) |
+| Python | 3.11 in a dedicated conda environment (the plugin itself needs ≥ 3.10) |
+| Camera | Hik Robotics MV-CS013-60GN (GigE, NIR) — see [Hardware & Assembly](hardware.md) |
+| Camera driver | Hikrobot **MVS SDK** (provides the runtime the `HikCamManager` binds to) |
+| Network | Gigabit NIC for the camera, camera and adapter in the same subnet |
+| Controller | ESP32 DevKit with the project [firmware](installer.html) flashed |
+
+---
+
+## Step 1 — Create the `imswitch21` conda environment
+
+```bash
+conda create -n imswitch21 python=3.11 -y
+conda activate imswitch21
+```
+
+Verify that the environment is really the active one before installing anything:
+
+=== "Windows"
+
+    ```powershell
+    python -V          # Python 3.11.x
+    where python       # ...\envs\imswitch21\python.exe
+    ```
+
+=== "macOS / Linux"
+
+    ```bash
+    python -V          # Python 3.11.x
+    which python       # .../envs/imswitch21/bin/python
+    ```
+
+!!! warning "Activate before every start"
+    `conda activate imswitch21` is required for every later start of ImSwitch,
+    napari and for every `pip install` that belongs to this setup. A second
+    environment with a partial install is the usual reason the plugin or the HIK
+    camera silently disappears.
+
+---
+
+## Step 2 — Install the Hik Robotics SDK (MVS)
+
+ImSwitch's `HikCamManager` is a thin wrapper around Hikrobot's machine-vision
+runtime. Without the SDK installed, ImSwitch starts but the detector stays empty.
+
+1. Download the **MVS** package for your operating system from the
+   [Hikrobot download center](https://www.hikrobotics.com/en/machinevision/service/download)
+   (Windows installer, Linux `.tar.gz`/`.deb`, macOS `.pkg`).
+2. Install it **before** ImSwitch. The package provides the MVS client
+   application, the GenICam runtime, the GigE driver and the Python bindings
+   (`MvImport`), and sets the SDK environment variables (`MVCAM_COMMON_RUNENV`,
+   `MVCAM_SDK_PATH`) through which the runtime is located.
+3. Reboot (Windows) or open a new shell so those variables are visible inside
+   the conda environment.
+
+### Verify the camera before touching ImSwitch
+
+Open the **MVS client** that ships with the SDK. The camera must be listed and
+must open in live view there. If it does not, ImSwitch cannot open it either —
+fix it here first:
+
+| Symptom | Check |
+| --- | --- |
+| Camera not listed | Camera IP and NIC IP in the same subnet (e.g. NIC `192.168.1.10`, camera `192.168.1.101`, mask `255.255.255.0`) |
+| Listed but unreachable | Firewall blocking GigE discovery, or a second NIC on the same subnet |
+| Frames drop or tear | Enable jumbo frames (MTU 9000) on the camera NIC, use a Cat-6 cable, disable NIC power saving |
+| Very dark image | Expected — the IR imager is dark without the LEDs running; use the plugin's LED control |
+
+!!! note "macOS on Apple Silicon"
+    The MVS SDK for macOS is x86_64-only. Run the whole stack in an x86_64
+    environment (Rosetta 2), otherwise the SDK libraries will not load.
+
+---
+
+## Step 3 — Install ImSwitch
+
+This setup uses the [openUC2 fork of ImSwitch](https://github.com/openUC2/ImSwitch),
+which provides both the `HikCamManager` detector and the UC2 `ESP32Manager`:
+
+```bash
+conda activate imswitch21
+git clone https://github.com/openUC2/ImSwitch.git
+cd ImSwitch
+pip install -e .
+```
+
+Start it once so it creates its configuration folder:
+
+```
+Documents/
+└── ImSwitchConfig/
+    ├── imcontrol_setups/     ← the setup JSON goes here (Step 4)
+    ├── imcontrol_options/
+    └── ...
+```
+
+!!! tip "Ready-made configurations"
+    The [openUC2/ImSwitchConfig](https://github.com/openUC2/ImSwitchConfig)
+    repository contains further example setups. You can clone it into the
+    `ImSwitchConfig` folder and drop the file from Step 4 in next to the others.
+
+---
+
+## Step 4 — Add the camera setup JSON to `imcontrol_setups`
+
+The setup file for this imager lives in the repository at
+[`Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json`](https://github.com/s1alknau/Nematostella-time-series/blob/Nematostella-time-series-IR/Json%2Bcam_manager/example_uc2_ddorf_hik_imager_IR.json):
+
+```json
+{
+  "rs232devices": {
+    "ESP32": {
+      "managerName": "ESP32Manager",
+      "managerProperties": {
+        "host_": "192.168.43.129",
+        "serialport": "COM4",
+        "debug": 0,
+        "baudrate": 115200
+      }
+    }
+  },
+  "detectors": {
+    "WidefieldCamera": {
+      "managerName": "HikCamManager",
+      "managerProperties": {
+        "isRGB": false,
+        "cameraListIndex": 0,
+        "cameraEffPixelsize": 3.45,
+        "hikcam": {
+          "exposure": 50.0,
+          "gain": 0.0,
+          "blacklevel": 0,
+          "trigger_source": "Continous",
+          "exposure_mode": "manual",
+          "frame_rate": 30
+        }
+      },
+      "forAcquisition": true
+    }
+  },
+  "availableWidgets": ["Settings", "View", "Recording", "Image"]
+}
+```
+
+Copy it into the setups folder:
+
+=== "Windows"
+
+    ```powershell
+    copy "Json+cam_manager\example_uc2_ddorf_hik_imager_IR.json" "$env:USERPROFILE\Documents\ImSwitchConfig\imcontrol_setups\"
+    ```
+
+=== "macOS / Linux"
+
+    ```bash
+    cp "Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json" \
+      ~/Documents/ImSwitchConfig/imcontrol_setups/
+    ```
+
+Then select it in ImSwitch as the active setup (*Settings → setup file*) and
+restart ImSwitch so the setup is loaded.
+
+### What the fields mean
+
+| Field | Meaning |
+| --- | --- |
+| `detectors.WidefieldCamera.managerName` | `HikCamManager` — the MVS-SDK-backed detector. The napari layer that shows up later is named after this detector. |
+| `cameraListIndex` | Index into the list of detected HIK cameras. `0` is correct for a single camera; increase it if several are attached. |
+| `cameraEffPixelsize` | Effective pixel size in µm (3.45 µm for the MV-CS013), used for scale bars. |
+| `isRGB` | `false` — the NIR sensor is monochrome. |
+| `hikcam.exposure` | Exposure in **ms**. The plugin reads the live value back from ImSwitch, so set exposure in ImSwitch, not in the plugin. |
+| `hikcam.gain` / `blacklevel` | Keep at `0` for calibrated recordings — LED calibration assumes a fixed camera response. |
+| `hikcam.trigger_source` | `Continous` (free-running). LED/exposure synchronization is done by the ESP32 sync pulse, not by a hardware camera trigger. |
+| `hikcam.exposure_mode` | `manual` — auto exposure would defeat the brightness validation during recording. |
+| `rs232devices.ESP32.serialport` | Serial port of the ESP32 — `COMx` on Windows, `/dev/ttyUSB0` on Linux. |
+| `rs232devices.ESP32.baudrate` | `115200`, matching the project firmware. |
+| `availableWidgets` | Which ImSwitch panels are shown. `Settings`, `View`, `Recording` and `Image` are enough for this workflow. |
+
+!!! warning "Only one process can hold the ESP32 serial port"
+    The plugin opens the ESP32 port itself, and serial ports are exclusive: if
+    ImSwitch's `ESP32` rs232 device already holds `COM4`, the plugin's
+    **Connect** fails (and vice versa). If you drive the ESP32 exclusively from
+    the plugin — the normal case for this workflow — either point ImSwitch's
+    `serialport` at an unused port or remove the `rs232devices` block from your
+    copy of the setup file. Also close any serial monitor (Arduino IDE, PuTTY)
+    before connecting.
+
+---
+
+## Step 5 — Install the recording plugin and its requirements
+
+Inside the activated `imswitch21` environment:
+
+```bash
+conda activate imswitch21
+pip install nematostella-time-series
+```
+
+Development install (recommended if you also change the code):
+
+```bash
+git clone https://github.com/s1alknau/Nematostella-time-series.git
+cd Nematostella-time-series
+pip install -e .
+```
+
+Optional extras:
+
+```bash
+pip install -e ".[opencv]"   # Live Analysis tab (HoughCircles ROI detection)
+```
+
+`zarr` (Zarr recording format, read-while-write live analysis) is already part
+of the core dependencies. Verify the install:
+
+```bash
+python -c "import timeseries_capture, napari; print('ok')"
+```
+
+---
+
+## Step 6 — First launch
+
+1. Activate the environment and start ImSwitch:
+
+    ```bash
+    conda activate imswitch21
+    imswitch
+    ```
+
+2. Load the `example_uc2_ddorf_hik_imager_IR` setup.
+3. Start the **live view** — a napari layer with the camera image appears
+   (`Live: WidefieldCamera` or similar). The plugin auto-detects layers whose
+   name contains `Live:`, `Widefield`, `Camera` or `Detector`.
+4. Open *Plugins → Nematostella Timelapse Recording* in the napari viewer.
+5. In the **ESP32 Connection** tab, click **Connect** — the status turns green.
+6. Run an **LED calibration** before the first recording; for light/dark
+   experiments follow the [Circadian Protocol](circadian.md).
+7. Configure duration, interval and output folder, then start the recording.
+
+!!! note "Without a HIK camera"
+    Steps 2–4 are only needed for the ImSwitch/HIK GigE path. The plugin also
+    runs in a plain `napari` session with the other supported camera adapters —
+    only the ESP32 is mandatory.
+
+### Optional: multi-camera configuration
+
+If a `camera_system.json` is present, the plugin adds its multi-camera panels on
+startup. It is searched for in this order:
+
+1. `camera_system.json` in the current working directory
+2. `~/.imswitch/camera_system.json`
+3. `camera_system.json` next to the installed package
+
+Use [`camera_system_example.json`](https://github.com/s1alknau/Nematostella-time-series/blob/Nematostella-time-series-IR/camera_system_example.json)
+as a template — it lists per-camera IP, ESP32 port and the default recording
+configuration. Without such a file the plugin runs in single-camera mode.
+
+---
+
+## Troubleshooting
+
+| Message / symptom | Cause and fix |
+| --- | --- |
+| Plugin missing in the *Plugins* menu | Installed into a different environment. `conda activate imswitch21`, reinstall, restart napari/ImSwitch. |
+| `No camera layer found (ensure live view is started in ImSwitch)` | The live view is not running, or the layer name contains none of `Live:`, `Widefield`, `Camera`, `Detector`. Start the live view or rename the layer. |
+| `Zero frame from napari layer (n consecutive)` | The HIK acquisition buffer is in an inconsistent state. The plugin flushes the ImSwitch detector buffer automatically after 5 consecutive zero frames; if it keeps recurring, check MTU/cabling and restart the live view. |
+| Camera missing in ImSwitch but visible in MVS | Wrong `cameraListIndex`, or the MVS client still holds the camera — close it, only one application can open a GigE camera at a time. |
+| Camera missing in MVS as well | Subnet or firewall problem — see the table in [Step 2](#verify-the-camera-before-touching-imswitch). |
+| ESP32 **Connect** fails, port busy | Another process holds the port (ImSwitch rs232 device, serial monitor) — see the warning in [Step 4](#what-the-fields-mean). |
+| Exposure in the plugin looks wrong | The plugin reads the exposure back from ImSwitch in ms; change it in ImSwitch's settings, not in the plugin. |
+| Frames too dark or too bright | Run an LED calibration and keep `gain` and `blacklevel` at `0` so the calibration stays valid. |

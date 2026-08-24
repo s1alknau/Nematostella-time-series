@@ -80,6 +80,14 @@ from synchronized image capture to automated activity analysis.</p>
 
 Both plugins appear under napari's *Plugins* menu after installation.
 
+!!! warning "Recording with the HIK GigE camera needs more than pip"
+    The recording plugin takes its frames from the napari layer that **ImSwitch**
+    publishes, so ImSwitch, the **Hik Robotics MVS SDK** and the camera setup
+    JSON have to be in place first — all inside one conda environment
+    (`imswitch21`), and installed *before* ImSwitch is started. See
+    [Software Setup](software-setup.md) for the full walkthrough, or
+    [Get started](recording.md#get-started) for the short version.
+
 ---
 
 <p class="hero-footnote">Built from the
