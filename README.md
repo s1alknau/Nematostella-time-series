@@ -167,6 +167,8 @@ Optional dependencies:
    - https://www.hikrobotics.com/en/machinevision/productdetail/?id=7038
   
 7. 3D Printed Components from Print section in /docs directory
+8. Objective Raspberry Pi - Objektiv für C-Fassung, 16mm, Teleobjektiv
+   - https://www.reichelt.de/de/de/shop/produkt/raspberry_pi_-_objektiv_fuer_c-fassung_16mm_teleobjektiv-276921?search=teleobjektiv&
 
 ---
 
