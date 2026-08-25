@@ -51,10 +51,12 @@ periodograms and writes CSV and figure exports.
 
 ## Get started
 
-1. **Install**
+1. **Install** — not on PyPI, install from source (Python 3.12+):
 
     ```bash
-    pip install napari-hdf5-activity
+    git clone https://github.com/s1alknau/napari-hdf5-activity.git
+    cd napari-hdf5-activity
+    pip install -e ".[zarr]"
     ```
 
 2. **Follow the [User Guide](user-guide.md)** — a walkthrough of the GUI tabs.

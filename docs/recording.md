@@ -116,13 +116,17 @@ be in place *before* ImSwitch is started for the first time.
    *before* ImSwitch, then check in the MVS client that the camera is listed
    (camera and network adapter must be in the same subnet).
 
-3. **Install ImSwitch** — the [openUC2 fork](https://github.com/openUC2/ImSwitch)
-   provides `HikCamManager` and the UC2 `ESP32Manager`.
+3. **Install ImSwitch** — use **our fork**, branch `nematostella-rig`. It is
+   openUC2's ImSwitch 2.1.191 plus three commits this rig needs, and provides
+   `HikCamManager` and the UC2 `ESP32Manager`. Upstream does not work: the Qt
+   GUI aborts on startup, `fcntl` is missing on Windows, and `setLaserGalvo()`
+   does not exist — see [Software Setup](software-setup.md#step-3-install-imswitch).
 
     ```bash
-    git clone https://github.com/openUC2/ImSwitch.git
+    git clone -b nematostella-rig https://github.com/s1alknau/ImSwitch.git
     cd ImSwitch
     pip install -e .
+    pip install "PySide6==6.8.3"
     ```
 
     The first start creates `Documents/ImSwitchConfig/` with the
@@ -137,11 +141,7 @@ be in place *before* ImSwitch is started for the first time.
 5. **Install the plugin and its requirements** — still inside the activated
    `imswitch21` environment:
 
-    ```bash
-    pip install nematostella-time-series
-    ```
-
-    Development install:
+    The plugin is not on PyPI — install it from source:
 
     ```bash
     git clone https://github.com/s1alknau/Nematostella-time-series.git

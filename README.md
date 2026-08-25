@@ -176,13 +176,8 @@ one HIK camera is attached. Then select the file in ImSwitch as the active setup
 
 ### 5. Install the recording plugin
 
-Inside the activated `imswitch21` environment:
-
-```bash
-pip install nematostella-time-series
-```
-
-Development install:
+Inside the activated `imswitch21` environment. The plugin is not on PyPI —
+install it from source:
 
 ```bash
 git clone https://github.com/s1alknau/Nematostella-time-series.git

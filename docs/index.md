@@ -66,16 +66,22 @@ from synchronized image capture to automated activity analysis.</p>
 
 ## Install
 
+Neither plugin is published on PyPI — both install from source.
+
 === "Recording Plugin"
 
     ```bash
-    pip install nematostella-time-series
+    git clone https://github.com/s1alknau/Nematostella-time-series.git
+    cd Nematostella-time-series
+    pip install -e .
     ```
 
 === "Analysis Plugin"
 
     ```bash
-    pip install napari-hdf5-activity
+    git clone https://github.com/s1alknau/napari-hdf5-activity.git
+    cd napari-hdf5-activity
+    pip install -e ".[zarr]"
     ```
 
 Both plugins appear under napari's *Plugins* menu after installation.

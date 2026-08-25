@@ -114,15 +114,43 @@ fix it here first:
 
 ## Step 3 — Install ImSwitch
 
-This setup uses the [openUC2 fork of ImSwitch](https://github.com/openUC2/ImSwitch),
-which provides both the `HikCamManager` detector and the UC2 `ESP32Manager`:
+This setup uses **our own fork** of ImSwitch, branch `nematostella-rig`. It is
+openUC2's ImSwitch 2.1.191 (commit `8b424d5`) plus three commits this rig needs,
+and it provides both the `HikCamManager` detector and the UC2 `ESP32Manager`:
 
 ```bash
 conda activate imswitch21
-git clone https://github.com/openUC2/ImSwitch.git
+git clone -b nematostella-rig https://github.com/s1alknau/ImSwitch.git
 cd ImSwitch
 pip install -e .
 ```
+
+!!! warning "Do not clone `openUC2/ImSwitch` directly"
+    Three things fail with upstream:
+
+    - The Qt GUI aborts on startup. Signals are assigned in `__init__`, but
+      `pyqtSignal` only binds as a class attribute:
+      `AttributeError: 'pyqtSignal' object has no attribute 'connect'`
+    - `fcntl` is missing on Windows (`imcontrol/model/io/session.py`).
+    - `setLaserGalvo()` does not exist.
+      [napari-lsft](https://github.com/s1alknau/napari-lsft) calls this endpoint
+      over the HTTP API to start the light-sheet galvo at acquisition start.
+
+    Every change is documented commit by commit and mirrored as patch files
+    under [`imswitch-patches/`](https://github.com/s1alknau/Nematostella-time-series/tree/Nematostella-time-series-IR/imswitch-patches).
+
+### Choose a Qt binding
+
+`pip install -e .` installs none on purpose, so the choice stays open:
+
+```bash
+pip install "PySide6==6.8.3"   # Qt 6.8.3 - recommended
+# or: pip install PyQt5        # Qt 5.15.2
+```
+
+PyQt5 shears the client area diagonally on some dual-GPU machines. With PySide6,
+`site-packages/PyQt5` must be **fully removed** - `pyqtgraph` treats even an
+emptied directory as an installed binding and then picks the wrong one.
 
 Start it once so it creates its configuration folder:
 
@@ -229,16 +257,10 @@ restart ImSwitch so the setup is loaded.
 
 ## Step 5 — Install the recording plugin and its requirements
 
-Inside the activated `imswitch21` environment:
+The plugin is **not published on PyPI** - install it from source:
 
 ```bash
 conda activate imswitch21
-pip install nematostella-time-series
-```
-
-Development install (recommended if you also change the code):
-
-```bash
 git clone https://github.com/s1alknau/Nematostella-time-series.git
 cd Nematostella-time-series
 pip install -e .
