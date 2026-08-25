@@ -1,0 +1,422 @@
+From a60e76d86af75e900a44fbb32d918613cc75cb20 Mon Sep 17 00:00:00 2001
+From: s1alknau <157369075+s1alknau@users.noreply.github.com>
+Date: Tue, 25 Aug 2026 12:31:23 +0200
+Subject: [PATCH 2/2] Qt-Binding folgt der Installation statt fest PyQt5
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Der Qt-GUI-Modus lief bisher ausschliesslich unter PyQt5. Dessen PyPI-Wheels
+liefern unter Windows Qt 5.15.2 (Stand 2020) — neuere gibt es dort nicht. Auf
+Rechnern mit zwei GPUs stellt diese Version die Client-Flaeche geschert dar;
+der Fehler tritt mit Qt 6.8 nicht auf. Damit die Wahl offensteht:
+
+  imcommon/applaunch.py
+      QT_API und PYQTGRAPH_QT_LIB werden nicht mehr fest auf PyQt5 gesetzt,
+      sondern folgen dem, was installiert ist. Eine vom Aufrufer gesetzte
+      QT_API gewinnt immer. Der bisherige Kommentar sagte bereits "Force all
+      of qtpy/napari/vispy to PySide6", der Wert aber 'pyqt5'.
+
+  17 Widget- und View-Dateien
+      from PyQt5.X import ...  ->  from qtpy.X import ...
+      Die Importe betrafen nur QtWidgets-Klassen, die qtpy identisch anbietet.
+      Noetig, weil widgets/__init__.py alle Widgets laedt, auch die von der
+      Konfiguration nie benutzten (STORMRecon, SIM, HistoScan, WellPlate ...).
+
+  5 Dateien
+      pyqtSignal/pyqtSlot/pyqtProperty -> Signal/Slot/Property.
+      qtpy fuehrt die Qt-neutralen Namen.
+
+imcommon/framework/qt.py bleibt bewusst binding-spezifisch — es waehlt dort
+schon zwischen sip und shiboken6.
+
+Geprueft: Start im Qt-Modus unter PySide6 6.8.3, 0 Tracebacks; Web-Modus
+unveraendert. Unter PyQt5 bleibt das Verhalten wie zuvor.
+---
+ imswitch/imcommon/applaunch.py                | 30 +++++++++++++++----
+ .../controller/controllers/HyphaController.py |  6 ++--
+ .../controller/controllers/microEye/uImage.py |  2 +-
+ .../imcontrol/view/widgets/FlatfieldWidget.py |  2 +-
+ .../imcontrol/view/widgets/HistoScanWidget.py | 14 ++++-----
+ .../imcontrol/view/widgets/HyphaWidget.py     |  4 +--
+ .../view/widgets/LightsheetWidget.py          |  6 ++--
+ .../imcontrol/view/widgets/ObjectiveWidget.py |  4 +--
+ .../imcontrol/view/widgets/ROIScanWidget.py   |  2 +-
+ imswitch/imcontrol/view/widgets/SIMWidget.py  |  2 +-
+ .../view/widgets/STORMReconWidget.py          |  4 +--
+ .../imcontrol/view/widgets/UC2ConfigWidget.py |  2 +-
+ .../imcontrol/view/widgets/WellPlateWidget.py |  2 +-
+ imswitch/imnotebook/view/CustomWebView.py     | 14 ++++-----
+ imswitch/imnotebook/view/ImScrMainView.py     |  8 ++---
+ .../imnotebook/view/LaunchNotebookServer.py   |  2 +-
+ imswitch/imnotebook/view/MainWindow.py        | 12 ++++----
+ imswitch/imscripting/view/EditorView.py       |  2 +-
+ 18 files changed, 69 insertions(+), 49 deletions(-)
+
+diff --git a/imswitch/imcommon/applaunch.py b/imswitch/imcommon/applaunch.py
+index a195d577..415bc58e 100644
+--- a/imswitch/imcommon/applaunch.py
++++ b/imswitch/imcommon/applaunch.py
+@@ -4,9 +4,27 @@ import sys
+ import traceback
+ import time
+ 
+-# Force Qt backend BEFORE any qtpy/pyqtgraph/vispy import
+-os.environ['QT_API'] = 'pyqt5'
+-os.environ['PYQTGRAPH_QT_LIB'] = 'PyQt5'
++# Pin the Qt backend BEFORE any qtpy/pyqtgraph/vispy import, so all three
++# agree. Which backend is chosen follows what is actually installed; an
++# explicit QT_API set by the caller always wins.
++#
++# PyQt5 ships Qt 5.15.2 (the newest the PyPI wheels offer on Windows), whose
++# window presentation is broken on hybrid-GPU machines — the client area is
++# rendered sheared. PySide6 carries a current Qt and does not show it, so it
++# is preferred when present.
++def _pick_qt_backend() -> str:
++    import importlib.util
++    forced = os.environ.get('QT_API', '').strip().lower()
++    if forced in ('pyside6', 'pyqt5'):
++        return forced
++    if importlib.util.find_spec('PySide6') is not None:
++        return 'pyside6'
++    return 'pyqt5'
++
++
++_QT_API = _pick_qt_backend()
++os.environ['QT_API'] = _QT_API
++os.environ['PYQTGRAPH_QT_LIB'] = 'PySide6' if _QT_API == 'pyside6' else 'PyQt5'
+ 
+ # somewhere after all your variables & functions exist
+ try:
+@@ -40,8 +58,10 @@ def prepareApp():
+ 
+     # Create app
+     os.environ['IMSWITCH_FULL_APP'] = '1'  # Indicator that non-plugin version of ImSwitch is used
+-    os.environ['QT_API'] = 'pyqt5'            # Force all of qtpy/napari/vispy to PySide6
+-    os.environ['PYQTGRAPH_QT_LIB'] = 'PyQt5' # Force pyqtgraph/vispy backend
++    os.environ['QT_API'] = _QT_API            # qtpy / napari / vispy
++    os.environ['PYQTGRAPH_QT_LIB'] = (        # pyqtgraph / vispy
++        'PySide6' if _QT_API == 'pyside6' else 'PyQt5'
++    )
+     os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # Force HDF5 to not lock files
+     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+     # Set application attributes (Qt5 only — these are removed/always-on in Qt6)
+diff --git a/imswitch/imcontrol/controller/controllers/HyphaController.py b/imswitch/imcontrol/controller/controllers/HyphaController.py
+index ad6dc6d2..66dde802 100644
+--- a/imswitch/imcontrol/controller/controllers/HyphaController.py
++++ b/imswitch/imcontrol/controller/controllers/HyphaController.py
+@@ -102,14 +102,14 @@ class MyMicroscope(object):
+ 
+ if IS_HEADLESS:
+     QThread = object
+-    pyqtSignal = None
++    Signal = None
+ else:
+-    from PyQt5.QtCore import QThread, pyqtSignal
++    from qtpy.QtCore import QThread, Signal
+ 
+ class AsyncioThread(QThread):
+     # We need this in order to get asynchronous behavior in the HyphaController for the GUI-case
+     if not IS_HEADLESS:
+-        started = pyqtSignal()
++        started = Signal()
+ 
+     def __init__(self, loop):
+         super().__init__()
+diff --git a/imswitch/imcontrol/controller/controllers/microEye/uImage.py b/imswitch/imcontrol/controller/controllers/microEye/uImage.py
+index a2b9f10d..d803b720 100644
+--- a/imswitch/imcontrol/controller/controllers/microEye/uImage.py
++++ b/imswitch/imcontrol/controller/controllers/microEye/uImage.py
+@@ -4,7 +4,7 @@ import cv2
+ import numpy as np
+ import tifffile as tf
+ import zarr
+-#from PyQt5.QtCore import *
++#from qtpy.QtCore import *
+ 
+ 
+ class uImage():
+diff --git a/imswitch/imcontrol/view/widgets/FlatfieldWidget.py b/imswitch/imcontrol/view/widgets/FlatfieldWidget.py
+index cf70f732..48907c47 100644
+--- a/imswitch/imcontrol/view/widgets/FlatfieldWidget.py
++++ b/imswitch/imcontrol/view/widgets/FlatfieldWidget.py
+@@ -1,6 +1,6 @@
+ import numpy as np
+ from qtpy import QtWidgets
+-from PyQt5 import QtWidgets
++from qtpy import QtWidgets
+ from imswitch.imcommon.model import initLogger
+ from .basewidgets import NapariHybridWidget
+ 
+diff --git a/imswitch/imcontrol/view/widgets/HistoScanWidget.py b/imswitch/imcontrol/view/widgets/HistoScanWidget.py
+index 0927d7d9..1c0d6c6b 100644
+--- a/imswitch/imcontrol/view/widgets/HistoScanWidget.py
++++ b/imswitch/imcontrol/view/widgets/HistoScanWidget.py
+@@ -1,12 +1,12 @@
+ import numpy as np
+ from qtpy import QtCore, QtGui, QtWidgets
+-from PyQt5.QtWidgets import QLabel
+-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QRect
+-from PyQt5.QtGui import QPainter, QPen, QColor
++from qtpy.QtWidgets import QLabel
++from qtpy.QtCore import Qt, Signal, QPoint, QRect
++from qtpy.QtGui import QPainter, QPen, QColor
+ from imswitch import IS_HEADLESS
+ 
+-from PyQt5 import QtGui, QtWidgets
+-import PyQt5
++from qtpy import QtGui, QtWidgets
++import qtpy
+ from imswitch.imcommon.model import initLogger
+ from imswitch.imcontrol.view import guitools
+ from .basewidgets import NapariHybridWidget
+@@ -660,8 +660,8 @@ class ScanSelectView(QtWidgets.QGraphicsView):
+ 
+ # Webcam View
+ class ImageLabel(QLabel):
+-    doubleClicked = pyqtSignal()
+-    dragPosition = pyqtSignal(QPoint, QPoint)
++    doubleClicked = Signal()
++    dragPosition = Signal(QPoint, QPoint)
+ 
+     def __init__(self):
+         super().__init__()
+diff --git a/imswitch/imcontrol/view/widgets/HyphaWidget.py b/imswitch/imcontrol/view/widgets/HyphaWidget.py
+index 03990cee..aae3be10 100644
+--- a/imswitch/imcontrol/view/widgets/HyphaWidget.py
++++ b/imswitch/imcontrol/view/widgets/HyphaWidget.py
+@@ -1,7 +1,7 @@
+ import webbrowser
+-from PyQt5 import QtWidgets
++from qtpy import QtWidgets
+ try:
+-    from PyQt5 import QtWebEngineWidgets
++    from qtpy import QtWebEngineWidgets
+ except:
+     QtWebEngineWidgets = None
+ from qtpy import QtCore, QtWidgets
+diff --git a/imswitch/imcontrol/view/widgets/LightsheetWidget.py b/imswitch/imcontrol/view/widgets/LightsheetWidget.py
+index 726e8c9f..323869e6 100644
+--- a/imswitch/imcontrol/view/widgets/LightsheetWidget.py
++++ b/imswitch/imcontrol/view/widgets/LightsheetWidget.py
+@@ -1,9 +1,9 @@
+ import numpy as np
+ from qtpy.QtCore import Signal
+ # PyQt5 imports
+-from PyQt5 import QtCore, QtGui, QtWidgets
+-from PyQt5.QtWidgets import QGroupBox, QLabel, QSpinBox, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSizePolicy
+-from PyQt5.QtGui import QIcon, QFont
++from qtpy import QtCore, QtGui, QtWidgets
++from qtpy.QtWidgets import QGroupBox, QLabel, QSpinBox, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSizePolicy
++from qtpy.QtGui import QIcon, QFont
+ import pyqtgraph.opengl as gl
+ 
+ 
+diff --git a/imswitch/imcontrol/view/widgets/ObjectiveWidget.py b/imswitch/imcontrol/view/widgets/ObjectiveWidget.py
+index 7aac7ca8..1dea557e 100644
+--- a/imswitch/imcontrol/view/widgets/ObjectiveWidget.py
++++ b/imswitch/imcontrol/view/widgets/ObjectiveWidget.py
+@@ -1,5 +1,5 @@
+-from PyQt5.QtWidgets import QLabel, QPushButton, QTextEdit
+-from PyQt5.QtWidgets import QGridLayout
++from qtpy.QtWidgets import QLabel, QPushButton, QTextEdit
++from qtpy.QtWidgets import QGridLayout
+ 
+ from .basewidgets import NapariHybridWidget
+ 
+diff --git a/imswitch/imcontrol/view/widgets/ROIScanWidget.py b/imswitch/imcontrol/view/widgets/ROIScanWidget.py
+index d0fe6e7b..4e2f16db 100644
+--- a/imswitch/imcontrol/view/widgets/ROIScanWidget.py
++++ b/imswitch/imcontrol/view/widgets/ROIScanWidget.py
+@@ -1,5 +1,5 @@
+ from qtpy import QtCore
+-from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QListWidget
++from qtpy.QtWidgets import QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QListWidget
+ 
+ from .basewidgets import NapariHybridWidget
+ 
+diff --git a/imswitch/imcontrol/view/widgets/SIMWidget.py b/imswitch/imcontrol/view/widgets/SIMWidget.py
+index d64efc94..a94fede4 100644
+--- a/imswitch/imcontrol/view/widgets/SIMWidget.py
++++ b/imswitch/imcontrol/view/widgets/SIMWidget.py
+@@ -3,7 +3,7 @@ from qtpy import QtCore, QtWidgets
+ from imswitch.imcontrol.view import guitools
+ from .basewidgets import NapariHybridWidget
+ 
+-from PyQt5.QtWidgets import (QTabWidget, QWidget,
++from qtpy.QtWidgets import (QTabWidget, QWidget,
+                              QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
+                              QCheckBox, QLabel, QLineEdit)
+ 
+diff --git a/imswitch/imcontrol/view/widgets/STORMReconWidget.py b/imswitch/imcontrol/view/widgets/STORMReconWidget.py
+index b5ade5ef..0c24368f 100644
+--- a/imswitch/imcontrol/view/widgets/STORMReconWidget.py
++++ b/imswitch/imcontrol/view/widgets/STORMReconWidget.py
+@@ -1,8 +1,8 @@
+ from qtpy import QtCore, QtWidgets
+ 
+ # microeye gui
+-from PyQt5.QtWidgets import *
+-from PyQt5.QtCore import *
++from qtpy.QtWidgets import *
++from qtpy.QtCore import *
+ try:
+     from microEye.fitting.fit import BlobDetectionWidget, DoG_FilterWidget, BandpassFilterWidget, TemporalMedianFilterWidget
+     from microEye.fitting.results import FittingMethod, FittingResults
+diff --git a/imswitch/imcontrol/view/widgets/UC2ConfigWidget.py b/imswitch/imcontrol/view/widgets/UC2ConfigWidget.py
+index 59fd4533..e2e23e0a 100644
+--- a/imswitch/imcontrol/view/widgets/UC2ConfigWidget.py
++++ b/imswitch/imcontrol/view/widgets/UC2ConfigWidget.py
+@@ -1,4 +1,4 @@
+-from PyQt5.QtWidgets import  QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel
++from qtpy.QtWidgets import  QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel
+ from .basewidgets import Widget
+ from imswitch.imcommon.model import APIExport
+ 
+diff --git a/imswitch/imcontrol/view/widgets/WellPlateWidget.py b/imswitch/imcontrol/view/widgets/WellPlateWidget.py
+index f188413c..e196cfd0 100644
+--- a/imswitch/imcontrol/view/widgets/WellPlateWidget.py
++++ b/imswitch/imcontrol/view/widgets/WellPlateWidget.py
+@@ -1,5 +1,5 @@
+ from qtpy import QtWidgets
+-from PyQt5.QtCore import Qt
++from qtpy.QtCore import Qt
+ 
+ 
+ from imswitch.imcontrol.view import guitools as guitools
+diff --git a/imswitch/imnotebook/view/CustomWebView.py b/imswitch/imnotebook/view/CustomWebView.py
+index 29c12351..20fba881 100644
+--- a/imswitch/imnotebook/view/CustomWebView.py
++++ b/imswitch/imnotebook/view/CustomWebView.py
+@@ -1,9 +1,9 @@
+-from PyQt5.QtCore import pyqtSlot, QTimer, QUrl
+-from PyQt5.QtWidgets import QMessageBox
++from qtpy.QtCore import Slot, QTimer, QUrl
++from qtpy.QtWidgets import QMessageBox
+ try:
+-    from PyQt5.QtWebEngineWidgets import QWebEngineView as QWebView, QWebEnginePage as QWebPage
+-    from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
+-    from PyQt5.QtWebEngineWidgets import QWebEngineProfile
++    from qtpy.QtWebEngineWidgets import QWebEngineView as QWebView, QWebEnginePage as QWebPage
++    from qtpy.QtWebEngineCore import QWebEngineUrlRequestInterceptor
++    from qtpy.QtWebEngineWidgets import QWebEngineProfile
+     IS_QTWEBENGINE = True
+ except:
+     IS_QTWEBENGINE = False
+@@ -24,7 +24,7 @@ class CustomWebView(QWebView):
+         self.loadedPage = None
+         self.loadFinished.connect(self.onpagechange)
+ 
+-    @pyqtSlot(bool)
++    @Slot(bool)
+     def onpagechange(self, ok):
+         self.log("on page change: %s, %s" % (self.url(), ok))
+         if self.loadedPage is not None:
+@@ -45,7 +45,7 @@ class CustomWebView(QWebView):
+         if not ok:
+             QMessageBox.information(self, "Error", "Error loading page!", QMessageBox.Ok)
+ 
+-    @pyqtSlot(QUrl)
++    @Slot(QUrl)
+     def handlelink(self, url):
+         urlstr = url.toString()
+         self.log("handling link : %s" % urlstr)
+diff --git a/imswitch/imnotebook/view/ImScrMainView.py b/imswitch/imnotebook/view/ImScrMainView.py
+index 68bc085f..5f79d890 100644
+--- a/imswitch/imnotebook/view/ImScrMainView.py
++++ b/imswitch/imnotebook/view/ImScrMainView.py
+@@ -3,9 +3,9 @@ from .LaunchNotebookServer import LaunchNotebookServer
+ 
+ if not IS_HEADLESS:
+     from qtpy import QtCore, QtWidgets
+-    from PyQt5.QtCore import QUrl
+-    from PyQt5.QtWidgets import QMessageBox
+-    from PyQt5.QtCore import QObject, pyqtSignal
++    from qtpy.QtCore import QUrl
++    from qtpy.QtWidgets import QMessageBox
++    from qtpy.QtCore import QObject, Signal
+     from .MainWindow import MainWindow
+ try:
+     IS_QTWEBENGINE = True
+@@ -42,7 +42,7 @@ class ImScrMainView(QtWidgets.QMainWindow):
+ 
+         # redirect logging to self.view.loggerdock.log
+         class QtLogger(QObject):
+-            newlog = pyqtSignal(str)
++            newlog = Signal(str)
+ 
+             def __init__(self, parent):
+                 super(QtLogger, self).__init__(parent)
+diff --git a/imswitch/imnotebook/view/LaunchNotebookServer.py b/imswitch/imnotebook/view/LaunchNotebookServer.py
+index 06abaa48..c8a16c29 100644
+--- a/imswitch/imnotebook/view/LaunchNotebookServer.py
++++ b/imswitch/imnotebook/view/LaunchNotebookServer.py
+@@ -5,7 +5,7 @@ import os
+ from imswitch.imcommon.model import dirtools
+ import sys
+ if not IS_HEADLESS:
+-    from PyQt5.QtWidgets import QMessageBox
++    from qtpy.QtWidgets import QMessageBox
+ from .notebook_process import testnotebook, startnotebook, stopnotebook
+ 
+ class LaunchNotebookServer:
+diff --git a/imswitch/imnotebook/view/MainWindow.py b/imswitch/imnotebook/view/MainWindow.py
+index 55e4239a..ffead59a 100644
+--- a/imswitch/imnotebook/view/MainWindow.py
++++ b/imswitch/imnotebook/view/MainWindow.py
+@@ -1,9 +1,9 @@
+ from imswitch import IS_HEADLESS
+ 
+ if not IS_HEADLESS:
+-    from PyQt5.QtCore import pyqtSlot, QSettings, QTimer, QUrl, Qt
+-    from PyQt5.QtGui import QCloseEvent
+-    from PyQt5.QtWidgets import QMainWindow, QMessageBox, QDockWidget, QPlainTextEdit, QTabWidget
++    from qtpy.QtCore import Slot, QSettings, QTimer, QUrl, Qt
++    from qtpy.QtGui import QCloseEvent
++    from qtpy.QtWidgets import QMainWindow, QMessageBox, QDockWidget, QPlainTextEdit, QTabWidget
+ try:
+     from .CustomWebView import CustomWebView
+     IS_QTWEBENGINE = True
+@@ -22,7 +22,7 @@ class LoggerDock(QDockWidget):
+         self.textView.setReadOnly(True)
+         self.setWidget(self.textView)
+ 
+-    @pyqtSlot(str)
++    @Slot(str)
+     def log(self, message):
+         self.textView.appendPlainText(message)
+ 
+@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
+         self.tabs.setCurrentIndex(v.tabIndex)
+         return v
+ 
+-    @pyqtSlot(int)
++    @Slot(int)
+     def destroyBrowserTab(self, which):
+         closeevent = QCloseEvent()
+         win = self.tabs.widget(which)
+@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
+             if closeevent.isAccepted():
+                 self.tabs.removeTab(which)
+ 
+-    @pyqtSlot()
++    @Slot()
+     def initialload(self):
+         if self.homepage:
+             self.basewebview.load(QUrl(self.homepage))
+diff --git a/imswitch/imscripting/view/EditorView.py b/imswitch/imscripting/view/EditorView.py
+index 654f3f8f..efe1f774 100644
+--- a/imswitch/imscripting/view/EditorView.py
++++ b/imswitch/imscripting/view/EditorView.py
+@@ -1,7 +1,7 @@
+ import uuid
+ from imswitch import IS_HEADLESS
+ if not IS_HEADLESS:
+-    from PyQt5 import Qsci
++    from qtpy import Qsci
+ from qtpy import QtCore, QtGui, QtWidgets
+ 
+ from .guitools import BetterPushButton
+-- 
+2.49.0.windows.1
+

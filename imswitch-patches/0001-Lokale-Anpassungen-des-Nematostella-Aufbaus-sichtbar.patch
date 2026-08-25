@@ -1,0 +1,393 @@
+From f6abe5513c3db4a6bdfb9fe083f26304ac177830 Mon Sep 17 00:00:00 2001
+From: s1alknau <157369075+s1alknau@users.noreply.github.com>
+Date: Tue, 25 Aug 2026 11:42:13 +0200
+Subject: [PATCH 1/2] Lokale Anpassungen des Nematostella-Aufbaus sichtbar
+ machen
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Diese neun Änderungen lagen bisher ausschließlich in site-packages der
+Umgebung imswitch21 und existierten in keinem Commit und keinem Tag. Eine
+Neuinstallation aus dem Repository hätte sie verloren — und ImSwitch startet
+ohne sie nicht im Qt-Modus.
+
+Windows-Lauffähigkeit
+  model/io/session.py       fcntl gibt es unter Windows nicht; Ersatz über
+                            msvcrt, Dateisperren als No-Op.
+
+Qt-Bindings PyQt5 und PySide6
+  imcommon/framework/qt.py  Erkennung gelöschter C++-Objekte je nach Binding
+                            (sip bzw. shiboken6) statt fest PyQt5. Zusätzlich
+                            ruft QObjectMeta.__new__ jetzt _abc_init, weil die
+                            sip/Shiboken-Metaklasse ABCMeta.__new__ übergeht
+                            und _abc_impl sonst fehlt.
+  CheckUpdatesController.py Signale als Klassenattribute statt im __init__.
+                            pyqtSignal wird nur auf Klassenebene gebunden;
+                            im __init__ zugewiesen fehlt .connect und der
+                            GUI-Start bricht ab.
+  view/ImConMainView.py     dito
+  view/widgets/basewidgets.py dito
+
+Aufnahme-Plugin
+  LaserController.py        setLaserGalvo() als APIExport, damit napari-lsft
+                            den Lichtblatt-Galvo zum Messbeginn setzen kann
+                            und er per Holo-Widget bedienbar bleibt.
+
+Sonstiges
+  __main__.py, imcommon/applaunch.py, managers/NidaqManager.py
+
+Basis: 8b424d51 (Stand der laufenden Installation), nicht v2.1.192 —
+die Patches sind gegen diesen Stand entstanden.
+---
+ imswitch/__main__.py                          | 10 ++---
+ imswitch/imcommon/applaunch.py                | 27 ++++++------
+ .../controller/CheckUpdatesController.py      | 15 ++++---
+ imswitch/imcommon/framework/qt.py             | 43 +++++++++++++++----
+ .../controller/controllers/LaserController.py | 22 ++++++++++
+ imswitch/imcontrol/model/io/session.py        | 16 ++++++-
+ .../imcontrol/model/managers/NidaqManager.py  |  8 ++--
+ imswitch/imcontrol/view/ImConMainView.py      |  8 +++-
+ .../imcontrol/view/widgets/basewidgets.py     |  7 ++-
+ 9 files changed, 114 insertions(+), 42 deletions(-)
+
+diff --git a/imswitch/__main__.py b/imswitch/__main__.py
+index 4db7402a..05633081 100644
+--- a/imswitch/__main__.py
++++ b/imswitch/__main__.py
+@@ -173,7 +173,7 @@ def main(is_headless:bool=None, default_config:str=None, http_port:int=None, ssl
+ 
+         # TODO: check if port is already in use
+ 
+-        if True: #config.is_headless:
++        if config.is_headless:
+             app = None
+         else:
+             app = prepareApp()
+@@ -201,7 +201,7 @@ def main(is_headless:bool=None, default_config:str=None, http_port:int=None, ssl
+         moduleCommChannel = ModuleCommunicationChannel()
+ 
+         # only create the GUI if necessary
+-        if False: #not config.is_headless:
++        if not config.is_headless:
+             from imswitch.imcommon.view import MultiModuleWindow, ModuleLoadErrorView
+             multiModuleWindow = MultiModuleWindow('ImSwitch')
+             multiModuleWindowController = MultiModuleWindowController.create(
+@@ -241,12 +241,12 @@ def main(is_headless:bool=None, default_config:str=None, http_port:int=None, ssl
+                 logger.error(e)
+                 logger.error(traceback.format_exc())
+                 moduleCommChannel.unregister(modulePkg)
+-                if False: #not config.is_headless:
++                if not config.is_headless:
+                     from imswitch.imcommon.view import ModuleLoadErrorView
+                     multiModuleWindow.addModule(moduleId, moduleName, ModuleLoadErrorView(e))
+             else:
+                 # Add module to window
+-                if False: #not config.is_headless:
++                if not config.is_headless:
+                     multiModuleWindow.addModule(moduleId, moduleName, view)
+                 moduleMainControllers[moduleId] = controller
+ 
+@@ -255,7 +255,7 @@ def main(is_headless:bool=None, default_config:str=None, http_port:int=None, ssl
+                     config.jupyter_url = controller.webaddr
+ 
+                 # Update loading progress
+-                if False: #not config.is_headless:
++                if not config.is_headless:
+                     multiModuleWindow.updateLoadingProgress(i / len(modulePkgs))
+                     app.processEvents()  # Draw window before continuing
+         logger.info('init done')
+diff --git a/imswitch/imcommon/applaunch.py b/imswitch/imcommon/applaunch.py
+index 09f4cba5..a195d577 100644
+--- a/imswitch/imcommon/applaunch.py
++++ b/imswitch/imcommon/applaunch.py
+@@ -4,6 +4,9 @@ import sys
+ import traceback
+ import time
+ 
++# Force Qt backend BEFORE any qtpy/pyqtgraph/vispy import
++os.environ['QT_API'] = 'pyqt5'
++os.environ['PYQTGRAPH_QT_LIB'] = 'PyQt5'
+ 
+ # somewhere after all your variables & functions exist
+ try:
+@@ -37,23 +40,17 @@ def prepareApp():
+ 
+     # Create app
+     os.environ['IMSWITCH_FULL_APP'] = '1'  # Indicator that non-plugin version of ImSwitch is used
+-    os.environ['PYQTGRAPH_QT_LIB'] = 'PyQt5'  # Force Qt to use PyQt5
++    os.environ['QT_API'] = 'pyqt5'            # Force all of qtpy/napari/vispy to PySide6
++    os.environ['PYQTGRAPH_QT_LIB'] = 'PyQt5' # Force pyqtgraph/vispy backend
+     os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # Force HDF5 to not lock files
+     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+-    # TODO: Some weird combination of the below settings may help us to scale Napari?
+-    # Set environment variables for high DPI scaling
+-    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+-    #os.environ["QT_SCALE_FACTOR"] = ".8"  # Adjust this value as needed
+-    from PyQt5.QtCore import Qt
+-    from PyQt5.QtWidgets import QApplication
+-    # Set application attributes
+-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)  # Fixes Napari issues
+-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_DisableHighDpiScaling, True) # proper scaling on Mac?
+-    #QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+-    # https://stackoverflow.com/questions/72131093/pyqt5-qwebengineview-doesnt-load-url
+-    # The following element (sandbox) is to keep the app from crashing when using QWebEngineView
++    # Set application attributes (Qt5 only — these are removed/always-on in Qt6)
++    import qtpy
++    if qtpy.API_NAME in ('PyQt5', 'PySide2'):
++        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
++        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
++        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
++        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_DisableHighDpiScaling, True)
+     app = QtWidgets.QApplication(['', '--no-sandbox'])
+     app.setStyleSheet("QWidget { font-size: 9pt; }")  # Smaller default font
+     app.setWindowIcon(QtGui.QIcon(os.path.join(dirtools.DataFileDirs.Root, 'icon.png')))
+diff --git a/imswitch/imcommon/controller/CheckUpdatesController.py b/imswitch/imcommon/controller/CheckUpdatesController.py
+index 7c52f898..5e70fceb 100644
+--- a/imswitch/imcommon/controller/CheckUpdatesController.py
++++ b/imswitch/imcommon/controller/CheckUpdatesController.py
+@@ -10,7 +10,8 @@ import threading
+ import datetime
+ 
+ from imswitch import __version__
+-from imswitch.imcommon.framework import Signal, Thread
++from qtpy.QtCore import Signal as _QtSignal
++from imswitch.imcommon.framework import Thread
+ from imswitch.imcommon.model import initLogger
+ from .basecontrollers import WidgetController
+ 
+@@ -45,13 +46,15 @@ class CheckUpdatesController(WidgetController):
+ 
+ 
+ class CheckUpdatesThread(Thread):
++    # Signals must be class-level for both PyQt5 and PySide6
++    sigFailed = _QtSignal()
++    sigNoUpdate = _QtSignal()
++    sigNewVersionPyInstaller = _QtSignal(str)
++    sigNewVersionPyPI = _QtSignal(str)
++    sigNewVersionShowInfo = _QtSignal(str)
++
+     def __init__(self):
+         super().__init__()
+-        self.sigFailed = Signal()
+-        self.sigNoUpdate = Signal()
+-        self.sigNewVersionPyInstaller = Signal(str)  # (latestVersion)
+-        self.sigNewVersionPyPI = Signal(str)  # (latestVersion)
+-        self.sigNewVersionShowInfo = Signal(str) # (someText)
+         self.__logger = initLogger(self, tryInheritParent=True)
+ 
+     def run(self):
+diff --git a/imswitch/imcommon/framework/qt.py b/imswitch/imcommon/framework/qt.py
+index 15861c04..98ca9672 100644
+--- a/imswitch/imcommon/framework/qt.py
++++ b/imswitch/imcommon/framework/qt.py
+@@ -1,12 +1,41 @@
+ from abc import ABCMeta
+-from PyQt5 import sip
+ from qtpy import QtCore
+ 
+ import imswitch.imcommon.framework.base as base
+ 
++# Check which Qt backend is active and pick the right deleted-object detector
++import qtpy as _qtpy
++if _qtpy.API_NAME in ('PySide6', 'PySide2'):
++    try:
++        import shiboken6 as _shibo
++        def _is_deleted(obj):
++            return not _shibo.isValid(obj)
++    except ImportError:
++        def _is_deleted(obj):
++            return False
++else:
++    try:
++        from PyQt5 import sip as _sip
++        def _is_deleted(obj):
++            try:
++                _sip.unwrapinstance(obj)
++            except RuntimeError:
++                return True
++            return False
++    except ImportError:
++        def _is_deleted(obj):
++            return False
++
+ 
+ class QObjectMeta(type(QtCore.QObject), ABCMeta):
+-    pass
++    def __new__(mcs, name, bases, namespace, **kwargs):
++        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
++        # sip/Shiboken metaclass doesn't call ABCMeta.__new__, so _abc_impl
++        # is never set — fix it explicitly so issubclass() works correctly.
++        if not hasattr(cls, '_abc_impl'):
++            from _abc import _abc_init
++            _abc_init(cls)
++        return cls
+ 
+ 
+ class Mutex(QtCore.QMutex, base.Mutex, metaclass=QObjectMeta):
+@@ -24,19 +53,15 @@ class SignalInterface(QtCore.QObject, base.SignalInterface, metaclass=QObjectMet
+ 
+ class Thread(QtCore.QThread, base.Thread, metaclass=QObjectMeta):
+     def quit(self) -> None:
+-        if not self.__isWrappedCObjDeleted():
++        if not _is_deleted(self):
+             super().quit()
+ 
+     def wait(self) -> None:
+-        if not self.__isWrappedCObjDeleted():
++        if not _is_deleted(self):
+             super().wait()
+ 
+     def __isWrappedCObjDeleted(self) -> bool:
+-        try:
+-            sip.unwrapinstance(self)
+-        except RuntimeError:
+-            return True
+-        return False
++        return _is_deleted(self)
+ 
+ 
+ class Timer(QtCore.QTimer, base.Timer, metaclass=QObjectMeta):
+diff --git a/imswitch/imcontrol/controller/controllers/LaserController.py b/imswitch/imcontrol/controller/controllers/LaserController.py
+index 523d5c40..0769d184 100644
+--- a/imswitch/imcontrol/controller/controllers/LaserController.py
++++ b/imswitch/imcontrol/controller/controllers/LaserController.py
+@@ -312,6 +312,28 @@ class LaserController(ImConWidgetController):
+         if not IS_HEADLESS: self._widget.setValue(laserName, value)
+         else: self.valueChanged(laserName, value) #TODO: !!!
+ 
++    @APIExport()
++    def setLaserGalvo(self, laserName: str = None, frequency: float = 10,
++                      amplitude: float = 1, offset: float = 0, channel: int = 1,
++                      clk_div: int = 0, phase: float = 0, invert: int = 1) -> None:
++        """ Configure the ESP32 galvo that forms the light sheet for a laser.
++
++        frequency=0 stops the sweep. If laserName is None or unknown, the first
++        laser is used. Added for napari-lsft LSFT acquisition so the galvo
++        (light sheet) can be activated programmatically at measurement start
++        while staying manually controllable via the Holo widget. """
++        names = self._master.lasersManager.getAllDeviceNames()
++        if laserName is None or laserName not in names:
++            laserName = names[0]
++        manager = self._master.lasersManager[laserName]
++        if not hasattr(manager, "setGalvo"):
++            raise RuntimeError(
++                f"Laser {laserName!r} ({type(manager).__name__}) has no galvo; "
++                "expected an ESP32LEDLaserManager.")
++        manager.setGalvo(channel=channel, frequency=frequency, offset=offset,
++                         amplitude=amplitude, clk_div=clk_div, phase=phase,
++                         invert=invert)
++
+     @APIExport()
+     def changeScanPower(self, laserName, laserValue):
+         defaultPreset = self._setupInfo.laserPresets[self._setupInfo.defaultLaserPresetForScan]
+diff --git a/imswitch/imcontrol/model/io/session.py b/imswitch/imcontrol/model/io/session.py
+index 00a2f736..3a58f92e 100644
+--- a/imswitch/imcontrol/model/io/session.py
++++ b/imswitch/imcontrol/model/io/session.py
+@@ -9,7 +9,21 @@ import json
+ import os
+ import time
+ import uuid
+-import fcntl
++try:
++    import fcntl  # Linux/macOS only
++except ImportError:
++    # Windows stub — file locking is a no-op (single-user desktop use)
++    import msvcrt as _msvcrt
++
++    class fcntl:
++        LOCK_EX = 0x2
++        LOCK_NB = 0x4
++        LOCK_SH = 0x1
++        LOCK_UN = 0x8
++
++        @staticmethod
++        def flock(fd, operation):
++            pass  # no-op on Windows
+ from dataclasses import dataclass, field, asdict
+ from typing import Any, Dict, List, Optional
+ from pathlib import Path
+diff --git a/imswitch/imcontrol/model/managers/NidaqManager.py b/imswitch/imcontrol/model/managers/NidaqManager.py
+index fd9283e7..f9014494 100644
+--- a/imswitch/imcontrol/model/managers/NidaqManager.py
++++ b/imswitch/imcontrol/model/managers/NidaqManager.py
+@@ -13,13 +13,13 @@ from imswitch.imcommon.model import initLogger
+ 
+ class NidaqManager(SignalInterface):
+     """ For interaction with NI-DAQ hardware interfaces. """
++    sigScanBuilt = Signal(object, object, object)  # (scanInfoDict, signalDict, deviceList)
++    sigScanStarted = Signal()
++    sigScanDone = Signal()
++    sigScanBuildFailed = Signal()
+ 
+     def __init__(self, setupInfo):
+         super().__init__()
+-        self.sigScanBuilt = Signal(object, object, object)  # (scanInfoDict, signalDict, deviceList)
+-        self.sigScanStarted = Signal()
+-        self.sigScanDone = Signal()
+-        self.sigScanBuildFailed = Signal()
+         self.__logger = initLogger(self)
+ 
+         self.__setupInfo = setupInfo
+diff --git a/imswitch/imcontrol/view/ImConMainView.py b/imswitch/imcontrol/view/ImConMainView.py
+index 4da87e0d..5bea610b 100644
+--- a/imswitch/imcontrol/view/ImConMainView.py
++++ b/imswitch/imcontrol/view/ImConMainView.py
+@@ -24,6 +24,7 @@ else:
+ class ImConMainView(QMainWindow):
+     sigPickSetup = Signal()
+     sigClosing = Signal()
++    sigLoadParamsFromHDF5 = Signal()
+ 
+     def __init__(self, options, viewSetupInfo, *args, **kwargs):
+         self.__logger = initLogger(self)
+@@ -50,6 +51,10 @@ class ImConMainView(QMainWindow):
+ 
+ 
+ 
++        self.loadParamsFromHDF5Action = QtWidgets.QAction('Load parameters from HDF5…', self)
++        self.loadParamsFromHDF5Action.triggered.connect(self.sigLoadParamsFromHDF5)
++        file.addAction(self.loadParamsFromHDF5Action)
++
+         self.pickSetupAction = QtWidgets.QAction('Pick hardware setup…', self)
+         self.pickSetupAction.triggered.connect(self.sigPickSetup)
+         configuration.addAction(self.pickSetupAction)
+@@ -264,12 +269,13 @@ class ImConMainView(QMainWindow):
+ 
+ class ImConMainViewNoQt(object):
+     # FIXME: Hacky way to make this class compatible with the rest of the code without QT
++    sigClosing = Signal()
++
+     def __init__(self, options, viewSetupInfo, *args, **kwargs):
+         self.__logger = initLogger(self)
+         self.__logger.debug('Initializing')
+ 
+         super().__init__(*args, **kwargs)
+-        self.sigClosing = Signal()
+         self.docks = {}
+         self.widgets = {}
+         self.shortcuts = {}
+diff --git a/imswitch/imcontrol/view/widgets/basewidgets.py b/imswitch/imcontrol/view/widgets/basewidgets.py
+index d49f0185..cead0e89 100644
+--- a/imswitch/imcontrol/view/widgets/basewidgets.py
++++ b/imswitch/imcontrol/view/widgets/basewidgets.py
+@@ -7,7 +7,12 @@ from imswitch.imcommon.view.guitools import naparitools
+ 
+ 
+ class _QObjectABCMeta(type(QtCore.QObject), ABCMeta):
+-    pass
++    def __new__(mcs, name, bases, namespace, **kwargs):
++        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
++        if not hasattr(cls, '_abc_impl'):
++            from _abc import _abc_init
++            _abc_init(cls)
++        return cls
+ 
+ 
+ class WidgetFactory:
+-- 
+2.49.0.windows.1
+

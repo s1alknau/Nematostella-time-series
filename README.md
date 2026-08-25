@@ -113,16 +113,42 @@ and install it *before* ImSwitch. Then open the MVS client and verify the camera
 is listed: GigE cameras only appear when the camera IP and the network adapter
 are in the same subnet (jumbo frames / MTU 9000 recommended).
 
-### 3. Install ImSwitch (openUC2 fork)
+### 3. Install ImSwitch (our `nematostella-rig` branch)
 
-The [openUC2 fork](https://github.com/openUC2/ImSwitch) provides `HikCamManager`
-and the UC2 `ESP32Manager`:
+Clone **[`s1alknau/ImSwitch`](https://github.com/s1alknau/ImSwitch), branch
+`nematostella-rig`** — not `openUC2/ImSwitch` directly. It is that fork which
+provides `HikCamManager` and the UC2 `ESP32Manager`, plus the changes this
+plugin depends on:
 
 ```bash
-git clone https://github.com/openUC2/ImSwitch.git
+git clone -b nematostella-rig https://github.com/s1alknau/ImSwitch.git
 cd ImSwitch
 pip install -e .
 ```
+
+`nematostella-rig` is the fork's default branch, so `-b` is not strictly
+required — it is spelled out so the command keeps working if that ever changes.
+
+> **Upstream will not work.** Its Qt GUI aborts on startup with
+> `AttributeError: 'PyQt5.QtCore.pyqtSignal' object has no attribute 'connect'`,
+> `fcntl` is missing on Windows, and `setLaserGalvo()` — which `napari-lsft`
+> calls to raise the light sheet at acquisition start — does not exist.
+> [`imswitch-patches/README.md`](imswitch-patches/README.md) lists every change
+> and carries patch files as a fallback.
+
+**Qt 5 or Qt 6?** The command above installs no Qt binding, leaving the choice
+to you:
+
+```bash
+pip install "PySide6==6.8.*"     # Qt 6.8 — recommended
+# or
+pip install -e ".[PyQt5]"        # Qt 5.15.2
+```
+
+PyQt5's PyPI wheels only ever shipped Qt 5.15.2 on Windows (2020). That version
+renders the client area sheared on machines with two GPUs; Qt 6.8 does not. If
+you pick PySide6, make sure `site-packages/PyQt5` is gone entirely — `pyqtgraph`
+treats even an emptied folder as a present package and picks the wrong binding.
 
 The first start of ImSwitch creates `Documents/ImSwitchConfig/` with the
 `imcontrol_setups/` subfolder used in the next step.
