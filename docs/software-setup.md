@@ -139,20 +139,67 @@ pip install -e .
     Every change is documented commit by commit and mirrored as patch files
     under [`imswitch-patches/`](https://github.com/s1alknau/Nematostella-time-series/tree/Nematostella-time-series-IR/imswitch-patches).
 
-### Choose a Qt binding
+### Choose a Qt binding and install the GUI stack
 
-`pip install -e .` installs none on purpose, so the choice stays open:
+`pip install -e .` installs **no GUI packages at all** — neither a Qt binding
+nor the layers ImSwitch's windows are built on. Pick a binding:
 
 ```bash
 pip install "PySide6==6.8.3"   # Qt 6.8.3 - recommended
-# or: pip install PyQt5        # Qt 5.15.2
+# or: pip install -e ".[PyQt5]"  # Qt 5.15.2, pulls the GUI stack below with it
 ```
 
 PyQt5 shears the client area diagonally on some dual-GPU machines. With PySide6,
 `site-packages/PyQt5` must be **fully removed** - `pyqtgraph` treats even an
 emptied directory as an installed binding and then picks the wrong one.
 
-Start it once so it creates its configuration folder:
+The binding alone is not enough. On the **PySide6** path, add the packages
+ImSwitch imports on startup (the `PyQt5` extra already contains them):
+
+```bash
+pip install qtpy napari pyqtgraph qdarkstyle
+```
+
+| Package | Where ImSwitch needs it |
+| --- | --- |
+| `qtpy` | `imcommon/framework/qt.py` — the abstraction layer over the binding, imported before anything else |
+| `napari` | `imcommon/view/guitools/naparitools.py` — the camera view *is* an embedded napari viewer, and it is the layer this plugin reads |
+| `pyqtgraph` | plot widgets in `imcontrol/view/widgets/` |
+| `qdarkstyle` | `imcommon/view/MultiModuleWindow.py` — the main window stylesheet |
+
+!!! danger "`ModuleNotFoundError: No module named 'qtpy'`"
+    This is what a missing GUI stack looks like — ImSwitch starts, prints its
+    version and then dies during the import chain:
+
+    ```
+    Starting ImSwitch using version:  2.1.191
+      File ".../imswitch/imcommon/framework/qt.py", line 2, in <module>
+        from qtpy import QtCore
+    ModuleNotFoundError: No module named 'qtpy'
+    ```
+
+    Install the packages above (Step 5 also brings `qtpy` and `napari` in as
+    plugin dependencies) and start ImSwitch again.
+
+!!! note "Linux: Qt platform plugin"
+    If the imports succeed but the GUI aborts with
+    `qt.qpa.plugin: Could not load the Qt platform plugin "xcb"`, install the
+    system libraries the binding links against and make sure a display is
+    available (`echo $DISPLAY`):
+
+    ```bash
+    sudo apt install libxcb-xinerama0 libxcb-cursor0 libxkbcommon-x11-0 libegl1
+    ```
+
+!!! warning "Do not start ImSwitch yet"
+    Install the plugin (**Step 5**) first — every requirement has to be in place
+    before the first start. ImSwitch creates its configuration folder on that
+    first start; create it now so the setup file from Step 4 can already be
+    placed:
+
+    ```bash
+    mkdir -p ~/Documents/ImSwitchConfig/imcontrol_setups
+    ```
 
 ```
 Documents/
@@ -257,6 +304,12 @@ restart ImSwitch so the setup is loaded.
 
 ## Step 5 — Install the recording plugin and its requirements
 
+!!! warning "Before the first ImSwitch start"
+    Do this step **before** starting ImSwitch for the first time. The plugin
+    brings `qtpy` and `napari` in as dependencies, so a missing step here is the
+    usual cause of the `No module named 'qtpy'` crash in
+    [Step 3](#choose-a-qt-binding-and-install-the-gui-stack).
+
 The plugin is **not published on PyPI** - install it from source:
 
 ```bash
@@ -324,6 +377,9 @@ configuration. Without such a file the plugin runs in single-camera mode.
 
 | Message / symptom | Cause and fix |
 | --- | --- |
+| `ModuleNotFoundError: No module named 'qtpy'` while starting ImSwitch | The GUI stack is missing — `pip install -e .` installs no Qt packages. Install the binding **and** `qtpy napari pyqtgraph qdarkstyle`, see [Step 3](#choose-a-qt-binding-and-install-the-gui-stack). |
+| `ModuleNotFoundError` for `napari`, `pyqtgraph` or `qdarkstyle` | Same cause, same fix — or simply run Step 5 (the plugin pulls `qtpy` and `napari` in) before starting ImSwitch. |
+| `qt.qpa.plugin: Could not load the Qt platform plugin "xcb"` (Linux) | Missing system libraries or no display — see the note in [Step 3](#choose-a-qt-binding-and-install-the-gui-stack). |
 | Plugin missing in the *Plugins* menu | Installed into a different environment. `conda activate imswitch21`, reinstall, restart napari/ImSwitch. |
 | `No camera layer found (ensure live view is started in ImSwitch)` | The live view is not running, or the layer name contains none of `Live:`, `Widefield`, `Camera`, `Detector`. Start the live view or rename the layer. |
 | `Zero frame from napari layer (n consecutive)` | The HIK acquisition buffer is in an inconsistent state. The plugin flushes the ImSwitch detector buffer automatically after 5 consecutive zero frames; if it keeps recurring, check MTU/cabling and restart the live view. |

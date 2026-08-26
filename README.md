@@ -136,22 +136,34 @@ required — it is spelled out so the command keeps working if that ever changes
 > [`imswitch-patches/README.md`](imswitch-patches/README.md) lists every change
 > and carries patch files as a fallback.
 
-**Qt 5 or Qt 6?** The command above installs no Qt binding, leaving the choice
-to you:
+**Qt 5 or Qt 6?** The command above installs no GUI packages at all, leaving the
+choice of binding to you:
 
 ```bash
-pip install "PySide6==6.8.*"     # Qt 6.8 — recommended
+pip install "PySide6==6.8.*" qtpy napari pyqtgraph qdarkstyle   # Qt 6.8 — recommended
 # or
-pip install -e ".[PyQt5]"        # Qt 5.15.2
+pip install -e ".[PyQt5]"                                       # Qt 5.15.2, GUI stack included
 ```
+
+On the PySide6 path the extra packages are **not optional**: `qtpy` is the
+abstraction layer ImSwitch imports first (`imcommon/framework/qt.py`), the
+camera view is an embedded `napari` viewer, and the main window needs
+`pyqtgraph` and `qdarkstyle`. Without them ImSwitch prints its version and then
+dies with `ModuleNotFoundError: No module named 'qtpy'`. On Linux, the binding
+additionally needs `libxcb-xinerama0 libxcb-cursor0 libxkbcommon-x11-0 libegl1`
+and a display, otherwise Qt fails with
+`Could not load the Qt platform plugin "xcb"`.
 
 PyQt5's PyPI wheels only ever shipped Qt 5.15.2 on Windows (2020). That version
 renders the client area sheared on machines with two GPUs; Qt 6.8 does not. If
 you pick PySide6, make sure `site-packages/PyQt5` is gone entirely — `pyqtgraph`
 treats even an emptied folder as a present package and picks the wrong binding.
 
-The first start of ImSwitch creates `Documents/ImSwitchConfig/` with the
-`imcontrol_setups/` subfolder used in the next step.
+Do not start ImSwitch yet — install the plugin (step 5) first, so every
+requirement is in place before the first start. The first start creates
+`Documents/ImSwitchConfig/` with the `imcontrol_setups/` subfolder used in the
+next step; create it manually now
+(`mkdir -p ~/Documents/ImSwitchConfig/imcontrol_setups`) to keep the order below.
 
 ### 4. Add the camera setup JSON to `imcontrol_setups`
 

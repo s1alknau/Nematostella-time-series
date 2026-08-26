@@ -126,11 +126,19 @@ be in place *before* ImSwitch is started for the first time.
     git clone -b nematostella-rig https://github.com/s1alknau/ImSwitch.git
     cd ImSwitch
     pip install -e .
-    pip install "PySide6==6.8.3"
+    pip install "PySide6==6.8.3" qtpy napari pyqtgraph qdarkstyle
     ```
 
-    The first start creates `Documents/ImSwitchConfig/` with the
-    `imcontrol_setups/` folder used in the next step.
+    `pip install -e .` installs no GUI packages, so the second line is not
+    optional: without `qtpy` ImSwitch aborts at startup with
+    `ModuleNotFoundError: No module named 'qtpy'`. On the Qt 5 path,
+    `pip install -e ".[PyQt5]"` covers the same set.
+
+    Don't start ImSwitch yet — finish step 5 first. The configuration folder
+    `Documents/ImSwitchConfig/` with its `imcontrol_setups/` subfolder is
+    created on the first start; create it now (`mkdir -p
+    ~/Documents/ImSwitchConfig/imcontrol_setups`) so the next step can already
+    place the setup file.
 
 4. **Add the camera setup file to `imcontrol_setups`** — copy
    [`Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json`](https://github.com/s1alknau/Nematostella-time-series/blob/Nematostella-time-series-IR/Json%2Bcam_manager/example_uc2_ddorf_hik_imager_IR.json)
