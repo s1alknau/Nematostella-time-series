@@ -1,0 +1,88 @@
+From 65a7dd3d12708982f2e226f5e73a69bde315e7d1 Mon Sep 17 00:00:00 2001
+From: s1alknau <157369075+s1alknau@users.noreply.github.com>
+Date: Thu, 27 Aug 2026 15:01:50 +0200
+Subject: [PATCH 5/6] Maus-Events am Canvas des eingebetteten napari-Viewers
+
+canvas.connect() gibt es nur an vispys SceneCanvas. Seit napari 0.5 liegt
+dort der VispyCanvas-Wrapper, der die Methode nicht hat - die drei
+Overlay-Werkzeuge (ROI, Linie, Fadenkreuz) haben ihre Maus-Handler damit
+still nicht mehr verbunden:
+
+    Error connecting to canvas: 'VispyCanvas' object has no attribute 'connect'
+
+An zwei der drei Stellen stand der Aufruf ausserdem ohne try, dort waere es
+ein AttributeError geworden. connectMouseEvents() nimmt jetzt den Weg ueber
+canvas.events - der Wrapper reicht die Property an den SceneCanvas durch -
+und faellt auf connect() zurueck, solange dort ein blanker SceneCanvas liegt.
+
+Geprueft mit napari 0.9.0: die Meldung bleibt beim Start aus.
+---
+ .../imcommon/view/guitools/naparitools.py     | 34 ++++++++++++-------
+ 1 file changed, 22 insertions(+), 12 deletions(-)
+
+diff --git a/imswitch/imcommon/view/guitools/naparitools.py b/imswitch/imcommon/view/guitools/naparitools.py
+index 378809f1..b16df3dd 100644
+--- a/imswitch/imcommon/view/guitools/naparitools.py
++++ b/imswitch/imcommon/view/guitools/naparitools.py
+@@ -11,6 +11,22 @@ from vispy.visuals.transforms import STTransform
+ from .imagetools import minmaxLevels
+ 
+ 
++def connectMouseEvents(canvas, *callbacks):
++    """ Connect on_mouse_* callbacks to the canvas of an embedded napari viewer.
++
++    vispy's SceneCanvas has connect(), which binds a callback by its name.
++    napari's VispyCanvas wrapper (>= 0.5) does not — but its events property
++    forwards to the underlying SceneCanvas, so the events are reachable there.
++    """
++    events = getattr(canvas, 'events', None)
++    for callback in callbacks:
++        event = getattr(events, callback.__name__.removeprefix('on_'), None)
++        if event is not None:
++            event.connect(callback)
++        else:
++            canvas.connect(callback)
++
++
+ def addNapariGrayclipColormap():
+     if hasattr(napari.utils.colormaps.AVAILABLE_COLORMAPS, 'grayclip'):
+         return
+@@ -410,9 +426,8 @@ class VispyROIVisual(VispyBaseVisual):
+ 
+         self._nodes = [self.rect_node, self.handle_node]
+ 
+-        canvas.connect(self.on_mouse_press)
+-        canvas.connect(self.on_mouse_move)
+-        canvas.connect(self.on_mouse_release)
++        connectMouseEvents(canvas, self.on_mouse_press, self.on_mouse_move,
++                           self.on_mouse_release)
+         self._viewer.camera.events.zoom.connect(self._on_zoom_change)
+         self._viewer.dims.events.ndisplay.connect(self._on_data_change)
+ 
+@@ -571,9 +586,8 @@ class VispyLineVisual(VispyBaseVisual):
+ 
+         self._nodes = [self.node]
+ 
+-        canvas.connect(self.on_mouse_press)
+-        canvas.connect(self.on_mouse_move)
+-        canvas.connect(self.on_mouse_release)
++        connectMouseEvents(canvas, self.on_mouse_press, self.on_mouse_move,
++                           self.on_mouse_release)
+         self._viewer.camera.events.zoom.connect(self._on_zoom_change)
+         self._viewer.dims.events.ndisplay.connect(self._on_data_change)
+ 
+@@ -785,12 +799,8 @@ class VispyCrosshairVisual(VispyBaseVisual):
+ 
+         self._nodes = [self.node]
+ 
+-        try:
+-            canvas.connect(self.on_mouse_press)
+-            canvas.connect(self.on_mouse_move)
+-            canvas.connect(self.on_mouse_release)
+-        except Exception as e:
+-            print(f'Error connecting to canvas: {e}')
++        connectMouseEvents(canvas, self.on_mouse_press, self.on_mouse_move,
++                           self.on_mouse_release)
+         self._viewer.camera.events.zoom.connect(self._on_zoom_change)
+         self._viewer.dims.events.ndisplay.connect(self._on_data_change)
+ 

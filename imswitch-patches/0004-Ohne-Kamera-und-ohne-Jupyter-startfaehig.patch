@@ -1,0 +1,76 @@
+From 38d71d3aa8e63d777c9cd5fca7674f9d18a28214 Mon Sep 17 00:00:00 2001
+From: s1alknau <157369075+s1alknau@users.noreply.github.com>
+Date: Thu, 27 Aug 2026 15:01:37 +0200
+Subject: [PATCH 4/6] Ohne Kamera und ohne Jupyter startfaehig
+
+Eine frische Installation startete nicht durch, obwohl beides nur Defaults
+waren:
+
+imnotebook war per Default aktiv - im Python-Fallback und in der
+mitgelieferten user_defaults/config/modules.json, aus der ein frischer
+Config-Ordner gefuellt wird. Das Modul sucht jupyter-lab im PATH; fehlt es,
+kommt unter Windows ein modaler Fehlerdialog, und unter Qt 6 zog es bis
+1df94bc9 QtWebEngine in den Absturz. Dieser Aufbau braucht das Modul nicht,
+imscripting wirft __main__ ohnehin wieder raus - Default ist jetzt
+['imcontrol'].
+
+Der Mock lehnte die Schreibweise der echten Kamera ab. HikCamManager fuehrt
+"Continous" als Default und als Option, Setup-Dateien tragen den Wert also so.
+Ohne angeschlossene Kamera faellt HikCamManager auf MockCameraTIS zurueck -
+und dessen TriggerSource kannte nur "Continuous". Ergebnis war ein
+KeyError: 'WidefieldCamera' aus dem DetectorsManager und "Failed to load
+module" in der GUI, also genau in dem Fall, fuer den der Mock da ist. Der
+Enum kennt die Schreibweise jetzt als Alias.
+
+Geprueft: frischer Config-Ordner, unveraenderte Setup-Datei des
+Nematostella-Aufbaus, keine Kamera angeschlossen -> "Initialized camera,
+model: mock" und "init done".
+---
+ imswitch/_data/user_defaults/config/modules.json      | 3 +--
+ imswitch/imcommon/model/modulesconfigtools.py         | 4 +++-
+ imswitch/imcontrol/model/interfaces/tiscamera_mock.py | 5 +++++
+ 3 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/imswitch/_data/user_defaults/config/modules.json b/imswitch/_data/user_defaults/config/modules.json
+index e21d9bd0..778066bb 100644
+--- a/imswitch/_data/user_defaults/config/modules.json
++++ b/imswitch/_data/user_defaults/config/modules.json
+@@ -1,6 +1,5 @@
+ {
+     "enabled": [
+-        "imcontrol",
+-        "imnotebook"
++        "imcontrol"
+     ]
+ }
+diff --git a/imswitch/imcommon/model/modulesconfigtools.py b/imswitch/imcommon/model/modulesconfigtools.py
+index 7da19d91..ff11faeb 100644
+--- a/imswitch/imcommon/model/modulesconfigtools.py
++++ b/imswitch/imcommon/model/modulesconfigtools.py
+@@ -73,7 +73,9 @@ _modulesFilePath = os.path.join(dirtools.UserFileDirs.Config, 'modules.json')
+ 
+ if not os.path.isfile(_modulesFilePath):
+     # Modules file doesn't exist, create it.
+-        _modules = _Modules(enabled=['imcontrol', 'imscripting', 'imnotebook'])
++        # imscripting is dropped by __main__ anyway, and imnotebook needs a
++        # jupyter-lab on PATH plus QtWebEngine - neither is part of this rig.
++        _modules = _Modules(enabled=['imcontrol'])
+ else:
+     try:
+         with open(_modulesFilePath, 'r') as modulesFile: # TODO: Do something about it: if the file is corrupted, the user has to watch it
+diff --git a/imswitch/imcontrol/model/interfaces/tiscamera_mock.py b/imswitch/imcontrol/model/interfaces/tiscamera_mock.py
+index b03a60ec..6808abac 100644
+--- a/imswitch/imcontrol/model/interfaces/tiscamera_mock.py
++++ b/imswitch/imcontrol/model/interfaces/tiscamera_mock.py
+@@ -19,6 +19,11 @@ except ImportError:
+ 
+ class TriggerSource(str, Enum):
+     CONTINUOUS = "Continuous"
++    # HikCamManager offers - and setup files therefore carry - the upstream
++    # spelling "Continous". Without this alias the mock rejects the value that
++    # the real camera accepts, and a setup written for hardware cannot be
++    # started without it.
++    CONTINOUS = "Continous"
+     SOFTWARE = "Internal trigger"
+     EXTERNAL = "External trigger"
+ 

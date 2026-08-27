@@ -88,8 +88,9 @@ runtime. Without the SDK installed, ImSwitch starts but the detector stays empty
    (Windows installer, Linux `.tar.gz`/`.deb`, macOS `.pkg`).
 2. Install it **before** ImSwitch. The package provides the MVS client
    application, the GenICam runtime, the GigE driver and the Python bindings
-   (`MvImport`), and sets the SDK environment variables (`MVCAM_COMMON_RUNENV`,
-   `MVCAM_SDK_PATH`) through which the runtime is located.
+   (`MvImport`), and sets the environment variable the runtime is located
+   through — `MVCAM_COMMON_RUNENV`, pointing at the SDK's `Development`
+   folder. (`MVCAM_SDK_PATH` may stay empty; that is not a problem.)
 3. Reboot (Windows) or open a new shell so those variables are visible inside
    the conda environment.
 
@@ -198,16 +199,22 @@ pip install qtpy napari pyqtgraph qdarkstyle
     placed:
 
     ```bash
-    mkdir -p ~/Documents/ImSwitchConfig/imcontrol_setups
+    mkdir -p ~/ImSwitchConfig/imcontrol_setups
     ```
 
 ```
-Documents/
-└── ImSwitchConfig/
-    ├── imcontrol_setups/     ← the setup JSON goes here (Step 4)
-    ├── imcontrol_options/
-    └── ...
+~/ImSwitchConfig/         (C:\Users\<you>\ImSwitchConfig on Windows)
+├── imcontrol_setups/     ← the setup JSON goes here (Step 4)
+├── config/               ← modules.json lives here
+└── ...
 ```
+
+!!! info "It is the home directory, not Documents"
+    Older ImSwitch versions kept this folder under `Documents/`. This one
+    resolves it to the **home directory**
+    ([`storage_paths.py`](https://github.com/s1alknau/ImSwitch/blob/nematostella-rig/imswitch/imcommon/model/storage_paths.py)),
+    unless `--config-folder` points elsewhere. If both folders exist on your
+    machine, the one under `Documents/` is a leftover and is ignored.
 
 !!! tip "Ready-made configurations"
     The [openUC2/ImSwitchConfig](https://github.com/openUC2/ImSwitchConfig)
@@ -262,14 +269,14 @@ Copy it into the setups folder:
 === "Windows"
 
     ```powershell
-    copy "Json+cam_manager\example_uc2_ddorf_hik_imager_IR.json" "$env:USERPROFILE\Documents\ImSwitchConfig\imcontrol_setups\"
+    copy "Json+cam_manager\example_uc2_ddorf_hik_imager_IR.json" "$env:USERPROFILE\ImSwitchConfig\imcontrol_setups\"
     ```
 
 === "macOS / Linux"
 
     ```bash
     cp "Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json" \
-      ~/Documents/ImSwitchConfig/imcontrol_setups/
+      ~/ImSwitchConfig/imcontrol_setups/
     ```
 
 Then select it in ImSwitch as the active setup (*Settings → setup file*) and
@@ -358,6 +365,19 @@ python -c "import timeseries_capture, napari; print('ok')"
     runs in a plain `napari` session with the other supported camera adapters —
     only the ESP32 is mandatory.
 
+!!! tip "Dry run without hardware"
+    The installation can be checked before the imager is built: with no camera
+    attached, `HikCamManager` falls back to a mock camera, and ImSwitch starts
+    into its GUI with the same setup file (log: `Initialized camera, model:
+    mock` … `init done`). Point it at a scratch configuration so your real one
+    stays untouched:
+
+    ```bash
+    mkdir -p /tmp/ImSwitchTest/imcontrol_setups
+    cp Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json /tmp/ImSwitchTest/imcontrol_setups/
+    imswitch --config-folder /tmp/ImSwitchTest
+    ```
+
 ### Optional: multi-camera configuration
 
 If a `camera_system.json` is present, the plugin adds its multi-camera panels on
@@ -381,6 +401,10 @@ configuration. Without such a file the plugin runs in single-camera mode.
 | `ModuleNotFoundError` for `napari`, `pyqtgraph` or `qdarkstyle` | Same cause, same fix — or simply run Step 5 (the plugin pulls `qtpy` and `napari` in) before starting ImSwitch. |
 | `Fatal Python error: Segmentation fault` in `launchApp` | QtWebEngine without a shared GL context — fixed in `nematostella-rig`, `git pull` the ImSwitch clone. See [Segfault when the GUI starts](#segfault-when-the-gui-starts-linux-pyside6). |
 | `qt.qpa.plugin: Could not load the Qt platform plugin "xcb"` (Linux) | Missing system libraries or no display — see the note in [Step 3](#choose-a-qt-binding-and-install-the-gui-stack). |
+| `Failed to load module: KeyError:` / `KeyError: 'WidefieldCamera'` | No camera attached: `HikCamManager` falls back to its mock, which used to reject the `"Continous"` spelling the real camera uses. Fixed in `nematostella-rig` — `git pull` the ImSwitch clone. With the fix, the documented setup starts on the mock and the GUI comes up without hardware. |
+| Modal dialog *"It appears that Jupyter Notebook isn't where it usually is"* | The `imnotebook` module wants `jupyter-lab` on PATH. It is off by default in `nematostella-rig`; an existing `~/ImSwitchConfig/config/modules.json` keeps its old value, so set it to `["imcontrol"]`. |
+| `pip check`: *imswitchuc2 requires pydantic==2.11.4, but you have 2.13.4* | napari pulls the newer pydantic. The exact pin is relaxed in `nematostella-rig`; ImSwitch runs unchanged with 2.13.4. |
+| `Expecting value: line 1 column 1` / *setup file was corrupted* | A BOM in the JSON — see the warning in [Segfault when the GUI starts](#segfault-when-the-gui-starts-linux-pyside6). |
 | Plugin missing in the *Plugins* menu | Installed into a different environment. `conda activate imswitch21`, reinstall, restart napari/ImSwitch. |
 | `No camera layer found (ensure live view is started in ImSwitch)` | The live view is not running, or the layer name contains none of `Live:`, `Widefield`, `Camera`, `Detector`. Start the live view or rename the layer. |
 | `Zero frame from napari layer (n consecutive)` | The HIK acquisition buffer is in an inconsistent state. The plugin flushes the ImSwitch detector buffer automatically after 5 consecutive zero frames; if it keeps recurring, check MTU/cabling and restart the live view. |
@@ -426,9 +450,12 @@ does not follow the clone:
 pip install -e .
 ```
 
+`nematostella-rig` additionally ships `imnotebook` **off by default**, so a
+fresh installation never loads QtWebEngine in the first place.
+
 !!! tip "Workaround without updating"
-    The rig does not need the Jupyter notebook module, and without it QtWebEngine
-    is never imported. Set `~/Documents/ImSwitchConfig/config/modules.json` to:
+    In an existing configuration the module stays enabled — `modules.json` is
+    only created once. Set `~/ImSwitchConfig/config/modules.json` to:
 
     ```json
     {
@@ -436,8 +463,16 @@ pip install -e .
     }
     ```
 
-    The default is `["imcontrol", "imscripting", "imnotebook"]`; `imscripting` is
-    dropped by ImSwitch at startup anyway.
+    Upstream's default is `["imcontrol", "imscripting", "imnotebook"]`;
+    `imscripting` is dropped by ImSwitch at startup anyway.
+
+!!! warning "Windows: do not write JSON with `Set-Content -Encoding utf8`"
+    PowerShell 5.1 writes a BOM, and ImSwitch's JSON parser stops at it —
+    `modules.json` fails with `Expecting value: line 1 column 1 (char 0)`, a
+    setup file is reported as *corrupted and has been reset to default values*.
+    Use an editor that saves UTF-8 without BOM, or
+    `[System.IO.File]::WriteAllText($path, $json, (New-Object System.Text.UTF8Encoding($false)))`.
+    The `copy` command in Step 4 is unaffected — it copies bytes.
 
 If it still segfaults, the display stack is the next suspect:
 

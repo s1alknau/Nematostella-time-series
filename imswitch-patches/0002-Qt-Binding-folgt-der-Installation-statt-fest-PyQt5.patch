@@ -1,7 +1,7 @@
 From a60e76d86af75e900a44fbb32d918613cc75cb20 Mon Sep 17 00:00:00 2001
 From: s1alknau <157369075+s1alknau@users.noreply.github.com>
 Date: Tue, 25 Aug 2026 12:31:23 +0200
-Subject: [PATCH 2/3] Qt-Binding folgt der Installation statt fest PyQt5
+Subject: [PATCH 2/6] Qt-Binding folgt der Installation statt fest PyQt5
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

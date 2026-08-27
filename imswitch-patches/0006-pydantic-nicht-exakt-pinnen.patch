@@ -1,0 +1,27 @@
+From 6f4f61630a38764292086fbc4f423ef3ba2ddc38 Mon Sep 17 00:00:00 2001
+From: s1alknau <157369075+s1alknau@users.noreply.github.com>
+Date: Thu, 27 Aug 2026 15:01:50 +0200
+Subject: [PATCH 6/6] pydantic nicht exakt pinnen
+
+"pydantic==2.11.4" kollidiert mit napari, das eine neuere Version zieht. Wer
+der Installationsanleitung folgt und napari nach ImSwitch installiert, haelt
+danach ein Environment, das pip check als inkonsistent meldet. Mit pydantic
+2.13.4 lief ImSwitch im Test unveraendert bis "init done", der exakte Pin ist
+also strenger als noetig.
+---
+ pyproject.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pyproject.toml b/pyproject.toml
+index 32380351..1f02d18c 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -26,7 +26,7 @@ dynamic = ["version"]
+ requires-python = ">=3.11"
+ dependencies = [
+     "setuptools >= 42",
+-    "pydantic==2.11.4",
++    "pydantic>=2.11.4,<3",
+     "coloredlogs >= 15",
+     "colour-science >= 0.3",
+     "dataclasses-json >= 0.5",

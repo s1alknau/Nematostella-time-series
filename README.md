@@ -161,9 +161,9 @@ treats even an emptied folder as a present package and picks the wrong binding.
 
 Do not start ImSwitch yet — install the plugin (step 5) first, so every
 requirement is in place before the first start. The first start creates
-`Documents/ImSwitchConfig/` with the `imcontrol_setups/` subfolder used in the
+`~/ImSwitchConfig/` with the `imcontrol_setups/` subfolder used in the
 next step; create it manually now
-(`mkdir -p ~/Documents/ImSwitchConfig/imcontrol_setups`) to keep the order below.
+(`mkdir -p ~/ImSwitchConfig/imcontrol_setups`) to keep the order below.
 
 ### 4. Add the camera setup JSON to `imcontrol_setups`
 
@@ -172,12 +172,12 @@ into the ImSwitch setups folder:
 
 ```powershell
 # Windows
-copy Json+cam_manager\example_uc2_ddorf_hik_imager_IR.json "%USERPROFILE%\Documents\ImSwitchConfig\imcontrol_setups\"
+copy Json+cam_manager\example_uc2_ddorf_hik_imager_IR.json "%USERPROFILE%\ImSwitchConfig\imcontrol_setups\"
 ```
 
 ```bash
 # macOS / Linux
-cp "Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json" ~/Documents/ImSwitchConfig/imcontrol_setups/
+cp "Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json" ~/ImSwitchConfig/imcontrol_setups/
 ```
 
 The file defines the HIK detector (`HikCamManager`, exposure/gain defaults) and

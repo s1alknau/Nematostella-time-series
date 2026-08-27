@@ -19,7 +19,7 @@ Ohne `[PyQt5]`, wenn du Qt 6 willst — siehe unten.
 | Fork | `s1alknau/ImSwitch` |
 | Branch | **`nematostella-rig`** (Standard-Branch des Forks) |
 | Basis | `openUC2/ImSwitch` @ `8b424d51` |
-| Commits darüber | 3 |
+| Commits darüber | 6 |
 
 ## Warum die Vorlage nicht reicht
 
@@ -39,6 +39,30 @@ bleibt.
 **Die Metaklasse ist unvollständig.** Die sip/Shiboken-Metaklasse ruft
 `ABCMeta.__new__` nicht auf, `_abc_impl` fehlt daher und `issubclass()` liefert
 falsche Ergebnisse.
+
+**Eine frische Installation startet nicht durch.** `imnotebook` war per Default
+aktiv — im Python-Fallback *und* in der mitgelieferten
+`user_defaults/config/modules.json`. Das Modul sucht `jupyter-lab` im PATH und
+meldet sich sonst modal; unter Qt 6 zog es zusätzlich QtWebEngine in den
+Absturz. Default ist jetzt `['imcontrol']`.
+
+**Ohne Kamera bricht der eigene Mock ab.** `HikCamManager` führt `"Continous"`
+als Default und als Option, Setup-Dateien tragen den Wert also so. Ohne
+angeschlossene Kamera fällt der Manager auf `MockCameraTIS` zurück, dessen
+`TriggerSource` nur `"Continuous"` kannte — Ergebnis war
+`KeyError: 'WidefieldCamera'` und „Failed to load module", also genau in dem
+Fall, für den der Mock gedacht ist. Der Enum kennt die Schreibweise jetzt als
+Alias.
+
+**Die Maus-Handler des napari-Canvas hängen nicht mehr.** `canvas.connect()`
+gibt es nur an vispys `SceneCanvas`; seit napari 0.5 liegt dort der
+`VispyCanvas`-Wrapper. ROI-, Linien- und Fadenkreuz-Werkzeug verloren ihre
+Maus-Events (`'VispyCanvas' object has no attribute 'connect'`). Der Weg geht
+jetzt über `canvas.events`.
+
+**`pydantic` war exakt gepinnt.** `pydantic==2.11.4` kollidiert mit napari;
+wer der Anleitung folgt, hält danach ein Environment, das `pip check` als
+inkonsistent meldet. Jetzt `>=2.11.4,<3`.
 
 **Unter Qt 6 stürzt der Start ab.** `AA_ShareOpenGLContexts` stand im Block für
 PyQt5/PySide2. QtWebEngine — nachgezogen von `imnotebook`, das `__main__` erst
@@ -68,7 +92,7 @@ sonst als vorhandenes Paket und wählt das falsche Binding.
 
 ## Die Patch-Dateien
 
-`0001-*.patch` bis `0003-*.patch` sind die Rückfallebene, falls der Fork einmal
+`0001-*.patch` bis `0006-*.patch` sind die Rückfallebene, falls der Fork einmal
 nicht erreichbar ist:
 
 ```bash

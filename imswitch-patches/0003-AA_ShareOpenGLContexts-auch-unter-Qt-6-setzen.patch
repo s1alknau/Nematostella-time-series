@@ -1,7 +1,7 @@
 From 1df94bc955ad46f770a23d7d7cd3082a56c0fd90 Mon Sep 17 00:00:00 2001
 From: s1alknau <157369075+s1alknau@users.noreply.github.com>
 Date: Thu, 27 Aug 2026 14:26:26 +0200
-Subject: [PATCH 3/3] AA_ShareOpenGLContexts auch unter Qt 6 setzen
+Subject: [PATCH 3/6] AA_ShareOpenGLContexts auch unter Qt 6 setzen
 
 QtWebEngine verlangt einen geteilten OpenGL-Kontext, und das Attribut wirkt
 nur, solange noch keine QApplication existiert. Es stand bisher im Block fuer

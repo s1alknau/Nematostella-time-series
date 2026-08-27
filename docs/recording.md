@@ -135,14 +135,14 @@ be in place *before* ImSwitch is started for the first time.
     `pip install -e ".[PyQt5]"` covers the same set.
 
     Don't start ImSwitch yet — finish step 5 first. The configuration folder
-    `Documents/ImSwitchConfig/` with its `imcontrol_setups/` subfolder is
+    `~/ImSwitchConfig/` with its `imcontrol_setups/` subfolder is
     created on the first start; create it now (`mkdir -p
-    ~/Documents/ImSwitchConfig/imcontrol_setups`) so the next step can already
+    ~/ImSwitchConfig/imcontrol_setups`) so the next step can already
     place the setup file.
 
 4. **Add the camera setup file to `imcontrol_setups`** — copy
    [`Json+cam_manager/example_uc2_ddorf_hik_imager_IR.json`](https://github.com/s1alknau/Nematostella-time-series/blob/Nematostella-time-series-IR/Json%2Bcam_manager/example_uc2_ddorf_hik_imager_IR.json)
-   into `Documents/ImSwitchConfig/imcontrol_setups/`, adjust `serialport`
+   into `~/ImSwitchConfig/imcontrol_setups/`, adjust `serialport`
    (ESP32 port) and `cameraListIndex`, then select it in ImSwitch as the active
    setup and restart.
 
