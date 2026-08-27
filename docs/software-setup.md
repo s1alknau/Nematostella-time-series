@@ -39,7 +39,7 @@ Two consequences drive the whole installation:
 | Component | Requirement |
 | --- | --- |
 | Operating system | Windows 10/11, Linux or macOS (Windows is the reference setup) |
-| Python | 3.11 in a dedicated conda environment (the plugin itself needs ≥ 3.10) |
+| Python | 3.12 in a dedicated conda environment — the analysis plugin requires ≥ 3.12, everything else is happy there |
 | Camera | Hik Robotics MV-CS013-60GN (GigE, NIR) — see [Hardware & Assembly](hardware.md) |
 | Camera driver | Hikrobot **MVS SDK** (provides the runtime the `HikCamManager` binds to) |
 | Network | Gigabit NIC for the camera, camera and adapter in the same subnet |
@@ -50,7 +50,7 @@ Two consequences drive the whole installation:
 ## Step 1 — Create the `imswitch21` conda environment
 
 ```bash
-conda create -n imswitch21 python=3.11 -y
+conda create -n imswitch21 python=3.12 -y
 conda activate imswitch21
 ```
 
@@ -59,14 +59,14 @@ Verify that the environment is really the active one before installing anything:
 === "Windows"
 
     ```powershell
-    python -V          # Python 3.11.x
+    python -V          # Python 3.12.x
     where python       # ...\envs\imswitch21\python.exe
     ```
 
 === "macOS / Linux"
 
     ```bash
-    python -V          # Python 3.11.x
+    python -V          # Python 3.12.x
     which python       # .../envs/imswitch21/bin/python
     ```
 
@@ -181,6 +181,30 @@ pip install qtpy napari pyqtgraph qdarkstyle
 
     Install the packages above (Step 5 also brings `qtpy` and `napari` in as
     plugin dependencies) and start ImSwitch again.
+
+### Decompile psygnal
+
+The wheel ships mypyc-compiled modules. With those active, napari's plugin
+discovery dies inside ImSwitch:
+
+```
+TypeError: 'object' object is not subscriptable
+  File "src\psygnal\_signal.py", line 1456, in resume
+  File ".../npe2/_plugin_manager.py", line 301, in discover
+```
+
+The tell-tale sign is the log line `Could not enable signal emission for
+logging: interpreted classes cannot inherit from compiled`. psygnal ships an
+official switch for exactly this — it renames the `.pyd`/`.so` files to
+`*_BAK` and is reversible with `recompile()`:
+
+```bash
+python -c "import psygnal.utils; psygnal.utils.decompile()"
+python -c "import psygnal; print(psygnal._compiled)"   # False
+```
+
+(openUC2 recommend `pip install psygnal --no-binary :all:` instead; that works
+too but has to build from source.)
 
 !!! note "Linux: Qt platform plugin"
     If the imports succeed but the GUI aborts with
@@ -309,35 +333,75 @@ restart ImSwitch so the setup is loaded.
 
 ---
 
-## Step 5 — Install the recording plugin and its requirements
+## Step 5 — Install the napari plugins
 
 !!! warning "Before the first ImSwitch start"
-    Do this step **before** starting ImSwitch for the first time. The plugin
-    brings `qtpy` and `napari` in as dependencies, so a missing step here is the
+    Do this step **before** starting ImSwitch for the first time. The plugins
+    bring `qtpy` and `napari` in as dependencies, so a missing step here is the
     usual cause of the `No module named 'qtpy'` crash in
     [Step 3](#choose-a-qt-binding-and-install-the-gui-stack).
 
-The plugin is **not published on PyPI** - install it from source:
+None of the three plugins is published on PyPI — all install from source, into
+the same `imswitch21` environment:
 
 ```bash
 conda activate imswitch21
-git clone https://github.com/s1alknau/Nematostella-time-series.git
-cd Nematostella-time-series
-pip install -e .
 ```
 
-Optional extras:
+=== "Recording"
+
+    Timelapse recording with the HIK camera and the ESP32 — the plugin this
+    page is about.
+
+    ```bash
+    git clone https://github.com/s1alknau/Nematostella-time-series.git
+    cd Nematostella-time-series
+    pip install -e .
+    # optional: pip install -e ".[opencv]"   # Live Analysis tab (HoughCircles ROI)
+    ```
+
+    `zarr` (Zarr recording format, read-while-write live analysis) is already a
+    core dependency.
+
+=== "Analysis"
+
+    Activity and circadian analysis of the recorded HDF5/Zarr files —
+    [napari-hdf5-activity](https://github.com/s1alknau/napari-hdf5-activity).
+
+    ```bash
+    git clone https://github.com/s1alknau/napari-hdf5-activity.git
+    cd napari-hdf5-activity
+    pip install -e ".[zarr]"
+    ```
+
+    This is the plugin that sets the Python floor: it requires **≥ 3.12**, which
+    is why Step 1 creates a 3.12 environment.
+
+=== "LSFT"
+
+    Light-sheet control and reconstruction —
+    [napari-lsft](https://github.com/s1alknau/napari-lsft). It drives the galvo
+    through ImSwitch's HTTP API, which is one of the reasons this rig needs the
+    fork from Step 3.
+
+    ```bash
+    git clone https://github.com/s1alknau/napari-lsft.git
+    cd napari-lsft
+    pip install -e ".[control,stream]"
+    ```
+
+    `control` adds UC2-REST for direct ESP32 access, `stream` the Socket.IO live
+    frame stream. `daheng` (Galaxy SDK) is only needed for a Daheng camera.
+
+Verify that all three are importable and registered with napari:
 
 ```bash
-pip install -e ".[opencv]"   # Live Analysis tab (HoughCircles ROI detection)
+python -c "import timeseries_capture, napari_hdf5_activity, napari_lsft; print('ok')"
+python -c "from npe2 import PluginManager; pm = PluginManager(); pm.discover(); print([w.display_name for m in pm._manifests.values() for w in (m.contributions.widgets or [])])"
 ```
 
-`zarr` (Zarr recording format, read-while-write live analysis) is already part
-of the core dependencies. Verify the install:
-
-```bash
-python -c "import timeseries_capture, napari; print('ok')"
-```
+Expected widgets: *Nematostella Timelapse Recording*, *HDF5 Activity Analysis*,
+*LSFT Reconstruction*, *LSFT Control & Acquisition*.
 
 ---
 
@@ -405,6 +469,7 @@ configuration. Without such a file the plugin runs in single-camera mode.
 | Modal dialog *"It appears that Jupyter Notebook isn't where it usually is"* | The `imnotebook` module wants `jupyter-lab` on PATH. It is off by default in `nematostella-rig`; an existing `~/ImSwitchConfig/config/modules.json` keeps its old value, so set it to `["imcontrol"]`. |
 | `pip check`: *imswitchuc2 requires pydantic==2.11.4, but you have 2.13.4* | napari pulls the newer pydantic. The exact pin is relaxed in `nematostella-rig`; ImSwitch runs unchanged with 2.13.4. |
 | `Expecting value: line 1 column 1` / *setup file was corrupted* | A BOM in the JSON — see the warning in [Segfault when the GUI starts](#segfault-when-the-gui-starts-linux-pyside6). |
+| `TypeError: 'object' object is not subscriptable` in `npe2` / `psygnal` while ImSwitch builds its window | The compiled psygnal breaks napari's plugin discovery. Run `python -c "import psygnal.utils; psygnal.utils.decompile()"`, see [Step 3](#decompile-psygnal). |
 | Plugin missing in the *Plugins* menu | Installed into a different environment. `conda activate imswitch21`, reinstall, restart napari/ImSwitch. |
 | `No camera layer found (ensure live view is started in ImSwitch)` | The live view is not running, or the layer name contains none of `Live:`, `Widefield`, `Camera`, `Detector`. Start the live view or rename the layer. |
 | `Zero frame from napari layer (n consecutive)` | The HIK acquisition buffer is in an inconsistent state. The plugin flushes the ImSwitch detector buffer automatically after 5 consecutive zero frames; if it keeps recurring, check MTU/cabling and restart the live view. |

@@ -96,7 +96,7 @@ See [CHANGELOG.md](CHANGELOG.md) for complete details.
 ### 1. Create the `imswitch21` conda environment
 
 ```bash
-conda create -n imswitch21 python=3.11 -y
+conda create -n imswitch21 python=3.12 -y
 conda activate imswitch21
 ```
 
@@ -145,6 +145,14 @@ pip install "PySide6==6.8.*" qtpy napari pyqtgraph qdarkstyle   # Qt 6.8 — rec
 pip install -e ".[PyQt5]"                                       # Qt 5.15.2, GUI stack included
 ```
 
+Then switch psygnal to its uncompiled modules — with the mypyc-compiled ones,
+napari's plugin discovery dies inside ImSwitch with `TypeError: 'object' object
+is not subscriptable`:
+
+```bash
+python -c "import psygnal.utils; psygnal.utils.decompile()"
+```
+
 On the PySide6 path the extra packages are **not optional**: `qtpy` is the
 abstraction layer ImSwitch imports first (`imcommon/framework/qt.py`), the
 camera view is an embedded `napari` viewer, and the main window needs
@@ -186,16 +194,24 @@ the ESP32 serial device (`ESP32Manager`). Adjust `serialport` to your ESP32 port
 one HIK camera is attached. Then select the file in ImSwitch as the active setup
 (*Settings → setup file*) and restart ImSwitch.
 
-### 5. Install the recording plugin
+### 5. Install the napari plugins
 
-Inside the activated `imswitch21` environment. The plugin is not on PyPI —
-install it from source:
+Inside the activated `imswitch21` environment. None of the three plugins is on
+PyPI — all install from source, and they share one environment:
 
 ```bash
 git clone https://github.com/s1alknau/Nematostella-time-series.git
-cd Nematostella-time-series
-pip install -e .
+cd Nematostella-time-series && pip install -e . && cd ..          # recording
+
+git clone https://github.com/s1alknau/napari-hdf5-activity.git
+cd napari-hdf5-activity && pip install -e ".[zarr]" && cd ..      # analysis
+
+git clone https://github.com/s1alknau/napari-lsft.git
+cd napari-lsft && pip install -e ".[control,stream]" && cd ..     # light sheet
 ```
+
+The analysis plugin requires Python ≥ 3.12 — that is why step 1 creates a 3.12
+environment.
 
 Without a HIK camera the plugin also runs in a plain `napari` session — steps 2–4
 are only needed for the ImSwitch/HIK GigE camera path.

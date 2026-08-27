@@ -103,7 +103,7 @@ be in place *before* ImSwitch is started for the first time.
    napari and the plugin.
 
     ```bash
-    conda create -n imswitch21 python=3.11 -y
+    conda create -n imswitch21 python=3.12 -y
     conda activate imswitch21
     ```
 
@@ -134,6 +134,14 @@ be in place *before* ImSwitch is started for the first time.
     `ModuleNotFoundError: No module named 'qtpy'`. On the Qt 5 path,
     `pip install -e ".[PyQt5]"` covers the same set.
 
+    Then switch psygnal to its uncompiled modules — otherwise napari's plugin
+    discovery dies inside ImSwitch with
+    `TypeError: 'object' object is not subscriptable`:
+
+    ```bash
+    python -c "import psygnal.utils; psygnal.utils.decompile()"
+    ```
+
     Don't start ImSwitch yet — finish step 5 first. The configuration folder
     `~/ImSwitchConfig/` with its `imcontrol_setups/` subfolder is
     created on the first start; create it now (`mkdir -p
@@ -146,19 +154,23 @@ be in place *before* ImSwitch is started for the first time.
    (ESP32 port) and `cameraListIndex`, then select it in ImSwitch as the active
    setup and restart.
 
-5. **Install the plugin and its requirements** — still inside the activated
-   `imswitch21` environment:
-
-    The plugin is not on PyPI — install it from source:
+5. **Install the napari plugins** — still inside the activated `imswitch21`
+   environment. None of them is on PyPI, all install from source:
 
     ```bash
     git clone https://github.com/s1alknau/Nematostella-time-series.git
-    cd Nematostella-time-series
-    pip install -e .
+    cd Nematostella-time-series && pip install -e . && cd ..
+
+    git clone https://github.com/s1alknau/napari-hdf5-activity.git
+    cd napari-hdf5-activity && pip install -e ".[zarr]" && cd ..
+
+    git clone https://github.com/s1alknau/napari-lsft.git
+    cd napari-lsft && pip install -e ".[control,stream]" && cd ..
     ```
 
-    Requires Python ≥ 3.10 and napari ≥ 0.4.19. Optional: `opencv-python` for
-    the Live Analysis tab (`pip install -e ".[opencv]"`).
+    Recording needs napari ≥ 0.4.19; the analysis plugin sets the Python floor
+    at 3.12, which is why step 1 creates a 3.12 environment. Optional:
+    `pip install -e ".[opencv]"` for the recording plugin's Live Analysis tab.
 
 6. **Build the imager** — see [Hardware & Assembly](hardware.md), the
    [Hardware Photos](images/README.md) and the [3D-Printed Parts](3D_Druck/README.md).

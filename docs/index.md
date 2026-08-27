@@ -91,8 +91,8 @@ Both plugins appear under napari's *Plugins* menu after installation.
     publishes, so ImSwitch, the **Hik Robotics MVS SDK**, a **Qt binding with the
     GUI packages** (`qtpy`, `napari`, `pyqtgraph`, `qdarkstyle` — ImSwitch's own
     install brings none of them) and the camera setup JSON have to be in place
-    first — all inside one conda environment (`imswitch21`), and installed
-    *before* ImSwitch is started. See
+    first — all inside one conda environment (`imswitch21`, Python 3.12), and
+    installed *before* ImSwitch is started. See
     [Software Setup](software-setup.md) for the full walkthrough, or
     [Get started](recording.md#get-started) for the short version.
 
