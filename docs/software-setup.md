@@ -379,6 +379,7 @@ configuration. Without such a file the plugin runs in single-camera mode.
 | --- | --- |
 | `ModuleNotFoundError: No module named 'qtpy'` while starting ImSwitch | The GUI stack is missing — `pip install -e .` installs no Qt packages. Install the binding **and** `qtpy napari pyqtgraph qdarkstyle`, see [Step 3](#choose-a-qt-binding-and-install-the-gui-stack). |
 | `ModuleNotFoundError` for `napari`, `pyqtgraph` or `qdarkstyle` | Same cause, same fix — or simply run Step 5 (the plugin pulls `qtpy` and `napari` in) before starting ImSwitch. |
+| `Fatal Python error: Segmentation fault` in `launchApp` | ImSwitch dies the moment the event loop starts — usually QtWebEngine, see [Segfault when the GUI starts](#segfault-when-the-gui-starts-linux-pyside6). |
 | `qt.qpa.plugin: Could not load the Qt platform plugin "xcb"` (Linux) | Missing system libraries or no display — see the note in [Step 3](#choose-a-qt-binding-and-install-the-gui-stack). |
 | Plugin missing in the *Plugins* menu | Installed into a different environment. `conda activate imswitch21`, reinstall, restart napari/ImSwitch. |
 | `No camera layer found (ensure live view is started in ImSwitch)` | The live view is not running, or the layer name contains none of `Live:`, `Widefield`, `Camera`, `Detector`. Start the live view or rename the layer. |
@@ -388,3 +389,51 @@ configuration. Without such a file the plugin runs in single-camera mode.
 | ESP32 **Connect** fails, port busy | Another process holds the port (ImSwitch rs232 device, serial monitor) — see the warning in [Step 4](#what-the-fields-mean). |
 | Exposure in the plugin looks wrong | The plugin reads the exposure back from ImSwitch in ms; change it in ImSwitch's settings, not in the plugin. |
 | Frames too dark or too bright | Run an LED calibration and keep `gain` and `blacklevel` at `0` so the calibration stays valid. |
+
+### Segfault when the GUI starts (Linux, PySide6)
+
+ImSwitch loads, the window appears for a moment, then the process dies without a
+Python exception:
+
+```
+Fatal Python error: Segmentation fault
+
+Current thread (most recent call first):
+  File ".../qtpy/_utils.py", line 53 in possibly_static_exec
+  File ".../imswitch/imcommon/applaunch.py", line 169 in launchApp
+Extension modules: ... PySide6.QtWebEngineCore, PySide6.QtWebEngineWidgets ...
+```
+
+If `PySide6.QtWebEngineCore` / `QtWebEngineWidgets` appear in the extension
+module list, ImSwitch's Jupyter notebook module (`imnotebook`) is the trigger.
+QtWebEngine requires `Qt.AA_ShareOpenGLContexts` to be set **before** the
+`QApplication` is constructed. ImSwitch sets that attribute only on the Qt 5
+path (`imcommon/applaunch.py`), and it imports its modules — `imnotebook`
+included — *after* the application object exists. On Qt 6 the web engine then
+initializes without a shared GL context and takes the process down as soon as
+`app.exec_()` runs.
+
+This rig does not need the notebook module. Disable it in
+`~/Documents/ImSwitchConfig/config/modules.json`:
+
+```json
+{
+    "enabled": ["imcontrol"]
+}
+```
+
+The default is `["imcontrol", "imscripting", "imnotebook"]`; `imscripting` is
+dropped by ImSwitch at startup anyway, so `imcontrol` alone is what this
+workflow uses. Start ImSwitch again — without `imnotebook`, QtWebEngine is
+never imported.
+
+If it still segfaults, the display stack is the next suspect:
+
+```bash
+echo $XDG_SESSION_TYPE              # "wayland" is worth ruling out
+QT_QPA_PLATFORM=xcb imswitch        # force X11 instead of Wayland
+LIBGL_ALWAYS_SOFTWARE=1 imswitch    # software OpenGL (napari/vispy on old iGPUs)
+```
+
+Whichever of the two makes the crash go away identifies the cause: the first
+points at the Wayland platform plugin, the second at the OpenGL driver.
