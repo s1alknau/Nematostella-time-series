@@ -19,7 +19,7 @@ Ohne `[PyQt5]`, wenn du Qt 6 willst — siehe unten.
 | Fork | `s1alknau/ImSwitch` |
 | Branch | **`nematostella-rig`** (Standard-Branch des Forks) |
 | Basis | `openUC2/ImSwitch` @ `8b424d51` |
-| Commits darüber | 2 |
+| Commits darüber | 3 |
 
 ## Warum die Vorlage nicht reicht
 
@@ -40,6 +40,15 @@ bleibt.
 `ABCMeta.__new__` nicht auf, `_abc_impl` fehlt daher und `issubclass()` liefert
 falsche Ergebnisse.
 
+**Unter Qt 6 stürzt der Start ab.** `AA_ShareOpenGLContexts` stand im Block für
+PyQt5/PySide2. QtWebEngine — nachgezogen von `imnotebook`, das `__main__` erst
+nach `prepareApp()` importiert — braucht das Attribut aber in jeder Qt-Version,
+und es wirkt nur vor dem `QApplication`-Konstruktor. Unter PySide6 starb der
+Prozess dadurch beim Start der Event-Loop:
+
+    Fatal Python error: Segmentation fault
+      File ".../imswitch/imcommon/applaunch.py", line 169 in launchApp
+
 ## Qt 5 oder Qt 6
 
 Der zweite Commit macht die Wahl frei — vorher war PyQt5 fest verdrahtet.
@@ -59,15 +68,14 @@ sonst als vorhandenes Paket und wählt das falsche Binding.
 
 ## Die Patch-Dateien
 
-`0001-*.patch` und `0002-*.patch` sind die Rückfallebene, falls der Fork einmal
+`0001-*.patch` bis `0003-*.patch` sind die Rückfallebene, falls der Fork einmal
 nicht erreichbar ist:
 
 ```bash
 git clone https://github.com/openUC2/ImSwitch.git
 cd ImSwitch
 git checkout -b nematostella-rig 8b424d51
-git am < ../Nematostella-time-series/imswitch-patches/0001-*.patch
-git am < ../Nematostella-time-series/imswitch-patches/0002-*.patch
+git am ../Nematostella-time-series/imswitch-patches/000*.patch
 ```
 
 Patches veralten, sobald sich die Vorlage bewegt. Der Fork ist der Weg, über
