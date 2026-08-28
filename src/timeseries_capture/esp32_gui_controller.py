@@ -39,6 +39,11 @@ class ESP32GUIController(QObject):
     hardware_info_updated = pyqtSignal(dict)
     connection_error = pyqtSignal(str)  # error message
     log_message = pyqtSignal(str, str)  # message, level
+    # Internal signal: emitted from background connect thread, handled in
+    # the main (Qt) thread so QTimer is created in the correct thread —
+    # otherwise Qt warns "Timers can only be used with threads started
+    # with QThread" and the monitor tick never fires.
+    _start_monitoring_signal = pyqtSignal()
 
     def __init__(self, connection_panel, log_panel=None):
         """
@@ -81,6 +86,11 @@ class ESP32GUIController(QObject):
         # Log messages
         if self.log_panel:
             self.log_message.connect(self.log_panel.add_log)
+
+        # Route the monitor-start through a signal so QTimer is created
+        # in the main thread (self lives in the main thread; a signal
+        # emit from a background thread queues the slot back here).
+        self._start_monitoring_signal.connect(self._start_monitoring)
 
     # ========================================================================
     # GUI SIGNAL HANDLERS
@@ -177,8 +187,9 @@ class ESP32GUIController(QObject):
                 # Query hardware info
                 self._query_hardware_info()
 
-                # Start background monitoring
-                self._start_monitoring()
+                # Start background monitoring — via signal so the QTimer
+                # is created in the main thread, not this background one.
+                self._start_monitoring_signal.emit()
 
             else:
                 # Connection failed
@@ -278,8 +289,10 @@ class ESP32GUIController(QObject):
             return
 
         try:
-            # Check if still connected
-            if not self.esp32.is_connected(force_check=True):
+            # Check if still connected (cached — avoids second CMD_STATUS that
+            # would collide with the get_sensor_data() below and corrupt
+            # its 5-byte response)
+            if not self.esp32.is_connected(force_check=False):
                 logger.warning("ESP32 connection lost")
                 self._handle_connection_lost()
                 return

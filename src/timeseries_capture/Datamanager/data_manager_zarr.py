@@ -414,7 +414,11 @@ class DataManagerZarr:
     def __init__(
         self,
         telemetry_mode: TelemetryMode = TelemetryMode.STANDARD,
-        img_chunk_frames: int = 50,
+        # Matches the HDF5 writer's chunk sizing (~3.6 MB per chunk at
+        # 1024x1224 uint8). Larger shards (e.g. 50) produced 60 MB writes
+        # every ~250 s that coincided with OS I/O contention → 20-28 s
+        # spikes at the tail of long recordings.
+        img_chunk_frames: int = 3,
         ts_chunk_size: int = 512,
         flush_interval: int = 50,
         save_as_uint8: bool = False,
@@ -475,7 +479,19 @@ class DataManagerZarr:
                 )
                 assert _StoreClass is not None, "zarr store class not found"
                 self._store = _StoreClass(str(self.current_filepath))
-                self._root = zarr.open_group(store=self._store, mode="w")
+
+                # Force V3 group format so sharding (zarr.json + c/i.j.k layout)
+                # works.  Zarr 3.x defaults to V2 format for backward
+                # compatibility — without zarr_format=3 the array would land
+                # in V2 layout and fall through to the chunks-only fallback.
+                # Fall back gracefully on older zarr (which doesn't accept
+                # the kwarg).
+                try:
+                    self._root = zarr.open_group(store=self._store, mode="w", zarr_format=3)
+                    logger.info("Zarr group opened with V3 format (sharding supported)")
+                except (TypeError, ValueError) as exc:
+                    logger.warning(f"Zarr V3 format request failed ({exc}); falling back to V2")
+                    self._root = zarr.open_group(store=self._store, mode="w")
 
                 # Create groups
                 self._root.require_group("images")
@@ -640,16 +656,58 @@ class DataManagerZarr:
         self._image_shape = (h, w)
         dtype = np.uint8 if self.save_as_uint8 else frame.dtype
 
-        # Use multi-frame chunks to avoid creating one file-per-frame in the zarr store.
-        # With chunks=(1, H, W), a week-long recording at 5s intervals creates ~120k files
-        # in one directory — NTFS and Windows Defender overhead causes progressive interval
-        # drift after ~48k files (~4000 min).  img_chunk_frames=50 cuts file count by 50×.
-        self._frames_array = self._root["images"].create_dataset(
-            "frames",
-            shape=(self._images_max_frames, h, w),
-            chunks=(self.img_chunk_frames, h, w),
-            dtype=dtype,
-        )
+        # ----------------------------------------------------------------
+        # Storage layout decision: V3 sharding vs. V2 multi-frame chunks
+        # ----------------------------------------------------------------
+        # With plain multi-frame chunks (V2-style), per-frame writes trigger
+        # read-modify-write of the full chunk file (~100x write amplification:
+        # 100 MB I/O per 2 MB frame at chunks=(50, H, W)).  Over a 3-day
+        # recording this saturates even fast SSDs and produces growing
+        # interval spikes toward the end of the recording.
+        #
+        # Zarr V3 sharding solves this: chunks=(1, H, W) addresses each
+        # frame individually (append-style write inside the shard, no R-M-W),
+        # while shards=(50, H, W) keeps the on-disk file count low (1 file
+        # per 50 frames).  Best of both worlds.
+        #
+        # Verified API in Zarr 3.1.5 via scripts/test_zarr_sharding_api.py.
+        # Falls back to the V2 create_dataset path when V3 sharding is not
+        # available — preserves behaviour on environments without V3.
+        # ----------------------------------------------------------------
+        try:
+            self._frames_array = self._root["images"].create_array(
+                name="frames",
+                shape=(self._images_max_frames, h, w),
+                dtype=dtype,
+                chunks=(1, h, w),
+                shards=(self.img_chunk_frames, h, w),
+                # Compression off: matches HDF5 writer which recorded a
+                # tighter std (0.16 s vs 0.38 s) than the Blosc-lz4-compressed
+                # zarr default. Compression cost + larger deferred writes
+                # showed up as tail spikes; NVMe I/O is not the bottleneck.
+                compressors=None,
+            )
+            logger.info(
+                f"Zarr V3 SHARDED images array: ({self._images_max_frames}, {h}, {w}) "
+                f"dtype={dtype}, shards=({self.img_chunk_frames},{h},{w}), chunks=(1,{h},{w}), "
+                f"compressors=None"
+            )
+        except (TypeError, AttributeError) as e:
+            # V2 fallback: create_array without shards= or create_dataset.
+            # Used when Zarr V3 is not installed.  Suffers from ~100x write
+            # amplification for sequential per-frame writes.
+            logger.warning(
+                f"Zarr V3 sharding API not available ({type(e).__name__}: {e}); "
+                f"falling back to V2-style chunks=({self.img_chunk_frames}, H, W). "
+                f"Per-frame write amplification will be ~{self.img_chunk_frames * 2}x."
+            )
+            self._frames_array = self._root["images"].create_dataset(
+                "frames",
+                shape=(self._images_max_frames, h, w),
+                chunks=(self.img_chunk_frames, h, w),
+                dtype=dtype,
+                compressor=None,  # v2 uses singular 'compressor'
+            )
         self._frames_array.attrs["frame_height"] = h
         self._frames_array.attrs["frame_width"] = w
         self._frames_array.attrs["frame_dtype"] = str(dtype)

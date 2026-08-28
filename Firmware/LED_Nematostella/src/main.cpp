@@ -834,23 +834,18 @@ void performSyncCaptureDual() {
 // ========================================================================
 
 bool readSensorsWithValidation(float &temperature, float &humidity) {
-  // Save LED states
-  bool irWasOn = ledIrState;
-  bool whiteWasOn = ledWhiteState;
-  uint16_t maxValue = (1 << PWM_RESOLUTION) - 1;
-  uint16_t savedIrPwm = 0;
-  uint16_t savedWhitePwm = 0;
-
-  // Turn off LEDs for sensor reading
-  if (irWasOn || whiteWasOn) {
-    savedIrPwm = map(LED_POWER_PERCENT_IR, 0, 100, 0, maxValue);
-    savedWhitePwm = map(LED_POWER_PERCENT_WHITE, 0, 100, 0, maxValue);
-    ledcWrite(PWM_CHANNEL_IR, 0);
-    ledcWrite(PWM_CHANNEL_WHITE, 0);
-    delay(50);
+  // LEDs werden NIE für einen Sensor-Read ausgeschaltet (das würde
+  // während Aufnahmen sichtbares Flackern erzeugen). Statt dessen:
+  // solange eine LED an ist, geben wir den letzten gültigen (gecachten)
+  // Wert zurück und lesen erst dann neu, wenn beide LEDs aus sind.
+  // Callsites, die frische Werte brauchen (SYNC_CAPTURE*), schalten
+  // die LEDs vorher selbst aus.
+  if (ledIrState || ledWhiteState) {
+    temperature = getFilteredTemperature();
+    humidity    = getFilteredHumidity();
+    return false;
   }
 
-  // Read sensor (retry up to 3 times)
   float h = NAN, t = NAN;
   for (int attempt = 0; attempt < 3; attempt++) {
     h = dht.readHumidity();
@@ -866,10 +861,6 @@ bool readSensorsWithValidation(float &temperature, float &humidity) {
       delay(100);
     }
   }
-
-  // Restore LED states
-  if (irWasOn) ledcWrite(PWM_CHANNEL_IR, savedIrPwm);
-  if (whiteWasOn) ledcWrite(PWM_CHANNEL_WHITE, savedWhitePwm);
 
   // Check if valid
   bool valid = (!isnan(h) && !isnan(t) &&

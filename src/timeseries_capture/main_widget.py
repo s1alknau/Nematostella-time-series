@@ -20,6 +20,7 @@ from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
 # Import GUI components (from GUI subfolder)
 # Import controllers and adapters
 from .camera_adapters import create_camera_adapter
+from .defender_setup import maybe_offer_defender_setup
 from .esp32_gui_controller import ESP32GUIController
 from .GUI.esp32_connection_panel import ESP32ConnectionPanel
 from .GUI.experiment_designer import ExperimentDesignerWidget
@@ -94,6 +95,11 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
         # Initialize hardware after UI is ready
         QTimer.singleShot(500, self._initialize_hardware)
+
+        # Offer Defender exclusion setup on first run (win32 only, silent
+        # if already configured or user previously declined). Delayed so
+        # the main window is fully painted before the dialog appears.
+        QTimer.singleShot(1500, lambda: maybe_offer_defender_setup(self))
 
         logger.info("Main Widget initialized")
 
