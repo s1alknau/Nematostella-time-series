@@ -65,7 +65,8 @@ phase after the LD exposure is the one that carries the evidence.
 
 | Term | Meaning |
 |------|---------|
-| tau (τ) | intrinsic (free-running) period measured in DD |
+| tau (τ) | intrinsic **free-running** period — defined in constant conditions, so it is read from the DD phases only |
+| Dominant period | strongest peak of the Chi² periodogram in a given segment. In DD it *is* τ; under LD it is the entrained period the animals actually express, and that is the number reported as their circadian cycle |
 | ZT | Zeitgeber Time (ZT0 = lights ON) |
 | CT | Circadian Time (CT0 = subjective lights ON in DD) |
 | LD 12:12 | 12 h light / 12 h dark |
@@ -149,10 +150,16 @@ condition:
 
 **Expected results**
 
-- After 2–3 transient cycles: period converges to 24.0 h
+- Dominant period converges toward 24 h as the transients fade
 - Stable acrophase relative to ZT
 - Nocturnal animals: activity peak in dark phase (ZT12–ZT24)
 - Diurnal animals: activity peak in light phase (ZT0–ZT12)
+
+!!! warning "This is not τ"
+    Under LD the animals are driven by the Zeitgeber, so the periodogram peak is
+    the **dominant period** of entrained animals — the circadian cycle they
+    express under the light regime. τ stays reserved for the DD phases, where
+    nothing external sets the pace.
 
 **Plugin settings (Phase 2)**
 
@@ -195,15 +202,15 @@ This is the **critical phase** — it determines whether true entrainment occurr
 **Recommended analysis plan**
 
 - **Phase 1 (DD):** Chi² full → `tau_1`; Cosinor full (3 days) → `tau_1`, R², amplitude baseline.
-- **Phase 2 (LD):** Chi² full → period near 24 h; Cosinor full → Acrophase (ZT), amplitude under LD. The Z-score includes the transients.
+- **Phase 2 (LD):** Chi² full → **dominant period** (the entrained circadian cycle, expected near 24 h — not τ); Cosinor full → Acrophase (ZT), amplitude under LD. The Z-score includes the transients.
 - **Phase 3 (DD):** Chi² full → `tau_2`; Cosinor full → `tau_2`, compare amplitude to Phase 1.
 
 **Summary table (fill in per animal)**
 
-| Animal | tau_1 (h) | Acrophase ZT (h) | tau_2 (h) | Entrained? |
-|--------|-----------|------------------|-----------|------------|
-| 01 | | | | |
-| 02 | | | | |
+| Animal | tau_1 (h, DD) | Dominant period LD (h) | Acrophase ZT (h) | tau_2 (h, DD) | Entrained? |
+|--------|---------------|------------------------|------------------|---------------|------------|
+| 01 | | | | | |
+| 02 | | | | | |
 
 ### 7. Controls
 
@@ -240,8 +247,8 @@ experiment_YYYY-MM-DD/
 
 ### 9. Expected outcomes and interpretation
 
-- **Scenario A — full entrainment (ideal):** `tau_1` ≠ 24 h → stable acrophase in LD → `tau_2` ≈ `tau_1`. The animal has a genuine free-running clock that phase-locks to the LD cycle and returns to its own τ in DD.
-- **Scenario B — no entrainment:** `tau_1` ≠ 24 h → no stable acrophase in LD → `tau_2` ≈ `tau_1`. LD has no synchronizing effect; check light intensity and conditions.
+- **Scenario A — full entrainment (ideal):** `tau_1` ≠ 24 h → dominant period ≈ 24 h with a stable acrophase in LD → `tau_2` ≈ `tau_1`. The animal has a genuine free-running clock that phase-locks to the LD cycle and returns to its own τ in DD.
+- **Scenario B — no entrainment:** `tau_1` ≠ 24 h → dominant period stays off 24 h and no stable acrophase in LD → `tau_2` ≈ `tau_1`. LD has no synchronizing effect; check light intensity and conditions.
 - **Scenario C — phase shift (entrainment in progress):** `tau_2` ≈ `tau_1` but acrophase is shifted relative to `tau_1`. LD caused a permanent phase shift; the phase angle ψ (acrophase ZT relative to ZT0) describes the new clock–environment relationship.
 
 ### 10. Plugin settings cheat sheet
