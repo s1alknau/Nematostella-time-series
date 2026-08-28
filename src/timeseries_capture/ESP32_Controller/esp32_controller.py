@@ -100,11 +100,14 @@ class ESP32Controller:
             # Set camera type to HIK GigE
             self.set_camera_type(CameraTypes.HIK_GIGE)
 
-            # Query initial LED status
-            try:
-                self.get_led_status()
-            except Exception:
-                pass
+            # Note: get_led_status() removed from connect sequence.
+            # In the GUI context this call sometimes returns 0xFF header,
+            # leaves the serial buffer misaligned, and breaks the next
+            # get_sensor_data() (5-byte read times out). LED state is
+            # tracked in Python (esp32_state.py) and doesn't need querying.
+            # Extra clear + short delay so the next query starts clean.
+            self.comm.clear_buffers(aggressive=True)
+            time.sleep(0.05)
 
             logger.info("ESP32 connected and initialized")
 
@@ -505,7 +508,10 @@ class ESP32Controller:
             return None
 
         # Read 5-byte response
-        response_data = self.comm.read_bytes(5, timeout=1.0)
+        # DHT22 response arrives in ~50-100ms; 0.3s is plenty. Keeping this
+        # tight matters during recording: each failed read costs the frame
+        # loop the full timeout as wallclock, driving cumulative drift.
+        response_data = self.comm.read_bytes(5, timeout=0.3)
 
         if not response_data or len(response_data) < 5:
             logger.error("No sensor data response")
@@ -523,6 +529,23 @@ class ESP32Controller:
             # Handle signed int16 (two's complement)
             if temp_raw > 32767:
                 temp_raw = temp_raw - 65536
+
+            # Humidity: uint16 big-endian, scaled by 10
+            hum_raw_early = (response_data[3] << 8) | response_data[4]
+
+            # Firmware-fallback fingerprint: readSensorsWithValidation()
+            # failed on the ESP32 and fell back to getFilteredTemperature/
+            # Humidity() with uninitialised history -> raw_temp=0, raw_hum
+            # was 100 in observed traces (10.0%). Treat as sensor error so
+            # the caller keeps the previous cached value instead of
+            # writing a bogus -2.0 °C / 10.0 % into the recording.
+            if temp_raw == 0 and hum_raw_early == 100:
+                logger.warning(
+                    "DHT22 firmware-fallback fingerprint (raw_temp=0, raw_hum=100) "
+                    "— treating as sensor error"
+                )
+                return None
+
             temperature = temp_raw / 10.0
 
             # Apply calibration offset to compensate for ESP32 self-heating and LED proximity heating
@@ -530,8 +553,8 @@ class ESP32Controller:
             TEMPERATURE_CALIBRATION_OFFSET = -2.0
             temperature = temperature + TEMPERATURE_CALIBRATION_OFFSET
 
-            # Humidity: uint16 big-endian, scaled by 10
-            hum_raw = (response_data[3] << 8) | response_data[4]
+            # Humidity: uint16 big-endian, scaled by 10 (raw already read above)
+            hum_raw = hum_raw_early
             humidity = hum_raw / 10.0
 
             # Validate ranges

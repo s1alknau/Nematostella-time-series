@@ -60,6 +60,57 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Windows timing helpers — used only during _recording_loop on win32.
+# On Windows the default scheduler tick is ~15.6 ms, so time.sleep(0.005) can
+# take 15-31 ms. timeBeginPeriod(1) drops the tick to 1 ms system-wide for the
+# lifetime of the process (paired with timeEndPeriod). SetPriorityClass to
+# HIGH puts the recording process ahead of most background work (Defender
+# scans etc.); we deliberately do NOT use REALTIME because that can starve
+# the OS itself. Both no-op cleanly on non-Windows platforms.
+# ============================================================================
+_WIN_HIGH_PRIORITY_CLASS = 0x00000080
+
+
+def _win32_begin_precise_timing():
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        winmm = ctypes.WinDLL("winmm")
+        winmm.timeBeginPeriod(1)
+        return winmm
+    except Exception as e:
+        logger.warning(f"timeBeginPeriod(1) failed: {e}")
+        return None
+
+
+def _win32_end_precise_timing(winmm):
+    if winmm is None:
+        return
+    try:
+        winmm.timeEndPeriod(1)
+    except Exception:
+        pass
+
+
+def _win32_elevate_priority():
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        handle = ctypes.windll.kernel32.GetCurrentProcess()
+        ok = ctypes.windll.kernel32.SetPriorityClass(handle, _WIN_HIGH_PRIORITY_CLASS)
+        if not ok:
+            logger.warning("SetPriorityClass(HIGH) returned 0")
+        else:
+            logger.info("Process priority set to HIGH for recording loop")
+    except Exception as e:
+        logger.warning(f"SetPriorityClass failed: {e}")
+
+
 class RecordingManager(QObject):
     """
     Haupt-Manager für Recording.
@@ -461,12 +512,17 @@ class RecordingManager(QObject):
         Haupt-Recording-Loop.
         Läuft in separatem Thread.
 
-        CRITICAL TIMING FIX:
-        - Sleep for FULL duration (not in 0.1s chunks) to prevent timing drift
-        - Check every 0.5s for pause/stop to remain responsive
-        - This prevents overhead accumulation over long recordings
+        TIMING v2.5 (win32 precise mode):
+        - timeBeginPeriod(1) drops scheduler tick from 15.6 ms to 1 ms
+        - Process priority HIGH so Windows scheduler favours us
+        - Deadline-based sleep in 0.5 s / 50 ms chunks
+        - Final <3 ms: spin-lock instead of sleep (sub-ms deadline accuracy)
+        - No-op on non-Windows platforms
         """
         logger.info("Recording loop started")
+
+        _win32_elevate_priority()
+        _winmm = _win32_begin_precise_timing()
 
         try:
             while not self._stop_requested and not self.state.is_complete():
@@ -476,7 +532,7 @@ class RecordingManager(QObject):
                     continue
 
                 # ================================================================
-                # OPTIMIZED TIMING v2.4: Deadline-based sleep with minimal jitter
+                # OPTIMIZED TIMING v2.5: Deadline-based sleep with spin-lock tail
                 # ================================================================
                 # Calculate absolute deadline for next frame (prevents jitter accumulation)
                 next_frame_deadline = self.state.start_time + (
@@ -504,10 +560,18 @@ class RecordingManager(QObject):
                     elif time_remaining > 0.05:
                         # Medium wait: sleep 50ms chunk (more precise near deadline)
                         time.sleep(0.05)
+                    elif time_remaining > 0.003:
+                        # Sleep to ~2 ms before deadline — with the 1 ms Win
+                        # timer this is reliable within a few hundred µs.
+                        time.sleep(time_remaining - 0.002)
                     else:
-                        # Final precision sleep to exact deadline
-                        time.sleep(time_remaining)
-                        break  # Exit after precision sleep
+                        # Spin-lock the final <3 ms: on Windows even a 1 ms
+                        # sleep can round up to 2-3 ms, so busy-wait is the
+                        # only way to hit the deadline within ~100 µs. CPU
+                        # cost is negligible (<3 ms out of 5 s = 0.06 %).
+                        while time.time() < next_frame_deadline:
+                            pass
+                        break
 
                 # Final check after sleep (might have been paused/stopped)
                 if self._stop_requested or self.state.is_paused():
@@ -532,6 +596,8 @@ class RecordingManager(QObject):
             logger.error(f"Recording loop error: {e}")
             self.error_occurred.emit(f"Recording error: {e}")
             self._finalize_recording()
+        finally:
+            _win32_end_precise_timing(_winmm)
 
     def _capture_single_frame(self, deadline: float = 0.0):
         """Captured ein einzelnes Frame"""
