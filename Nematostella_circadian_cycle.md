@@ -72,7 +72,7 @@ phase after the LD exposure is the one that carries the evidence.
 | LD 12:12 | 12 h light / 12 h dark |
 | DD | constant darkness |
 | LL | constant light |
-| Acrophase | time of peak activity relative to ZT0 |
+| Acrophase | time of peak activity relative to ZT0 — from the Cosinor fit, reported as *Peak Time* (peak of the first fitted oscillation) |
 | Transient | cycles of gradual phase adjustment after LD onset |
 
 ### 2. Full protocol — overview
@@ -170,10 +170,21 @@ condition:
 - Time Range: Full Recording — all three cycles
 - Chi² on Full Recording → shows the period transition
 
-**Acrophase calculation**
+**Acrophase — where the number comes from**
 
-- If recording started at ZT0: Peak Time = Acrophase directly.
-- If recording started at ZT_offset: `Acrophase (ZT) = (Peak Time + ZT_offset) mod 24`.
+The acrophase is read from the **Cosinor fit**, not from the periodogram. The
+plugin reports it as **Peak Time**: the time from recording start to the peak of
+the *first* oscillation of the fitted cosine, i.e. within the first period
+(`t_peak = −φ/ω mod period`). The periodogram contributes the period, the
+Cosinor contributes the phase.
+
+- If the recording started at ZT0: Peak Time = acrophase directly.
+- If it started at ZT_offset: `Acrophase (ZT) = (Peak Time + ZT_offset) mod 24`.
+
+!!! note "Peak Time is a proxy"
+    It only becomes the biological acrophase once ZT0 is known **and** the fit is
+    significant — report it together with the Cosinor R², the p-value and the
+    95 % confidence interval the plugin gives for Peak Time.
 
 ### 5. Phase 3 — DD after entrainment
 
@@ -202,7 +213,7 @@ This is the **critical phase** — it determines whether true entrainment occurr
 **Recommended analysis plan**
 
 - **Phase 1 (DD):** Chi² full → `tau_1`; Cosinor full (3 days) → `tau_1`, R², amplitude baseline.
-- **Phase 2 (LD):** Chi² full → **dominant period** (the entrained circadian cycle, expected near 24 h — not τ); Cosinor full → Acrophase (ZT), amplitude under LD. The Z-score includes the transients.
+- **Phase 2 (LD):** Chi² full → **dominant period** (the entrained circadian cycle, expected near 24 h — not τ); Cosinor full → Peak Time → Acrophase (ZT), amplitude under LD. The Z-score includes the transients.
 - **Phase 3 (DD):** Chi² full → `tau_2`; Cosinor full → `tau_2`, compare amplitude to Phase 1.
 
 **Summary table (fill in per animal)**
