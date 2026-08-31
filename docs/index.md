@@ -4,11 +4,34 @@ hide:
   - toc
 ---
 
+<div class="hero-row" markdown>
+
+<div class="hero-text" markdown>
+
 # Nematostella Toolkit
 
 <p class="hero-subtitle">An open-source <a href="https://napari.org">napari</a> toolkit for studying
 circadian rhythms and sleep-like behavior in <em>Nematostella vectensis</em> —
 from synchronized image capture to automated activity analysis.</p>
+
+</div>
+
+<div class="hero-media">
+  <figure>
+    <img src="images/video/nematostella-phasecontrast.gif"
+         alt="Nematostella vectensis moving its tentacles, phase contrast time lapse"
+         loading="lazy" width="347" height="260">
+    <figcaption>Phase contrast</figcaption>
+  </figure>
+  <figure>
+    <img src="images/video/nematostella-dapi.gif"
+         alt="Nematostella vectensis under a DAPI filter set, fluorescence time lapse"
+         loading="lazy" width="347" height="260">
+    <figcaption>Fluorescence, DAPI filter set</figcaption>
+  </figure>
+</div>
+
+</div>
 
 <div class="grid cards" markdown>
 
