@@ -113,11 +113,16 @@ class LEDControlPanel(QWidget):
         power_layout = QFormLayout()
 
         # IR LED Power
+        # valueChanged fires on every tick of a slider drag → sending an
+        # ESP32 command each time saturated the serial queue (each command
+        # waits up to 1 s for ACK) and the LED ended up in an inconsistent
+        # state. Wire the ESP32 command to sliderReleased only; keep the
+        # cheap in-GUI label update on valueChanged so the % follows the
+        # thumb live.
         ir_layout = QHBoxLayout()
         self.ir_power_slider = QSlider(Qt.Horizontal)
         self.ir_power_slider.setRange(0, 100)
         self.ir_power_slider.setValue(100)
-        self.ir_power_slider.valueChanged.connect(lambda v: self._on_power_changed("ir", v))
         ir_layout.addWidget(self.ir_power_slider)
 
         self.ir_power_label = QLabel("100%")
@@ -126,15 +131,17 @@ class LEDControlPanel(QWidget):
         ir_layout.addWidget(self.ir_power_label)
 
         self.ir_power_slider.valueChanged.connect(lambda v: self.ir_power_label.setText(f"{v}%"))
+        self.ir_power_slider.sliderReleased.connect(
+            lambda: self._on_power_changed("ir", self.ir_power_slider.value())
+        )
 
         power_layout.addRow("IR LED Power:", ir_layout)
 
-        # White LED Power
+        # White LED Power (same reasoning as IR: command only on release)
         white_layout = QHBoxLayout()
         self.white_power_slider = QSlider(Qt.Horizontal)
         self.white_power_slider.setRange(0, 100)
         self.white_power_slider.setValue(50)
-        self.white_power_slider.valueChanged.connect(lambda v: self._on_power_changed("white", v))
         white_layout.addWidget(self.white_power_slider)
 
         self.white_power_label = QLabel("50%")
@@ -144,6 +151,9 @@ class LEDControlPanel(QWidget):
 
         self.white_power_slider.valueChanged.connect(
             lambda v: self.white_power_label.setText(f"{v}%")
+        )
+        self.white_power_slider.sliderReleased.connect(
+            lambda: self._on_power_changed("white", self.white_power_slider.value())
         )
 
         power_layout.addRow("White LED Power:", white_layout)
