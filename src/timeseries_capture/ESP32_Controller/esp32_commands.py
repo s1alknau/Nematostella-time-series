@@ -25,7 +25,11 @@ class Commands:
     """Command-Bytes die an ESP32 gesendet werden"""
 
     LED_ON = 0x01
-    LED_OFF = 0x00
+    # LED_OFF moved 0x00 -> 0x03 (matches firmware v2.4+). 0x00 is now
+    # explicitly ignored by the firmware to defend against spurious null
+    # bytes on the UART line (DTR/RTS toggles, buffer clears, line noise)
+    # that used to silently switch the LED off at random.
+    LED_OFF = 0x03
     STATUS = 0x02
     SYNC_CAPTURE = 0x0C
     SET_LED_POWER = 0x10
@@ -380,7 +384,7 @@ class ProtocolDocs:
     LED CONTROL:
     ------------
     - LED_ON: CMD_LED_ON (0x01) → schaltet aktuell gewählte LED ein
-    - LED_OFF: CMD_LED_OFF (0x00) → schaltet aktuell gewählte LED aus
+    - LED_OFF: CMD_LED_OFF (0x03) → schaltet aktuell gewählte LED aus
     - SET_LED_POWER: CMD_SET_LED_POWER (0x10) + power_byte
     - SET_IR_POWER: CMD_SET_IR_POWER (0x24) + power_byte
     - SET_WHITE_POWER: CMD_SET_WHITE_POWER (0x25) + power_byte

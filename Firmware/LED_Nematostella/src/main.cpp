@@ -63,7 +63,11 @@ const int PWM_RESOLUTION     = 10;
 
 // COMMANDS
 const byte CMD_LED_ON           = 0x01;
-const byte CMD_LED_OFF          = 0x00;
+// CMD_LED_OFF moved from 0x00 to 0x03 to defend against spurious null bytes
+// on the UART line (DTR/RTS toggles, buffer clears, USB re-enumeration,
+// line noise) that otherwise silently switched the LED off. 0x00 is now
+// explicitly ignored in the command switch below.
+const byte CMD_LED_OFF          = 0x03;
 const byte CMD_STATUS           = 0x02;
 const byte CMD_SYNC_CAPTURE     = 0x0C;
 const byte CMD_SET_LED_POWER    = 0x10;
@@ -284,6 +288,16 @@ void loop() {
     byte cmd = Serial.read();
 
     switch (cmd) {
+
+      // ================================================================
+      // 0x00 — Ignore stray null bytes (line noise, DTR/RTS pulses,
+      // uninitialised serial buffers, USB re-enumeration). Any noise byte
+      // of 0x00 used to be interpreted as CMD_LED_OFF and silently
+      // switched the LED off.
+      // ================================================================
+      case 0x00:
+        // no-op, no response — don't pollute the serial stream
+        break;
 
       // ================================================================
       // ✅ LED ON - PYTHON COMPATIBLE
