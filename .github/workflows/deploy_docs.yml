@@ -13,6 +13,14 @@ on:
       - "CHANGELOG.md"
       - "Nematostella_circadian_cycle.md"
       - ".github/workflows/deploy_docs.yml"
+  # Also run after firmware_build.yml pushes new firmware binaries.
+  # A bot-commit pushed via GITHUB_TOKEN does NOT trigger the `push` filter
+  # above (GitHub anti-recursion), so without this workflow_run trigger the
+  # gh-pages site would keep serving the previous firmware.bin forever.
+  workflow_run:
+    workflows: ["Build Firmware & Update Web Installer"]
+    types: [completed]
+    branches: [Nematostella-time-series-IR]
   workflow_dispatch:
 
 # Official GitHub Pages deployment (Settings -> Pages -> Source: "GitHub Actions").
@@ -28,6 +36,10 @@ concurrency:
 
 jobs:
   build:
+    # For workflow_run triggers, only run if the upstream firmware build
+    # actually succeeded — otherwise we'd deploy stale firmware binaries.
+    # For push/workflow_dispatch triggers, always run.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout recording plugin (this repo)
