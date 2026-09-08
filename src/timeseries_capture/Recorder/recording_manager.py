@@ -867,8 +867,15 @@ class RecordingManager(QObject):
                 metadata["ir_led_power"] = -1
                 metadata["white_led_power"] = -1
 
-            # Add capture method
-            if "error" in metadata:
+            # Add capture method. A more specific value may already have been
+            # set further up - "dark_frame_recovered" when the brightness retry
+            # kicked in, "capture_failed_placeholder_replicated" when a frame
+            # had to be substituted. Those must survive, otherwise every frame
+            # in the file claims to be an ordinary capture and the recording
+            # cannot be told apart from a healthy one afterwards.
+            if metadata.get("capture_method"):
+                pass
+            elif "error" in metadata:
                 metadata["capture_method"] = "failed"
             elif metadata.get("success", False):
                 metadata["capture_method"] = "normal"

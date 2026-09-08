@@ -111,7 +111,7 @@ class FrameCaptureService:
             if not self._led_is_on and not _esp32_reconnecting:
                 stabilization_sec = self.stabilization_ms / 1000.0
 
-                if self._white_led_continuous:
+                if self._white_led_continuous and (dual_mode or led_type == "white"):
                     # White LED ist dauerhaft an (Tagphase-Modus)
                     if dual_mode:
                         # White läuft durch — nur IR zusätzlich einschalten
@@ -260,7 +260,7 @@ class FrameCaptureService:
             # =================================================================
             if self._led_is_on and not _esp32_reconnecting:
                 try:
-                    if self._white_led_continuous:
+                    if self._white_led_continuous and (dual_mode or led_type == "white"):
                         # White LED bleibt an — nur IR abschalten (falls Dual-Modus)
                         if dual_mode:
                             self.esp32.led_off("ir")
@@ -403,10 +403,16 @@ class FrameCaptureService:
         elif not enabled and self._white_led_continuous:
             try:
                 self.esp32.led_off("white")
-                self._white_led_continuous = False
                 logger.info("[WHITE CONTINUOUS] White LED turned OFF (night phase start)")
             except Exception as e:
                 logger.warning(f"[WHITE CONTINUOUS] Failed to turn off White LED: {e}")
+            finally:
+                # Clear the flag even when the command failed. Leaving it set
+                # makes every following frame believe a white LED is lighting
+                # the scene, so the LED the frame actually needs never gets
+                # switched on - same reasoning as the reset in the led_off
+                # handler above.
+                self._white_led_continuous = False
 
     def query_sensors_if_needed(self) -> bool:
         """
