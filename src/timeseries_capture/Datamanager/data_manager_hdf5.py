@@ -1080,7 +1080,13 @@ class DataManager:
                     "temperature_celsius": metadata.get("temperature", 0.0),
                     "humidity_percent": metadata.get("humidity", 0.0),
                     "led_type_used": metadata.get("led_type", "unknown"),
-                    "sync_success": metadata.get("success", True),
+                    # sync_success carries the LED verification when the
+                    # capture reported one: a frame whose LED never lit is
+                    # a successful capture of an unlit scene, and only the
+                    # readback tells the two apart afterwards.
+                    "sync_success": metadata.get(
+                        "led_verified", metadata.get("success", True)
+                    ),
                     "camera_trigger_latency_ms": metadata.get(
                         "exposure_ms", metadata.get("camera_trigger_latency_ms", 20)
                     ),

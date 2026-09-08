@@ -98,6 +98,7 @@ class FrameCaptureService:
             # SCHRITT 1: LED Configuration (turn on if needed)
             # =================================================================
             pulse_start = time.time()
+            led_verified = True  # bleibt True, wo keine LED geschaltet werden muss
 
             # If a background reconnect is in progress, skip LED commands entirely
             # and capture whatever the camera has (frame will likely be dark and
@@ -152,6 +153,8 @@ class FrameCaptureService:
                     # so the next frame the camera produces is fully exposed under
                     # the stable LED. For short exposures the 1 s default dominates;
                     # for long exposures (>500 ms) we extend to 2× exposure.
+                    led_verified = self.verify_led_on(led_type, dual_mode)
+
                     exposure_sec = self.exposure_ms / 1000.0
                     effective_stab_sec = max(stabilization_sec, 2.0 * exposure_sec)
                     time.sleep(effective_stab_sec)
@@ -233,6 +236,7 @@ class FrameCaptureService:
                 "led_config_changed": led_config_changed,
                 "led_was_reused": not led_config_changed,
                 "led_is_on": self._led_is_on,
+                "led_verified": led_verified,
                 # LED Configuration
                 "led_type": led_type if not dual_mode else "dual",
                 "dual_mode": dual_mode,
@@ -383,6 +387,74 @@ class FrameCaptureService:
             self._led_is_on = False
             self._current_led_type = None
             self._white_led_continuous = False
+
+    def verify_led_on(self, led_type: str, dual_mode: bool, attempts: int = 3) -> bool:
+        """
+        Make sure the LED this frame needs is actually lit.
+
+        led_on() returning True only means the ESP32 acknowledged the command,
+        not that the LED stayed on. Recordings show otherwise: in a dark phase
+        of twelve frames exactly one carried IR light, and single frames in the
+        light phase carried only part of the IR contribution - the signature of
+        a switch that gets undone between command and exposure.
+
+        The state is therefore read back from the firmware (CMD_GET_LED_STATUS)
+        and the command re-issued when it did not stick.
+
+        Returns:
+            True if the firmware reports the required LED on with power > 0
+        """
+        for attempt in range(attempts):
+            status = self.esp32.get_led_status()
+
+            if status is not None:
+                ir_on = bool(status.ir_state) and status.ir_power > 0
+                white_on = bool(status.white_state) and status.white_power > 0
+
+                if dual_mode:
+                    satisfied = ir_on and white_on
+                elif led_type == "white":
+                    satisfied = white_on
+                else:
+                    satisfied = ir_on
+
+                if satisfied:
+                    if attempt > 0:
+                        logger.info(
+                            f"[LED VERIFY] {led_type} LED on after {attempt} re-issue(s)"
+                        )
+                    return True
+
+                logger.warning(
+                    f"[LED VERIFY] {led_type} LED not lit "
+                    f"(ir={ir_on}/{status.ir_power}%, white={white_on}/{status.white_power}%) "
+                    f"- attempt {attempt + 1}/{attempts}"
+                )
+            else:
+                logger.warning(
+                    f"[LED VERIFY] No LED status from ESP32 - attempt {attempt + 1}/{attempts}"
+                )
+
+            if attempt < attempts - 1:
+                try:
+                    if dual_mode:
+                        self.esp32.select_led_type("ir")
+                        self.esp32.led_on()
+                        time.sleep(0.01)
+                        self.esp32.select_led_type("white")
+                        self.esp32.led_on()
+                    else:
+                        self.esp32.select_led_type(led_type)
+                        self.esp32.led_on()
+                except Exception as e:
+                    logger.warning(f"[LED VERIFY] Re-issuing LED command failed: {e}")
+                time.sleep(0.05)
+
+        logger.error(
+            f"[LED VERIFY] {led_type} LED could not be confirmed on - "
+            "frame will be captured unlit"
+        )
+        return False
 
     def set_white_continuous(self, enabled: bool):
         """
