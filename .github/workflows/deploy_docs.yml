@@ -52,7 +52,7 @@ jobs:
       # re-run it (Actions -> "Deploy MkDocs site" -> Run workflow) or push here
       # to publish updated analysis docs (User Guide, Circadian Analysis, AVI,
       # Extended Analysis) after they change in napari-hdf5-activity.
-      # Last manual trigger: per-step math/code layout in CIRCADIAN_ANALYSIS.md.
+      # Last manual trigger: per-step math/code for all six methods in EXTENDED_ANALYSIS.md.
       - name: Checkout analysis plugin (napari-hdf5-activity)
         uses: actions/checkout@v4
         with:
