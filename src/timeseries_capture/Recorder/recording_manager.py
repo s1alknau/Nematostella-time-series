@@ -676,12 +676,39 @@ class RecordingManager(QObject):
             import numpy as np
 
             def _normalize_to_255(arr: np.ndarray) -> float:
+                # Normalize brightness to a 0-255 scale so thresholds are
+                # bit-depth-agnostic. Preference order for the divisor:
+                #   1) Adapter-reported effective max (HikCam SDK PixelFormat
+                #      -> exact bit-depth). Always right when available.
+                #   2) Observed-max heuristic (fits 10/12/14/16-bit packed
+                #      into uint16 by looking at the frame's own max).
+                #   3) Full dtype capacity as last resort.
                 mean = float(np.mean(arr))
-                if arr.dtype.kind == "u":
-                    return mean * 255.0 / float(np.iinfo(arr.dtype).max)
-                elif arr.dtype.kind == "f":
+                if arr.dtype.kind == "f":
                     return mean * 255.0
-                return mean
+                if arr.dtype.kind != "u":
+                    return mean
+
+                effective_max = None
+                # 1) Ask the adapter
+                cam = getattr(self.frame_capture, "camera", None)
+                if cam is not None and hasattr(cam, "get_effective_max_value"):
+                    try:
+                        effective_max = cam.get_effective_max_value()
+                    except Exception:
+                        effective_max = None
+
+                dtype_max_full = float(np.iinfo(arr.dtype).max)
+                if effective_max is None:
+                    # 2) Fallback heuristic (backwards-compatible for adapters
+                    # that don't know their bit-depth)
+                    observed_max = float(arr.max())
+                    effective_max = dtype_max_full
+                    for bit_max in (1023.0, 4095.0, 16383.0):
+                        if observed_max <= bit_max < dtype_max_full:
+                            effective_max = bit_max
+                            break
+                return mean * 255.0 / float(effective_max)
 
             def _frame_mean(f: np.ndarray) -> float:
                 if config.use_full_frame_for_validation:

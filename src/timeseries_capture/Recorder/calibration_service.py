@@ -52,6 +52,7 @@ class CalibrationService:
         tolerance_percent: float = 2.5,  # Reduced from 5.0% to 2.5% for tighter intensity matching
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
+        effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
     ):
         """
         Args:
@@ -78,6 +79,10 @@ class CalibrationService:
         self.tolerance_percent = tolerance_percent
         self.use_full_frame = use_full_frame
         self.roi_fraction = roi_fraction
+        # Optional getter that returns the camera's actual max pixel value
+        # (e.g. 4095 for 12-bit-in-uint16). When None the code falls back
+        # to observed-max heuristics — see _measure_intensity().
+        self.effective_max_getter = effective_max_getter
 
         roi_desc = (
             "full frame"
@@ -518,18 +523,32 @@ class CalibrationService:
 
             raw_intensity = float(np.mean(region))
 
-            # Normalize to 0–255 scale so target_intensity=200 is meaningful
-            # regardless of camera bit depth (uint8, 12-bit, uint16, float)
-            if region.dtype.kind == "u":
-                # Unsigned int: uint8 (max 255), uint16 (max 65535), etc.
-                dtype_max = float(np.iinfo(region.dtype).max)
-                intensity = raw_intensity * 255.0 / dtype_max
-            elif region.dtype.kind == "f":
-                # Float: assume ImSwitch normalizes to [0, 1]
+            # Normalize to 0-255 scale so target_intensity=200 is meaningful
+            # regardless of camera bit depth (uint8, 10/12/14/16-bit-in-uint16, float).
+            # Preference:
+            #   1) Camera-adapter-reported effective max (exact, from PixelFormat).
+            #   2) Observed-max heuristic for uint types.
+            #   3) Full dtype range as last resort.
+            if region.dtype.kind == "f":
                 intensity = raw_intensity * 255.0
+            elif region.dtype.kind == "u":
+                effective_max = None
+                if self.effective_max_getter is not None:
+                    try:
+                        effective_max = self.effective_max_getter()
+                    except Exception:
+                        effective_max = None
+                dtype_max_full = float(np.iinfo(region.dtype).max)
+                if effective_max is None:
+                    observed_max = float(region.max())
+                    effective_max = dtype_max_full
+                    for bit_max in (1023.0, 4095.0, 16383.0):
+                        if observed_max <= bit_max < dtype_max_full:
+                            effective_max = bit_max
+                            break
+                intensity = raw_intensity * 255.0 / float(effective_max)
             else:
-                dtype_max = 255.0
-                intensity = raw_intensity * 255.0 / dtype_max
+                intensity = raw_intensity * 255.0 / 255.0
 
             logger.debug(
                 f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, {region_desc})"
