@@ -22,6 +22,46 @@ from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
 from .camera_adapters import create_camera_adapter
 from .defender_setup import maybe_offer_defender_setup
 from .esp32_gui_controller import ESP32GUIController
+
+
+def _try_find_imswitch_camera_manager():
+    """
+    Auto-discover ImSwitch's detectorsManager in the current Python process.
+
+    When this plugin is loaded via napari's Plugins menu (which is how it
+    runs inside ImSwitch), the napari plugin loader instantiates the widget
+    with only `napari_viewer` — `camera_manager` is never passed. That
+    forces the code path onto NapariViewerCameraAdapter, which just
+    snapshots the napari layer and cannot sync with our LED cycling
+    (empirically 11/12 frames end up dark).
+
+    ImSwitch's MasterController lives in the same interpreter, so we can
+    reach into the running process and grab the real detectorsManager.
+    Tries three progressively less elegant paths:
+
+      1. A convention attribute on the napari viewer or its window.
+      2. Import ImSwitch and check for a module-level singleton.
+      3. Walk gc.get_objects() looking for a live MasterController.
+
+    Returns the detectorsManager (which HikGigECameraAdapter accepts as
+    `camera_manager`) or None if nothing found.
+    """
+    # 3) gc-walk fallback: search live objects for ImSwitch's MasterController.
+    try:
+        import gc
+
+        for obj in gc.get_objects():
+            try:
+                if type(obj).__name__ == "MasterController" and hasattr(
+                    obj, "detectorsManager"
+                ):
+                    return obj.detectorsManager
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug(f"gc-walk for MasterController failed: {e}")
+
+    return None
 from .GUI.esp32_connection_panel import ESP32ConnectionPanel
 from .GUI.experiment_designer import ExperimentDesignerWidget
 from .GUI.led_control_panel import LEDControlPanel
@@ -310,12 +350,104 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         print(f"  Layer {i}: {layer.name if hasattr(layer, 'name') else 'unnamed'}")
             print(f"{'='*60}\n")
 
+            # If the widget was launched via napari's Plugins menu, no
+            # camera_manager was passed. Try to auto-discover ImSwitch's
+            # detectorsManager in the current process before falling back
+            # to the napari-layer scraper (which cannot sync with LEDs).
+            if not self.camera_manager:
+                discovered = _try_find_imswitch_camera_manager()
+                if discovered is not None:
+                    self.camera_manager = discovered
+                    print(f"AUTO-DISCOVERED ImSwitch camera_manager: {type(discovered).__name__}")
+                    logger.info(
+                        f"Auto-discovered ImSwitch detectorsManager via process scan: "
+                        f"{type(discovered).__name__}"
+                    )
+
             if self.camera_manager:
                 # Use HIK GigE via ImSwitch (direct SDK access)
                 self.camera_adapter = create_camera_adapter(
                     camera_type="hik", camera_manager=self.camera_manager
                 )
                 self.log_panel.add_log("HIK GigE camera initialized via ImSwitch", "SUCCESS")
+
+                # Sensor shutter mode resolution order:
+                #   1. camera_system.json 'sensor_shutter_mode' (Widget-level
+                #      override, if the user explicitly set it)
+                #   2. Value already applied by ImSwitch from the setup JSON's
+                #      managerProperties.hikcam.sensor_shutter_mode — trust it,
+                #      don't overwrite
+                #   3. Fall back to Global as our safe default (avoids
+                #      half-frame exposure on rolling-shutter sensors)
+                shutter_override = None
+                if (
+                    self.camera_system_config
+                    and self.camera_system_config.enabled_cameras
+                    and self.camera_system_config.enabled_cameras[0].sensor_shutter_mode
+                ):
+                    shutter_override = self.camera_system_config.enabled_cameras[
+                        0
+                    ].sensor_shutter_mode
+
+                try:
+                    if hasattr(self.camera_adapter, "set_sensor_shutter_mode"):
+                        # Read what the camera is currently set to (usually
+                        # reflects whatever ImSwitch applied from the setup JSON).
+                        current_mode = ""
+                        if hasattr(self.camera_adapter, "get_sensor_shutter_mode"):
+                            current_mode = self.camera_adapter.get_sensor_shutter_mode() or ""
+
+                        if shutter_override:
+                            # camera_system.json wins
+                            self.log_panel.add_log(
+                                f"Shutter mode override from camera_system.json: "
+                                f"'{shutter_override}' (was '{current_mode or '?'}')",
+                                "INFO",
+                            )
+                            shutter_result = self.camera_adapter.set_sensor_shutter_mode(
+                                shutter_override
+                            )
+                        elif current_mode in ("Global", "Rolling", "GlobalReset"):
+                            # ImSwitch setup JSON already configured it — respect that
+                            self.log_panel.add_log(
+                                f"Shutter mode from ImSwitch setup JSON: '{current_mode}' "
+                                "(no override)",
+                                "INFO",
+                            )
+                            shutter_result = {
+                                "success": True,
+                                "resulting_mode": current_mode,
+                                "device_model": "",
+                            }
+                        else:
+                            # Nothing configured anywhere — apply our safe default
+                            self.log_panel.add_log(
+                                "No shutter mode configured — applying Widget default 'Global'",
+                                "INFO",
+                            )
+                            shutter_result = self.camera_adapter.set_sensor_shutter_mode(
+                                "Global"
+                            )
+
+                        if shutter_result.get("success"):
+                            self.log_panel.add_log(
+                                f"✅ Sensor shutter active: "
+                                f"'{shutter_result.get('resulting_mode', '?')}'",
+                                "SUCCESS",
+                            )
+                        else:
+                            self.log_panel.add_log(
+                                "⚠️ Shutter mode not supported on this sensor "
+                                f"(model={shutter_result.get('device_model', '?')}). "
+                                "Camera stays in its default (usually rolling) — LED pulse must "
+                                "cover the full sensor readout time to avoid half-frame exposure.",
+                                "WARNING",
+                            )
+                except Exception as e:
+                    self.log_panel.add_log(
+                        f"Shutter-mode setup raised {type(e).__name__}: {e}",
+                        "WARNING",
+                    )
             elif self.viewer:
                 # Use Napari viewer (will auto-detect ImSwitch live layer)
                 self.camera_adapter = create_camera_adapter(
@@ -1179,6 +1311,19 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         "INFO",
                     )
 
+                    # Effective-max getter: lets the calibrator normalize to
+                    # 0-255 using the camera's real bit-depth (e.g. 4095 for
+                    # 12-bit-in-uint16), not the container's dtype-max.
+                    # Falls back to observed-max heuristic if the adapter
+                    # doesn't know its bit-depth.
+                    _adapter = self.camera_adapter
+
+                    def effective_max_getter():
+                        try:
+                            return _adapter.get_effective_max_value()
+                        except Exception:
+                            return None
+
                     # Create calibration service
                     calibrator = CalibrationService(
                         capture_callback=capture_frame,
@@ -1190,6 +1335,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         tolerance_percent=tolerance_percent,  # Use value from GUI
                         use_full_frame=use_full_frame,  # Use checkbox setting
                         roi_fraction=0.75,  # 75% x 75% center ROI when not using full frame
+                        effective_max_getter=effective_max_getter,
                     )
 
                     # Run calibration based on mode

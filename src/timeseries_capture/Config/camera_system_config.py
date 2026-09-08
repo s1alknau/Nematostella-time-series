@@ -32,6 +32,11 @@ class CameraConfig:
     calibration_light_ir: Optional[int] = None
     calibration_light_white: Optional[int] = None
 
+    # Sensor shutter mode. None means "use default (Global)".
+    # Valid values: 'Global', 'Rolling', 'GlobalReset'. Only supported on
+    # some HikCam CE-series sensors — rejected silently otherwise.
+    sensor_shutter_mode: Optional[str] = None
+
     def __post_init__(self):
         """Validate configuration"""
         if self.type == "hik_gige" and not self.ip:
@@ -144,6 +149,7 @@ def load_camera_system_config(config_path: Path) -> CameraSystemConfig:
             calibration_dark_ir=cam_data.get("calibration_dark_ir"),
             calibration_light_ir=cam_data.get("calibration_light_ir"),
             calibration_light_white=cam_data.get("calibration_light_white"),
+            sensor_shutter_mode=cam_data.get("sensor_shutter_mode"),
         )
         cameras.append(camera)
 

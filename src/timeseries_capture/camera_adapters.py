@@ -78,6 +78,20 @@ class CameraAdapter(ABC):
             pass
         return 10.0  # Default fallback
 
+    def get_effective_max_value(self) -> Optional[float]:
+        """
+        Return the maximum pixel value the camera can actually produce.
+
+        For 12-bit-in-uint16 sensors this is 4095, not the container's 65535.
+        Callers that normalize intensity to a 0-255 scale (recording brightness
+        check, calibration intensity target) should divide by this value
+        instead of np.iinfo(dtype).max.
+
+        Return None when the adapter can't determine the effective range —
+        callers then fall back to observed-max heuristics.
+        """
+        return None
+
     def disable_auto_settings(self) -> dict:
         """
         Disable auto-gain and auto-exposure before recording.
@@ -91,6 +105,21 @@ class CameraAdapter(ABC):
 # ============================================================================
 # HIK GIGE CAMERA ADAPTER (for ImSwitch)
 # ============================================================================
+
+
+# HikCam pixel-format code -> actual bit-depth. Values from
+# imswitch.imcontrol.model.interfaces.hikcamera (PixelType_Gvsp_* constants).
+# Unpacked formats keep the bits in a uint16 container; packed formats
+# transmit the same bit-depth over the wire but ImSwitch unpacks to uint16.
+_HIK_PIXEL_FORMAT_BITS = {
+    17301505: 8,   # PixelType_Gvsp_Mono8
+    17301506: 8,   # PixelType_Gvsp_Mono8_Signed
+    17825795: 10,  # PixelType_Gvsp_Mono10
+    17825797: 12,  # PixelType_Gvsp_Mono12
+    17825799: 16,  # PixelType_Gvsp_Mono16
+    17563652: 10,  # PixelType_Gvsp_Mono10_Packed  (unpacked to uint16)
+    17563654: 12,  # PixelType_Gvsp_Mono12_Packed  (unpacked to uint16)
+}
 
 
 class HikGigECameraAdapter(CameraAdapter):
@@ -153,6 +182,16 @@ class HikGigECameraAdapter(CameraAdapter):
                 logger.warning("Got None frame from camera")
                 return self._last_frame  # Return last known good frame
 
+            # DIAGNOSTIC: log raw frame stats so we can tell whether the
+            # adapter sees the same bright frame the napari live-view shows.
+            # Remove once the calibration-measures-zero bug is understood.
+            print(
+                f"[CAM-DEBUG] detector={self.detector_name} "
+                f"raw shape={frame.shape} dtype={frame.dtype} "
+                f"min={frame.min()} max={frame.max()} mean={frame.mean():.2f}",
+                flush=True,
+            )
+
             # Ensure correct format (uint16 for HIK)
             if frame.dtype != np.uint16:
                 frame = frame.astype(np.uint16)
@@ -185,6 +224,43 @@ class HikGigECameraAdapter(CameraAdapter):
 
         except Exception as e:
             logger.error(f"Failed to capture frame: {e}")
+            return None
+
+    def get_effective_max_value(self) -> Optional[float]:
+        """
+        Ask the HikCam SDK for the current PixelFormat and derive the actual
+        maximum pixel value from the format's bit-depth.
+
+        Handles 8-bit (uint8) natively as 255, and 10/12/14/16-bit packed
+        into uint16 by returning (2**bits - 1). Never returns the container's
+        dtype-max blindly.
+        """
+        try:
+            if not self.camera_manager or not self.detector_name:
+                return None
+            detector = self.camera_manager[self.detector_name]
+            # ImSwitch's Hik detector wraps the CameraHIK instance somewhere.
+            # Look at common attribute names — camera manager wrappers differ
+            # between ImSwitch versions.
+            cam = None
+            for attr in ("_camera", "camera", "_cam", "cam"):
+                cam = getattr(detector, attr, None)
+                if cam is not None and hasattr(cam, "_activePixelFormat"):
+                    break
+                cam = None
+            if cam is None:
+                return None
+            fmt = getattr(cam, "_activePixelFormat", None)
+            if fmt is None:
+                return None
+            bits = _HIK_PIXEL_FORMAT_BITS.get(int(fmt))
+            if bits is None:
+                # Unknown format code — let caller fall back to heuristic.
+                logger.debug(f"Unknown HikCam pixel format code: {fmt}")
+                return None
+            return float((1 << bits) - 1)  # 8->255, 10->1023, 12->4095, 16->65535
+        except Exception as e:
+            logger.debug(f"get_effective_max_value failed: {e}")
             return None
 
     def _restart_acquisition(self, detector) -> None:
@@ -340,6 +416,113 @@ class HikGigECameraAdapter(CameraAdapter):
             logger.error(f"disable_auto_settings failed: {e}")
 
         return result
+
+    def get_sensor_shutter_mode(self) -> str:
+        """
+        Read the sensor's current shutter mode.
+
+        Returns 'Global', 'Rolling', 'GlobalReset', or '' if the parameter is
+        unsupported or unreachable. Used by the widget to decide whether to
+        keep the mode ImSwitch applied from its setup JSON or override it.
+        """
+        try:
+            if not self.is_available():
+                return ""
+            detector = self.camera_manager[self.detector_name]
+            cam = None
+            for attr in ("_camera", "camera", "_cam", "cam"):
+                cam = getattr(detector, attr, None)
+                if cam is not None and hasattr(cam, "getSensorShutterMode"):
+                    break
+                cam = None
+            if cam is None:
+                return ""
+            return cam.getSensorShutterMode() or ""
+        except Exception as e:
+            logger.debug(f"get_sensor_shutter_mode failed: {e}")
+            return ""
+
+    def set_sensor_shutter_mode(self, mode: str = "Global") -> dict:
+        """
+        Try to switch the Hikvision sensor to Global (or GlobalReset) shutter.
+
+        Many CE-series Hikvision sensors expose a SensorShutterMode enum that
+        can toggle between Rolling, Global, and GlobalReset. When available,
+        Global eliminates the top-half-only exposure pattern caused by short
+        LED pulses on a rolling-shutter sensor.
+
+        Args:
+            mode: 'Global', 'Rolling', or 'GlobalReset'
+
+        Returns:
+            dict with keys:
+              - requested: str (what was asked for)
+              - success: bool
+              - resulting_mode: str  (readback after set; '' if unsupported)
+              - device_model: str
+        """
+        result = {
+            "requested": mode,
+            "success": False,
+            "resulting_mode": "",
+            "device_model": "",
+        }
+
+        if not self.is_available():
+            logger.warning("set_sensor_shutter_mode: camera not available")
+            return result
+
+        try:
+            detector = self.camera_manager[self.detector_name]
+
+            # Reach into the CameraHIK instance (same lookup path as
+            # get_effective_max_value — attribute names differ across ImSwitch
+            # versions).
+            cam = None
+            for attr in ("_camera", "camera", "_cam", "cam"):
+                cam = getattr(detector, attr, None)
+                if cam is not None and hasattr(cam, "setSensorShutterMode"):
+                    break
+                cam = None
+
+            if cam is None:
+                # Fall back to setParameter path if the ImSwitch detector
+                # wrapper exposes it (recent hikcamera.py registers
+                # 'sensor_shutter_mode').
+                if hasattr(detector, "setParameter"):
+                    try:
+                        ok = detector.setParameter("sensor_shutter_mode", mode)
+                        result["success"] = bool(ok)
+                        logger.info(
+                            f"SensorShutterMode via setParameter: requested='{mode}', "
+                            f"result={ok}"
+                        )
+                        return result
+                    except Exception as e:
+                        logger.warning(
+                            f"setParameter('sensor_shutter_mode', '{mode}') failed: {e}"
+                        )
+                        return result
+                logger.warning(
+                    "set_sensor_shutter_mode: CameraHIK not reachable — "
+                    "check ImSwitch version has the setSensorShutterMode patch"
+                )
+                return result
+
+            # We have the underlying CameraHIK. Call directly.
+            if hasattr(cam, "getDeviceModelName"):
+                result["device_model"] = cam.getDeviceModelName()
+
+            result["success"] = bool(cam.setSensorShutterMode(mode))
+
+            if hasattr(cam, "getSensorShutterMode"):
+                result["resulting_mode"] = cam.getSensorShutterMode()
+
+            return result
+
+        except Exception as e:
+            logger.error(f"set_sensor_shutter_mode failed: {e}")
+            return result
 
 
 # ============================================================================
