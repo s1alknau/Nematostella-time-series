@@ -14,6 +14,7 @@ Bietet einfache High-Level API für:
 """
 
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -51,6 +52,15 @@ class ESP32Controller:
         # Components
         self.comm = ESP32Communication(port=port, baudrate=baudrate)
         self.state = ESP32State()
+
+        # Serialises complete command-response sequences (send + read).
+        # Without this, thread A's read polls in ESP32Communication release
+        # _comm_lock every 10 ms, allowing thread B to send a second command
+        # in the middle — response bytes then get shuffled between the two
+        # callers (Invalid header, wrong-length read, missing ACK).
+        # RLock so a command that internally calls another (e.g. led_off from
+        # inside disconnect) does not self-deadlock.
+        self._command_lock = threading.RLock()
 
         # Auto-connect
         if auto_connect:
@@ -154,34 +164,35 @@ class ESP32Controller:
             logger.error("Not connected")
             return False
 
-        # Clear buffers
-        self.comm.clear_buffers()
+        with self._command_lock:
+            # Clear buffers
+            self.comm.clear_buffers()
 
-        # Build and send command
-        if led_type.lower() == "ir":
-            cmd = CommandBuilder.build_select_led_ir()
-            expected_response = Responses.LED_IR_SELECTED
-        elif led_type.lower() == "white":
-            cmd = CommandBuilder.build_select_led_white()
-            expected_response = Responses.LED_WHITE_SELECTED
-        else:
-            logger.error(f"Invalid LED type: {led_type}")
-            return False
+            # Build and send command
+            if led_type.lower() == "ir":
+                cmd = CommandBuilder.build_select_led_ir()
+                expected_response = Responses.LED_IR_SELECTED
+            elif led_type.lower() == "white":
+                cmd = CommandBuilder.build_select_led_white()
+                expected_response = Responses.LED_WHITE_SELECTED
+            else:
+                logger.error(f"Invalid LED type: {led_type}")
+                return False
 
-        # Send command
-        if not self.comm.send_bytes(cmd):
-            return False
+            # Send command
+            if not self.comm.send_bytes(cmd):
+                return False
 
-        # Wait for response
-        if not self.comm.read_until_response(expected_response, timeout=0.5):
-            logger.error(f"Failed to select LED type: {led_type}")
-            return False
+            # Wait for response
+            if not self.comm.read_until_response(expected_response, timeout=0.5):
+                logger.error(f"Failed to select LED type: {led_type}")
+                return False
 
-        # Update state
-        self.state.set_current_led_type(led_type)
+            # Update state
+            self.state.set_current_led_type(led_type)
 
-        logger.info(f"LED type selected: {led_type.upper()}")
-        return True
+            logger.info(f"LED type selected: {led_type.upper()}")
+            return True
 
     # ========================================================================
     # LED CONTROL (Simple On/Off)
@@ -198,23 +209,24 @@ class ESP32Controller:
             logger.error("Not connected")
             return False
 
-        self.comm.clear_buffers()
+        with self._command_lock:
+            self.comm.clear_buffers()
 
-        cmd = CommandBuilder.build_led_on()
-        if not self.comm.send_bytes(cmd):
-            return False
+            cmd = CommandBuilder.build_led_on()
+            if not self.comm.send_bytes(cmd):
+                return False
 
-        # Wait for ACK
-        if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=0.5):
-            logger.error("LED ON failed - no ACK")
-            return False
+            # Wait for ACK
+            if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=0.5):
+                logger.error("LED ON failed - no ACK")
+                return False
 
-        # Update state
-        current_type = self.state.get_current_led_type()
-        self.state.set_led_state(current_type, True)
+            # Update state
+            current_type = self.state.get_current_led_type()
+            self.state.set_led_state(current_type, True)
 
-        logger.info(f"{current_type.upper()} LED turned ON")
-        return True
+            logger.info(f"{current_type.upper()} LED turned ON")
+            return True
 
     def led_off(self, led_type: Optional[str] = None) -> bool:
         """
@@ -230,26 +242,28 @@ class ESP32Controller:
             logger.error("Not connected")
             return False
 
-        # If specific LED type given, select it first
-        if led_type is not None:
-            if not self.select_led_type(led_type):
+        with self._command_lock:
+            # If specific LED type given, select it first
+            # (select_led_type acquires _command_lock too; RLock allows re-entry)
+            if led_type is not None:
+                if not self.select_led_type(led_type):
+                    return False
+
+            self.comm.clear_buffers()
+
+            cmd = CommandBuilder.build_led_off()
+            if not self.comm.send_bytes(cmd):
                 return False
 
-        self.comm.clear_buffers()
+            # Wait for ACK (may be ACK_OFF or just success)
+            time.sleep(0.1)  # Small delay for LED to turn off
 
-        cmd = CommandBuilder.build_led_off()
-        if not self.comm.send_bytes(cmd):
-            return False
+            # Update state
+            current_type = self.state.get_current_led_type()
+            self.state.set_led_state(current_type, False)
 
-        # Wait for ACK (may be ACK_OFF or just success)
-        time.sleep(0.1)  # Small delay for LED to turn off
-
-        # Update state
-        current_type = self.state.get_current_led_type()
-        self.state.set_led_state(current_type, False)
-
-        logger.info(f"{current_type.upper()} LED turned OFF")
-        return True
+            logger.info(f"{current_type.upper()} LED turned OFF")
+            return True
 
     def led_dual_off(self) -> bool:
         """
@@ -261,19 +275,20 @@ class ESP32Controller:
         if not self.is_connected():
             return False
 
-        self.comm.clear_buffers()
+        with self._command_lock:
+            self.comm.clear_buffers()
 
-        cmd = CommandBuilder.build_led_dual_off()
-        if not self.comm.send_bytes(cmd):
-            return False
+            cmd = CommandBuilder.build_led_dual_off()
+            if not self.comm.send_bytes(cmd):
+                return False
 
-        time.sleep(0.1)
+            time.sleep(0.1)
 
-        # Update state
-        self.state.turn_off_all_leds()
+            # Update state
+            self.state.turn_off_all_leds()
 
-        logger.info("Both LEDs turned OFF")
-        return True
+            logger.info("Both LEDs turned OFF")
+            return True
 
     # ========================================================================
     # LED POWER CONTROL
@@ -307,28 +322,29 @@ class ESP32Controller:
             logger.error(f"Invalid LED type: {led_type}")
             return False
 
-        # AGGRESSIVE buffer clearing before LED power commands
-        # This is critical during dual LED setup
-        self.comm.clear_buffers(aggressive=True)
+        with self._command_lock:
+            # AGGRESSIVE buffer clearing before LED power commands
+            # This is critical during dual LED setup
+            self.comm.clear_buffers(aggressive=True)
 
-        # Send command
-        if not self.comm.send_bytes(cmd):
-            return False
+            # Send command
+            if not self.comm.send_bytes(cmd):
+                return False
 
-        # Wait for ACK (0xAA = RESPONSE_LED_ON_ACK)
-        response = self.comm.read_bytes(1, timeout=1.0)
-        if not response or response[0] != 0xAA:
-            logger.warning("LED power command may have failed (no ACK)")
-            # Don't return False - command was sent, might still work
+            # Wait for ACK (0xAA = RESPONSE_LED_ON_ACK)
+            response = self.comm.read_bytes(1, timeout=1.0)
+            if not response or response[0] != 0xAA:
+                logger.warning("LED power command may have failed (no ACK)")
+                # Don't return False - command was sent, might still work
 
-        time.sleep(0.05)  # Small delay for ESP32 to process
+            time.sleep(0.05)  # Small delay for ESP32 to process
 
-        # Update state
-        self.state.set_led_power(power, led_type)
+            # Update state
+            self.state.set_led_power(power, led_type)
 
-        led_name = led_type.upper() if led_type else self.state.get_current_led_type().upper()
-        logger.info(f"{led_name} LED power set to {power}%")
-        return True
+            led_name = led_type.upper() if led_type else self.state.get_current_led_type().upper()
+            logger.info(f"{led_name} LED power set to {power}%")
+            return True
 
     # ========================================================================
     # SYNC PULSE (For Recording)
@@ -348,30 +364,31 @@ class ESP32Controller:
         if not self.is_connected():
             raise RuntimeError("Not connected")
 
-        # AGGRESSIVE buffer clearing before sync operations
-        # This prevents buffer corruption errors from stale data
-        self.comm.clear_buffers(aggressive=True)
+        with self._command_lock:
+            # AGGRESSIVE buffer clearing before sync operations
+            # This prevents buffer corruption errors from stale data
+            self.comm.clear_buffers(aggressive=True)
 
-        # Build command
-        if dual:
-            cmd = CommandBuilder.build_sync_capture_dual()
-        else:
-            cmd = CommandBuilder.build_sync_capture()
+            # Build command
+            if dual:
+                cmd = CommandBuilder.build_sync_capture_dual()
+            else:
+                cmd = CommandBuilder.build_sync_capture()
 
-        # Send command
-        if not self.comm.send_bytes(cmd):
-            raise RuntimeError("Failed to send sync pulse command")
+            # Send command
+            if not self.comm.send_bytes(cmd):
+                raise RuntimeError("Failed to send sync pulse command")
 
-        # Wait for ACK
-        if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=1.0):
-            raise RuntimeError("No ACK received for sync pulse")
+            # Wait for ACK
+            if not self.comm.read_until_response(Responses.LED_ON_ACK, timeout=1.0):
+                raise RuntimeError("No ACK received for sync pulse")
 
-        # Mark in state
-        pulse_start = self.state.begin_sync_pulse()
+            # Mark in state
+            pulse_start = self.state.begin_sync_pulse()
 
-        logger.debug(f"Sync pulse started (dual={dual})")
+            logger.debug(f"Sync pulse started (dual={dual})")
 
-        return pulse_start
+            return pulse_start
 
     def wait_sync_complete(self, timeout: float = 5.0) -> dict:
         """
@@ -387,7 +404,12 @@ class ESP32Controller:
             raise RuntimeError("Not connected")
 
         # Read sync complete response (15 bytes)
-        response_data = self.comm.read_bytes(15, timeout=timeout)
+        # Note: caller should hold _command_lock across begin_sync_pulse +
+        # wait_sync_complete to be fully atomic; we still acquire here as
+        # a fallback so other command threads cannot corrupt the 15-byte
+        # response mid-read.
+        with self._command_lock:
+            response_data = self.comm.read_bytes(15, timeout=timeout)
 
         if not response_data:
             logger.error("No sync complete response received")
@@ -459,20 +481,21 @@ class ESP32Controller:
         # Build command
         cmd = CommandBuilder.build_set_timing(stabilization_ms, exposure_ms)
 
-        # Send command
-        if not self.comm.send_bytes(cmd):
-            return False
+        with self._command_lock:
+            # Send command
+            if not self.comm.send_bytes(cmd):
+                return False
 
-        # Wait for response
-        if not self.comm.read_until_response(Responses.TIMING_SET, timeout=0.5):
-            logger.error("Failed to set timing")
-            return False
+            # Wait for response
+            if not self.comm.read_until_response(Responses.TIMING_SET, timeout=0.5):
+                logger.error("Failed to set timing")
+                return False
 
-        # Update state
-        self.state.set_timing(stabilization_ms, exposure_ms)
+            # Update state
+            self.state.set_timing(stabilization_ms, exposure_ms)
 
-        logger.info(f"Timing set: {stabilization_ms}ms stabilization + {exposure_ms}ms exposure")
-        return True
+            logger.info(f"Timing set: {stabilization_ms}ms stabilization + {exposure_ms}ms exposure")
+            return True
 
     def get_timing(self) -> TimingConfig:
         """Get current timing configuration"""
@@ -500,18 +523,19 @@ class ESP32Controller:
         if not self.is_connected():
             return None
 
-        self.comm.clear_buffers()
+        with self._command_lock:
+            self.comm.clear_buffers()
 
-        # Send STATUS command
-        cmd = CommandBuilder.build_status()
-        if not self.comm.send_bytes(cmd):
-            return None
+            # Send STATUS command
+            cmd = CommandBuilder.build_status()
+            if not self.comm.send_bytes(cmd):
+                return None
 
-        # Read 5-byte response
-        # DHT22 response arrives in ~50-100ms; 0.3s is plenty. Keeping this
-        # tight matters during recording: each failed read costs the frame
-        # loop the full timeout as wallclock, driving cumulative drift.
-        response_data = self.comm.read_bytes(5, timeout=0.3)
+            # Read 5-byte response
+            # DHT22 response arrives in ~50-100ms; 0.3s is plenty. Keeping this
+            # tight matters during recording: each failed read costs the frame
+            # loop the full timeout as wallclock, driving cumulative drift.
+            response_data = self.comm.read_bytes(5, timeout=0.3)
 
         if not response_data or len(response_data) < 5:
             logger.error("No sensor data response")
@@ -589,16 +613,17 @@ class ESP32Controller:
         if not self.is_connected():
             return None
 
-        # AGGRESSIVE buffer clearing before status queries
-        self.comm.clear_buffers(aggressive=True)
+        with self._command_lock:
+            # AGGRESSIVE buffer clearing before status queries
+            self.comm.clear_buffers(aggressive=True)
 
-        # Send command
-        cmd = CommandBuilder.build_get_led_status()
-        if not self.comm.send_bytes(cmd):
-            return None
+            # Send command
+            cmd = CommandBuilder.build_get_led_status()
+            if not self.comm.send_bytes(cmd):
+                return None
 
-        # Read response (6 bytes)
-        response_data = self.comm.read_bytes(6, timeout=2.0)
+            # Read response (6 bytes)
+            response_data = self.comm.read_bytes(6, timeout=2.0)
 
         if not response_data:
             logger.error("No LED status response")
@@ -645,16 +670,17 @@ class ESP32Controller:
 
         cmd = CommandBuilder.build_set_camera_type(camera_type)
 
-        if not self.comm.send_bytes(cmd):
-            return False
+        with self._command_lock:
+            if not self.comm.send_bytes(cmd):
+                return False
 
-        time.sleep(0.1)
+            time.sleep(0.1)
 
-        self.state.set_camera_type(camera_type)
+            self.state.set_camera_type(camera_type)
 
-        cam_name = "HIK_GIGE" if camera_type == CameraTypes.HIK_GIGE else "USB_GENERIC"
-        logger.info(f"Camera type set to {cam_name}")
-        return True
+            cam_name = "HIK_GIGE" if camera_type == CameraTypes.HIK_GIGE else "USB_GENERIC"
+            logger.info(f"Camera type set to {cam_name}")
+            return True
 
     # ========================================================================
     # STATISTICS
