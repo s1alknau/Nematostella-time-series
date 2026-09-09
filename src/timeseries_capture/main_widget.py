@@ -1286,6 +1286,20 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     target_intensity = self.led_panel.get_target_intensity()
                     tolerance_percent = self.led_panel.get_tolerance_percent()
 
+                    # A previous calibration may have had to lower the target
+                    # because the sensor was already clipping at the well
+                    # edges. That correction has to hold for every case, also
+                    # when IR, White and Dual are calibrated in separate runs -
+                    # otherwise the cases end up at different brightnesses.
+                    corrected = getattr(self, "_saturation_corrected_target", None)
+                    if corrected is not None and corrected < target_intensity:
+                        self.log_panel.add_log(
+                            f"🔅 Target lowered to {corrected:.1f} by an earlier calibration "
+                            f"(sensor was saturating at {target_intensity:.1f})",
+                            "INFO",
+                        )
+                        target_intensity = corrected
+
                     # Read camera exposure from ImSwitch
                     try:
                         camera_exposure_ms = self.camera_adapter.get_exposure_ms()
@@ -1350,6 +1364,19 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     else:
                         self.log_panel.add_log(f"❌ Unknown calibration mode: {mode}", "ERROR")
                         return
+
+                    # Keep a target the saturation guard had to lower, so the
+                    # next calibration starts from the corrected value instead
+                    # of running into the same clipping again.
+                    if calibrator.saturation_backoffs > 0:
+                        self._saturation_corrected_target = calibrator.target_intensity
+                        self.log_panel.add_log(
+                            f"🔅 Sensor was saturating - target lowered "
+                            f"{calibrator.initial_target_intensity:.1f} → "
+                            f"{calibrator.target_intensity:.1f} "
+                            f"({calibrator.saturation_backoffs} step(s)), kept for the other LEDs",
+                            "WARNING",
+                        )
 
                     # Report results
                     if result.success:

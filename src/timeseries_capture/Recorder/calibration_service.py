@@ -53,6 +53,9 @@ class CalibrationService:
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
+        saturation_limit_percent: float = 0.05,
+        saturation_backoff_percent: float = 10.0,
+        max_saturation_backoffs: int = 3,
     ):
         """
         Args:
@@ -83,6 +86,22 @@ class CalibrationService:
         # (e.g. 4095 for 12-bit-in-uint16). When None the code falls back
         # to observed-max heuristics — see _measure_intensity().
         self.effective_max_getter = effective_max_getter
+
+        # Saturation guard. Wells are brighter at their edges than in the
+        # middle, so a calibration that only looks at the mean can land on a
+        # power where those edges already sit at the sensor limit - and an
+        # animal that swims there stops producing any measurable change.
+        # Whenever the sensor clips while the mean is still at or below the
+        # target, the target itself is unreachable without clipping and gets
+        # lowered. It stays lowered for every case calibrated afterwards on
+        # this instance, so IR, White and Dual keep their relation to each
+        # other.
+        self.saturation_limit_percent = saturation_limit_percent
+        self.saturation_backoff_percent = saturation_backoff_percent
+        self.max_saturation_backoffs = max_saturation_backoffs
+        self.initial_target_intensity = target_intensity
+        self.saturation_backoffs = 0
+        self.last_saturation_percent = 0.0
 
         roi_desc = (
             "full frame"
@@ -480,6 +499,61 @@ class CalibrationService:
             logger.info(f"Turning off {led_type.upper()} LED after calibration")
             self.led_off_callback()
 
+    def _full_scale(self, region) -> float:
+        """
+        Highest value this camera can produce, for unsigned integer frames.
+
+        Preference: the value the adapter reports from the pixel format, then
+        an observed-max heuristic for the usual bit depths, and the container
+        width as a last resort.
+        """
+        effective_max = None
+        if self.effective_max_getter is not None:
+            try:
+                effective_max = self.effective_max_getter()
+            except Exception:
+                effective_max = None
+
+        dtype_max_full = float(np.iinfo(region.dtype).max)
+        if effective_max is None:
+            observed_max = float(region.max())
+            effective_max = dtype_max_full
+            for bit_max in (1023.0, 4095.0, 16383.0):
+                if observed_max <= bit_max < dtype_max_full:
+                    effective_max = bit_max
+                    break
+
+        return float(effective_max)
+
+    def _lower_target_for_saturation(self) -> None:
+        """
+        Lower the target because the sensor clips before reaching it.
+
+        Called only when the mean is at or below target while pixels already
+        sit at full scale - a target that cannot be met without losing those
+        pixels. Overshooting probes of the search are therefore not affected,
+        they measure above target.
+        """
+        if self.saturation_backoffs >= self.max_saturation_backoffs:
+            logger.warning(
+                f"Sensor still saturating ({self.last_saturation_percent:.2f}% of pixels) "
+                f"after {self.saturation_backoffs} corrections - leaving target at "
+                f"{self.target_intensity:.1f}. Reduce illumination or check for reflections."
+            )
+            return
+
+        self.saturation_backoffs += 1
+        previous = self.target_intensity
+        self.target_intensity = max(
+            1.0, previous * (1.0 - self.saturation_backoff_percent / 100.0)
+        )
+        logger.warning(
+            f"Sensor saturating on {self.last_saturation_percent:.2f}% of pixels at "
+            f"intensity {previous:.1f} - lowering target to {self.target_intensity:.1f} "
+            f"(correction {self.saturation_backoffs}/{self.max_saturation_backoffs}). "
+            "Applies to every case calibrated from here on."
+        )
+
     def _measure_intensity(self) -> Optional[float]:
         """
         Capture frame and measure mean intensity.
@@ -531,28 +605,29 @@ class CalibrationService:
             #   3) Full dtype range as last resort.
             if region.dtype.kind == "f":
                 intensity = raw_intensity * 255.0
+                full_scale = 1.0
             elif region.dtype.kind == "u":
-                effective_max = None
-                if self.effective_max_getter is not None:
-                    try:
-                        effective_max = self.effective_max_getter()
-                    except Exception:
-                        effective_max = None
-                dtype_max_full = float(np.iinfo(region.dtype).max)
-                if effective_max is None:
-                    observed_max = float(region.max())
-                    effective_max = dtype_max_full
-                    for bit_max in (1023.0, 4095.0, 16383.0):
-                        if observed_max <= bit_max < dtype_max_full:
-                            effective_max = bit_max
-                            break
-                intensity = raw_intensity * 255.0 / float(effective_max)
+                full_scale = self._full_scale(region)
+                intensity = raw_intensity * 255.0 / full_scale
             else:
                 intensity = raw_intensity * 255.0 / 255.0
+                full_scale = 255.0
+
+            # Saturation is checked on the whole frame, not on the ROI: the
+            # bright spots that matter sit at the well edges, which a centred
+            # ROI deliberately cuts away.
+            self.last_saturation_percent = float(np.mean(frame >= full_scale)) * 100.0
 
             logger.debug(
-                f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, {region_desc})"
+                f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, "
+                f"{region_desc}, saturated={self.last_saturation_percent:.3f}%)"
             )
+
+            if (
+                self.last_saturation_percent > self.saturation_limit_percent
+                and intensity <= self.target_intensity
+            ):
+                self._lower_target_for_saturation()
 
             return intensity
 
