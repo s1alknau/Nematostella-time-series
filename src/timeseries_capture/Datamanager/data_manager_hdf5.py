@@ -877,6 +877,7 @@ class DataManager:
         self._images_max_frames: int = 200_000  # Pre-allocated rows (covers ~7 days @ 5s interval)
         self._image_shape: Optional[tuple] = None  # (H, W) determined on first frame
         self._uint8_shift: Optional[int] = None  # Detected on first uint8 frame
+        self._effective_max: Optional[float] = None  # set via set_effective_max()
 
         # Counters (updated in recording thread for accurate timing)
         self.frame_count = 0
@@ -998,6 +999,29 @@ class DataManager:
                 logger.error(f"Failed to create HDF5 file: {e}")
                 raise
 
+    def set_effective_max(self, effective_max: Optional[float]) -> None:
+        """
+        Tell the writer the highest value the camera can actually produce.
+
+        Only relevant with save_as_uint8. Without it the bit-depth is guessed
+        from the first frame's maximum, which is wrong whenever that frame is
+        dark: a dark 12-bit frame stays below 255, the writer concludes 8-bit
+        and shifts by 0, and every later frame is truncated to its low byte
+        instead of scaled - values wrap around and the recording is ruined.
+        The camera adapter knows the real range, so it is passed in here.
+        """
+        self._effective_max = effective_max
+
+        if not effective_max or effective_max <= 255:
+            return
+
+        bits = int(effective_max).bit_length()  # 4095 -> 12, 65535 -> 16, 1023 -> 10
+        self._uint8_shift = max(0, bits - 8)
+        logger.info(
+            f"uint8 conversion: camera range {int(effective_max)} "
+            f"({bits} bit) -> shift {self._uint8_shift} bits"
+        )
+
     def set_recording_config(self, config: dict):
         """Store recording configuration."""
         self.recording_metadata.update(config)
@@ -1115,17 +1139,33 @@ class DataManager:
                             logger.info("uint8 conversion: float [0,1] → scaled to [0,255]")
                     else:
                         if self._uint8_shift is None:
+                            # Fallback when the adapter could not report its
+                            # range. A dark frame must not decide the
+                            # bit-depth, so the guess is only locked in once a
+                            # frame actually exceeds the 8-bit range; until
+                            # then the frame is scaled by the container width,
+                            # which is lossy but never wraps around.
                             max_val = int(frame.max())
                             if max_val > 4095:
                                 self._uint8_shift = 8  # 16-bit camera
+                                logger.info(
+                                    f"uint8 conversion: frame max={max_val}, shift=8 bits (guessed)"
+                                )
                             elif max_val > 255:
                                 self._uint8_shift = 4  # 12-bit camera
+                                logger.info(
+                                    f"uint8 conversion: frame max={max_val}, shift=4 bits (guessed)"
+                                )
+                            elif frame.dtype == np.uint8 or np.iinfo(frame.dtype).max <= 255:
+                                self._uint8_shift = 0  # genuinely 8-bit data
                             else:
-                                self._uint8_shift = 0  # 8-bit data in uint16 container
-                            logger.info(
-                                f"uint8 conversion: frame max={max_val}, shift={self._uint8_shift} bits"
-                            )
-                        frame = (frame >> self._uint8_shift).astype(np.uint8)
+                                # Too dark to tell - convert this one frame
+                                # without committing to a shift.
+                                frame = frame.clip(0, 255).astype(np.uint8)
+                                self._uint8_shift = None
+
+                        if self._uint8_shift is not None:
+                            frame = (frame >> self._uint8_shift).astype(np.uint8)
 
                 # Snapshot local refs so we can call enqueue() after releasing the lock.
                 # enqueue() may block (queue.put with 60s timeout) when the disk is

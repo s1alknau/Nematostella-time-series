@@ -250,6 +250,19 @@ class RecordingManager(QObject):
 
             self._attach_recording_log(recording_file)
 
+            # Hand the camera's real value range to the writer. It only
+            # matters with save_as_uint8, where guessing the bit-depth from
+            # the first frame goes wrong as soon as that frame is dark.
+            if hasattr(self.data_manager, "set_effective_max"):
+                effective_max = None
+                camera = getattr(self.frame_capture, "camera", None)
+                if camera is not None and hasattr(camera, "get_effective_max_value"):
+                    try:
+                        effective_max = camera.get_effective_max_value()
+                    except Exception as e:
+                        logger.debug(f"Could not read effective max value: {e}")
+                self.data_manager.set_effective_max(effective_max)
+
             # Set recording configuration
             self.data_manager.set_recording_config(  # type: ignore[union-attr]
                 {
