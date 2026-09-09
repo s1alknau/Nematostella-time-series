@@ -248,6 +248,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.led_panel.led_off_requested.connect(self._on_led_off_requested)
         self.led_panel.led_power_changed.connect(self._on_led_power_changed)
         self.led_panel.calibration_requested.connect(self._on_calibration_requested)
+        self.led_panel.exposure_changed.connect(self._on_exposure_changed)
 
         # Live Analysis Panel
         self.live_analysis_panel.capture_frame_requested.connect(self._on_capture_preview_frame)
@@ -637,6 +638,28 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.log_panel.add_log(f"Failed to initialize multi-camera controller: {e}", "ERROR")
             logger.error(f"Multi-camera controller init failed: {e}", exc_info=True)
             self.multi_camera_controller = None
+
+    def _on_exposure_changed(self, exposure_ms: float):
+        """
+        Apply an exposure the user typed into the panel.
+
+        This deliberately overrides whatever a calibration found - the
+        calibrated LED powers stay as they are, and the exposure mismatch
+        warning at recording start will point out that the two no longer
+        belong together.
+        """
+        if not self.camera_adapter or not hasattr(self.camera_adapter, "set_exposure_ms"):
+            self.log_panel.add_log("⚠️ No camera to set the exposure on", "WARNING")
+            return
+
+        if not self.camera_adapter.set_exposure_ms(exposure_ms):
+            self.log_panel.add_log(f"❌ Camera refused {exposure_ms:.1f} ms", "ERROR")
+            return
+
+        self.log_panel.add_log(f"⏱ Exposure set to {exposure_ms:.1f} ms", "SUCCESS")
+
+        if self._persist_exposure_to_setup(exposure_ms):
+            self.log_panel.add_log("💾 Written to the ImSwitch setup file", "INFO")
 
     def _persist_exposure_to_setup(self, exposure_ms: float) -> bool:
         """
@@ -1492,6 +1515,12 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
                         result = best["result"]
                         self.camera_adapter.set_exposure_ms(best["exposure_ms"])
+                        # From here on this is the exposure the calibration
+                        # belongs to - the value read before the search is the
+                        # old one and would make the mismatch warning fire on
+                        # every recording.
+                        camera_exposure_ms = best["exposure_ms"]
+                        self.led_panel.set_exposure_ms(best["exposure_ms"])
                         self.log_panel.add_log(
                             f"⏱ Exposure set to {best['exposure_ms']:.1f} ms "
                             f"(median {best['median']:.1f}, "
@@ -1511,6 +1540,8 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                             )
                     else:
                         result = run_selected_mode()
+                        if camera_exposure_ms is not None:
+                            self.led_panel.set_exposure_ms(camera_exposure_ms)
 
                     if result is None:
                         self.log_panel.add_log(f"❌ Unknown calibration mode: {mode}", "ERROR")
