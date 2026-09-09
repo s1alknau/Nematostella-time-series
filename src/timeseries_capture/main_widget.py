@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Optional
 
 # Qt imports
-from qtpy.QtCore import QTimer
-from qtpy.QtWidgets import QMessageBox, QTabWidget, QVBoxLayout, QWidget
+from qtpy.QtCore import Qt, QTimer
+from qtpy.QtWidgets import QMessageBox, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 # Import GUI components (from GUI subfolder)
 # Import controllers and adapters
@@ -147,9 +147,44 @@ class NematostellaTimelapseCaptureWidget(QWidget):
     # UI SETUP
     # ========================================================================
 
+    @staticmethod
+    def _scrollable(panel: QWidget) -> QScrollArea:
+        """
+        Put a panel into a scroll area so the plugin stays freely resizable.
+
+        Qt derives a widget's minimum size from its children, and the panels
+        declare enough minimum widths and heights (port list, preview area,
+        plot canvas, camera list) that their sum became the lower limit for
+        the whole plugin - docked as well as floating, it could not be pulled
+        smaller. Inside a scroll area the panel keeps its preferred size and
+        the view scrolls instead, so the dock follows the mouse in both
+        directions.
+        """
+        area = QScrollArea()
+        area.setWidget(panel)
+        area.setWidgetResizable(True)   # panel grows with the area
+        area.setFrameShape(QScrollArea.NoFrame)
+        return area
+
+    def _tabIndexOf(self, panel: QWidget) -> int:
+        """Tab index of a panel, whether or not it sits in a scroll area."""
+        index = self.tabs.indexOf(panel)
+        if index >= 0:
+            return index
+
+        for i in range(self.tabs.count()):
+            host = self.tabs.widget(i)
+            if isinstance(host, QScrollArea) and host.widget() is panel:
+                return i
+        return -1
+
     def _setup_ui(self):
         """Setup user interface"""
         layout = QVBoxLayout(self)
+
+        # Small enough to be pulled down to a narrow column, large enough that
+        # the window does not collapse into an unusable sliver.
+        self.setMinimumSize(320, 240)
         layout.setSpacing(10)
         layout.setContentsMargins(10, 10, 10, 10)
 
@@ -166,22 +201,28 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.experiment_designer = ExperimentDesignerWidget()
         self.log_panel = LogPanel()
 
-        # Add tabs
-        self.tabs.addTab(self.esp32_panel, "🔌 ESP32 Connection")
-        self.tabs.addTab(self.recording_panel, "📹 Recording")
-        self.tabs.addTab(self.phase_panel, "🌓 Phase Config")
-        self.tabs.addTab(self.led_panel, "💡 LED Control")
-        self.tabs.addTab(self.live_analysis_panel, "📊 Live Analysis")
-        self.tabs.addTab(self.experiment_designer, "🗓 Schedule Designer")
-        self.tabs.addTab(self.log_panel, "📋 System Log")
+        # Add tabs. Each panel goes into a scroll area - see _scrollable().
+        self.tabs.addTab(self._scrollable(self.esp32_panel), "🔌 ESP32 Connection")
+        self.tabs.addTab(self._scrollable(self.recording_panel), "📹 Recording")
+        self.tabs.addTab(self._scrollable(self.phase_panel), "🌓 Phase Config")
+        self.tabs.addTab(self._scrollable(self.led_panel), "💡 LED Control")
+        self.tabs.addTab(self._scrollable(self.live_analysis_panel), "📊 Live Analysis")
+        self.tabs.addTab(self._scrollable(self.experiment_designer), "🗓 Schedule Designer")
+        self.tabs.addTab(self._scrollable(self.log_panel), "📋 System Log")
 
         # Multi-camera panels (will be populated after config is loaded)
         self.camera_selection_panel = None
         self.multi_camera_status_panel = None
 
-        # Status panel (bottom)
+        # Status panel (bottom). Its row of labels is over a thousand pixels
+        # wide and would otherwise set the lower limit for the whole plugin,
+        # so it scrolls sideways instead. The height stays fixed to its own
+        # hint so the bar looks unchanged and takes no space from the tabs.
         self.status_panel = StatusPanel()
-        layout.addWidget(self.status_panel)
+        status_area = self._scrollable(self.status_panel)
+        status_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        status_area.setFixedHeight(self.status_panel.sizeHint().height())
+        layout.addWidget(status_area)
 
         # Connect GUI signals
         self._connect_gui_signals()
@@ -1108,7 +1149,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             f"📊 Live analysis started ({len(masks)} ROIs, updating every 20s)", "INFO"
         )
         # Switch to live analysis tab
-        live_tab_index = self.tabs.indexOf(self.live_analysis_panel)
+        live_tab_index = self._tabIndexOf(self.live_analysis_panel)
         if live_tab_index >= 0:
             self.tabs.setCurrentIndex(live_tab_index)
 
