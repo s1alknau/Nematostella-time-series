@@ -530,6 +530,17 @@ class CalibrationService:
         self.last_saturation_percent = 0.0
         self.saturation_capped = False
 
+    def _apply_result_powers(self, result) -> None:
+        """Set the LEDs to the powers a calibration result carries."""
+        for led_type in ("ir", "white"):
+            power = getattr(result, f"{led_type}_power", 0)
+            if power:
+                try:
+                    self.set_led_power_callback(power, led_type)
+                except Exception as e:
+                    logger.debug(f"Could not re-apply {led_type} power {power}: {e}")
+        time.sleep(0.3)
+
     def measure_frame_stats(self) -> Optional[dict]:
         """
         Mean, median and saturated share of one frame, all on the 0-255 scale.
@@ -585,6 +596,12 @@ class CalibrationService:
             self._reset_saturation_state()
 
             result = calibrate_once()
+
+            # The search leaves the LED wherever its last probe was, which is
+            # not necessarily the power it returns. Without re-applying the
+            # result the row would describe a setting nobody ends up using -
+            # and report saturation that the returned setting does not have.
+            self._apply_result_powers(result)
             stats = self.measure_frame_stats()
             if stats is None:
                 logger.warning(f"No frame after calibrating at {exposure} ms - skipping")
@@ -616,12 +633,17 @@ class CalibrationService:
         if usable:
             best = max(usable, key=lambda r: r["median"])
         elif rows:
-            # Nothing stayed clean - take the least saturated so the caller has
-            # something to work with, and say so.
-            best = min(rows, key=lambda r: r["saturated_percent"])
+            # No exposure reached the target. Since the search caps the power
+            # at the saturation limit anyway, every row is clean and picking
+            # the least saturated one would decide almost at random. The
+            # brightest usable image is the useful answer instead - same
+            # criterion as above, just without the target being met.
+            best = max(rows, key=lambda r: r["median"])
             logger.warning(
-                "No exposure reached the target without saturation; falling back to "
-                f"{best['exposure_ms']:.1f} ms with {best['saturated_percent']:.2f}% saturated"
+                f"No exposure reached the target of {self.target_intensity:.1f}; taking the "
+                f"brightest that keeps the sensor intact: {best['exposure_ms']:.1f} ms, "
+                f"median {best['median']:.1f}, mean {best['mean']:.1f}, "
+                f"{best['saturated_percent']:.2f}% saturated"
             )
         else:
             best = None
