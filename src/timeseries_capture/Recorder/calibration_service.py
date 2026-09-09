@@ -54,6 +54,7 @@ class CalibrationService:
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
         saturation_limit_percent: float = 0.5,
+        use_median: bool = True,
     ):
         """
         Args:
@@ -95,6 +96,15 @@ class CalibrationService:
         # even when the target cannot be reached that way - lowering the
         # target instead does not help, because the search keeps raising the
         # power towards it and the bright edges clip further.
+        # Median rather than mean, because a multiwell plate is mostly dark
+        # background with a few very bright rims: the mean follows those rims
+        # and says little about the wells, where the animals actually are. The
+        # median ignores them - it describes the dark majority of the frame,
+        # which is what the target value is supposed to control. A rectangular
+        # ROI cannot do this job: six wells spread across the frame can never
+        # be enclosed by one centred box without taking rims along.
+        self.use_median = use_median
+
         self.saturation_limit_percent = saturation_limit_percent
         self.initial_target_intensity = target_intensity
         self.last_saturation_percent = 0.0
@@ -718,7 +728,10 @@ class CalibrationService:
                 region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
                 region_desc = f"ROI ({region.shape}, {self.roi_fraction*100:.0f}% center)"
 
-            raw_intensity = float(np.mean(region))
+            statistic = "median" if self.use_median else "mean"
+            raw_intensity = float(
+                np.median(region) if self.use_median else np.mean(region)
+            )
 
             # Normalize to 0-255 scale so target_intensity=200 is meaningful
             # regardless of camera bit depth (uint8, 10/12/14/16-bit-in-uint16, float).
@@ -742,8 +755,9 @@ class CalibrationService:
             self.last_saturation_percent = float(np.mean(frame >= full_scale)) * 100.0
 
             logger.debug(
-                f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, "
-                f"{region_desc}, saturated={self.last_saturation_percent:.3f}%)"
+                f"Measured {statistic} intensity: {intensity:.1f}/255 "
+                f"(raw={raw_intensity:.1f}, {region_desc}, "
+                f"saturated={self.last_saturation_percent:.3f}%)"
             )
 
             return intensity
