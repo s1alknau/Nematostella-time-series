@@ -53,7 +53,7 @@ class CalibrationService:
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
-        saturation_limit_percent: float = 0.5,
+        saturation_limit_percent: float = 5.0,
         use_median: bool = True,
     ):
         """
@@ -92,10 +92,15 @@ class CalibrationService:
         # animal that swims there stops producing any measurable change.
         # Clipping beyond this share of the frame counts as "too bright" in
         # the search, exactly like an intensity above the target. The search
-        # then settles on the highest power that still keeps the frame intact,
-        # even when the target cannot be reached that way - lowering the
-        # target instead does not help, because the search keeps raising the
-        # power towards it and the bright edges clip further.
+        # then settles on the highest power that keeps saturation within the
+        # limit - lowering the target instead does not help, because the
+        # search keeps raising the power towards it and the bright edges clip
+        # further.
+        #
+        # The default of 5 % comes from the rig: a working recording sits at
+        # 4.6 % saturated pixels, all of them in the well rims. A stricter
+        # limit would cap the power far below what the setup is actually run
+        # at and make the wells needlessly dark.
         # Median rather than mean, because a multiwell plate is mostly dark
         # background with a few very bright rims: the mean follows those rims
         # and says little about the wells, where the animals actually are. The

@@ -194,6 +194,27 @@ class LEDControlPanel(QWidget):
 
         calib_layout.addLayout(target_layout)
 
+        # How much of the frame may sit at the sensor limit. The search
+        # reduces the LED power until it stays below this.
+        saturation_layout = QHBoxLayout()
+        saturation_layout.addWidget(QLabel("Max saturated (%):"))
+
+        self.saturation_spinbox = QDoubleSpinBox()
+        self.saturation_spinbox.setRange(0.0, 50.0)
+        self.saturation_spinbox.setDecimals(1)
+        self.saturation_spinbox.setSingleStep(0.5)
+        self.saturation_spinbox.setValue(5.0)
+        self.saturation_spinbox.setToolTip(
+            "Share of pixels that may reach the sensor limit.\n"
+            "The calibration lowers the LED power until saturation stays below\n"
+            "this value, even if the target intensity is not reached."
+        )
+        self.saturation_spinbox.setMinimumWidth(100)
+        saturation_layout.addWidget(self.saturation_spinbox)
+        saturation_layout.addStretch()
+
+        calib_layout.addLayout(saturation_layout)
+
         # Exposure. Filled from the camera after every calibration; editing it
         # applies the value to the camera, so a user can override what the
         # calibration found without leaving the plugin.
@@ -383,6 +404,10 @@ class LEDControlPanel(QWidget):
     def get_use_full_frame(self) -> bool:
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
+
+    def get_saturation_limit_percent(self) -> float:
+        """Share of pixels that may sit at the sensor limit."""
+        return self.saturation_spinbox.value()
 
     def get_exposure_ms(self) -> float:
         """Exposure currently shown in the panel."""
