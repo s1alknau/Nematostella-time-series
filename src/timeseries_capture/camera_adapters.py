@@ -358,9 +358,16 @@ class HikGigECameraAdapter(CameraAdapter):
         """
         Disable auto-gain and auto-exposure on the HIK camera.
 
-        Calls setParameter() with GenICam standard names for auto-gain (GainAuto)
-        and auto-exposure (ExposureAuto). Also reads current gain/exposure values
-        so the caller can log them.
+        ImSwitch only accepts the parameter names its detector manager
+        declares. The GenICam names GainAuto and ExposureAuto are not among
+        them and were rejected with "Non-existent parameter", so the
+        automatics kept running through every recording - visible as a slow
+        brightness drift across the frames. ImSwitch's own name for this is
+        exposure_mode, and "manual" switches ExposureAuto and GainAuto off
+        together (see hikcamera.set_exposure_mode). The GenICam names remain
+        as a fallback for backends that do expose them.
+
+        Also reads current gain/exposure values so the caller can log them.
 
         Returns:
             Dict with keys: gain_auto_off (bool), exposure_auto_off (bool),
@@ -384,21 +391,30 @@ class HikGigECameraAdapter(CameraAdapter):
                 logger.warning("disable_auto_settings: detector has no setParameter()")
                 return result
 
-            # Disable auto-gain
+            # Preferred path: ImSwitch's own parameter, which turns off both
+            # ExposureAuto and GainAuto in one go.
             try:
-                detector.setParameter("GainAuto", "Off")
+                detector.setParameter("exposure_mode", "manual")
                 result["gain_auto_off"] = True
-                logger.info("✅ GainAuto set to Off")
-            except Exception as e:
-                logger.warning(f"Could not disable GainAuto: {e}")
-
-            # Disable auto-exposure
-            try:
-                detector.setParameter("ExposureAuto", "Off")
                 result["exposure_auto_off"] = True
-                logger.info("✅ ExposureAuto set to Off")
+                logger.info("✅ exposure_mode=manual (ExposureAuto and GainAuto off)")
             except Exception as e:
-                logger.warning(f"Could not disable ExposureAuto: {e}")
+                logger.warning(f"Could not set exposure_mode=manual: {e}")
+
+                # Fallback for backends that expose the GenICam names directly.
+                try:
+                    detector.setParameter("GainAuto", "Off")
+                    result["gain_auto_off"] = True
+                    logger.info("✅ GainAuto set to Off")
+                except Exception as e2:
+                    logger.warning(f"Could not disable GainAuto: {e2}")
+
+                try:
+                    detector.setParameter("ExposureAuto", "Off")
+                    result["exposure_auto_off"] = True
+                    logger.info("✅ ExposureAuto set to Off")
+                except Exception as e2:
+                    logger.warning(f"Could not disable ExposureAuto: {e2}")
 
             # Read back current values for logging
             if hasattr(detector, "getParameter"):
