@@ -54,7 +54,7 @@ class CalibrationService:
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
         saturation_headroom_percent: float = 5.0,
-        bright_percentile: float = 99.9,
+        bright_percentile: float = 95.0,
         use_median: bool = True,
     ):
         """
@@ -102,8 +102,14 @@ class CalibrationService:
         # Headroom instead of tolerated clipping: the search regulates so
         # that the brightest pixels end up this far below the sensor limit.
         # Nothing is cut off, and the value range is used as far as it goes.
-        # "Brightest" is a high percentile rather than the maximum, so a
-        # single hot pixel cannot dictate the illumination of the whole plate.
+        # "Brightest" is a percentile rather than the maximum, and which one
+        # decides what may be sacrificed. On this rig the well rims scatter so
+        # much more than the well interiors that keeping them below the limit
+        # leaves the interiors nearly black. With p95 the top 5 percent - the
+        # rims - are allowed to clip, everything below keeps its headroom.
+        # A percentile that already sits in the clipped range is no use as a
+        # control value: its true height is unknown, so the search can only
+        # push the power down until it becomes measurable again.
         self.saturation_headroom_percent = saturation_headroom_percent
         self.bright_percentile = bright_percentile
 

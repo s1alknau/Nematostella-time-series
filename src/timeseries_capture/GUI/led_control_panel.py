@@ -216,6 +216,27 @@ class LEDControlPanel(QWidget):
 
         calib_layout.addLayout(saturation_layout)
 
+        # Which pixels the headroom applies to.
+        percentile_layout = QHBoxLayout()
+        percentile_layout.addWidget(QLabel("Applies to percentile:"))
+
+        self.bright_percentile_spinbox = QDoubleSpinBox()
+        self.bright_percentile_spinbox.setRange(50.0, 100.0)
+        self.bright_percentile_spinbox.setDecimals(1)
+        self.bright_percentile_spinbox.setSingleStep(1.0)
+        self.bright_percentile_spinbox.setValue(95.0)
+        self.bright_percentile_spinbox.setToolTip(
+            "Which pixels have to keep the headroom.\n"
+            "95 means the brightest 5 percent may clip - on a multiwell plate\n"
+            "those are the rims, and sparing them would leave the wells dark.\n"
+            "99.9 protects almost every pixel and costs a lot of light."
+        )
+        self.bright_percentile_spinbox.setMinimumWidth(100)
+        percentile_layout.addWidget(self.bright_percentile_spinbox)
+        percentile_layout.addStretch()
+
+        calib_layout.addLayout(percentile_layout)
+
         # Exposure. Filled from the camera after every calibration; editing it
         # applies the value to the camera, so a user can override what the
         # calibration found without leaving the plugin.
@@ -409,6 +430,10 @@ class LEDControlPanel(QWidget):
     def get_saturation_headroom_percent(self) -> float:
         """How far below the sensor limit the brightest pixels should stay."""
         return self.saturation_spinbox.value()
+
+    def get_bright_percentile(self) -> float:
+        """Percentile the headroom applies to."""
+        return self.bright_percentile_spinbox.value()
 
     def get_exposure_ms(self) -> float:
         """Exposure currently shown in the panel."""
