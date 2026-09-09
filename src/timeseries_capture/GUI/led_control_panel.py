@@ -299,6 +299,17 @@ class LEDControlPanel(QWidget):
         self.use_full_frame_checkbox.setStyleSheet("font-size: 11px;")
         calib_options_layout.addWidget(self.use_full_frame_checkbox)
 
+        self.respect_saturation_checkbox = QCheckBox("Limit by saturation")
+        self.respect_saturation_checkbox.setChecked(False)
+        self.respect_saturation_checkbox.setToolTip(
+            "Off: the search only chases the target value, as before.\n"
+            "On: it additionally keeps the bright pixels below the sensor\n"
+            "limit, using the headroom and percentile set below. That costs\n"
+            "light - on a plate with bright rims the wells stay darker."
+        )
+        self.respect_saturation_checkbox.setStyleSheet("font-size: 11px;")
+        calib_options_layout.addWidget(self.respect_saturation_checkbox)
+
         self.auto_exposure_checkbox = QCheckBox("Also find exposure time")
         self.auto_exposure_checkbox.setChecked(False)
         self.auto_exposure_checkbox.setToolTip(
@@ -426,6 +437,10 @@ class LEDControlPanel(QWidget):
     def get_use_full_frame(self) -> bool:
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
+
+    def get_respect_saturation(self) -> bool:
+        """Whether the search should keep the bright pixels below the limit."""
+        return self.respect_saturation_checkbox.isChecked()
 
     def get_saturation_headroom_percent(self) -> float:
         """How far below the sensor limit the brightest pixels should stay."""

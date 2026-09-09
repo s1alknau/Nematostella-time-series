@@ -53,6 +53,7 @@ class CalibrationService:
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
+        respect_saturation: bool = False,
         saturation_headroom_percent: float = 5.0,
         bright_percentile: float = 95.0,
         use_median: bool = True,
@@ -110,6 +111,11 @@ class CalibrationService:
         # A percentile that already sits in the clipped range is no use as a
         # control value: its true height is unknown, so the search can only
         # push the power down until it becomes measurable again.
+        # Off by default: the classic search only chases the target value.
+        # The headroom rule below is an addition for setups whose bright spots
+        # would otherwise clip, and it costs light - on a plate with strongly
+        # scattering rims it holds the wells noticeably darker.
+        self.respect_saturation = respect_saturation
         self.saturation_headroom_percent = saturation_headroom_percent
         self.bright_percentile = bright_percentile
 
@@ -293,7 +299,10 @@ class CalibrationService:
                 # limit is lost, and in a multiwell plate it is lost exactly
                 # where an animal sits closest to the rim.
                 ceiling = 100.0 - self.saturation_headroom_percent
-                too_saturated = self.last_bright_level_percent > ceiling
+                too_saturated = (
+                    self.respect_saturation
+                    and self.last_bright_level_percent > ceiling
+                )
                 if too_saturated:
                     self.saturation_capped = True
                     logger.info(
@@ -470,7 +479,10 @@ class CalibrationService:
                 # limit is lost, and in a multiwell plate it is lost exactly
                 # where an animal sits closest to the rim.
                 ceiling = 100.0 - self.saturation_headroom_percent
-                too_saturated = self.last_bright_level_percent > ceiling
+                too_saturated = (
+                    self.respect_saturation
+                    and self.last_bright_level_percent > ceiling
+                )
                 if too_saturated:
                     self.saturation_capped = True
                     logger.info(
