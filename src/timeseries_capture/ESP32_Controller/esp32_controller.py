@@ -344,7 +344,47 @@ class ESP32Controller:
 
             led_name = led_type.upper() if led_type else self.state.get_current_led_type().upper()
             logger.info(f"{led_name} LED power set to {power}%")
-            return True
+
+        # Verify the value actually took hold. The ACK above is not conclusive:
+        # a missing one is deliberately not treated as a failure, and the state
+        # is updated to the requested value either way. A power that silently
+        # stayed low leaves the LED reported as "on" while it lights nothing -
+        # in the recordings that is indistinguishable from a dead LED, because
+        # only the image shows it. Verification happens outside _command_lock
+        # because get_led_status() takes it itself (RLock, so re-entry would
+        # work, but keeping the sequences separate avoids holding it longer
+        # than one command-response exchange).
+        if led_type in ("ir", "white"):
+            attempts = 3
+            for attempt in range(attempts):
+                status = self.get_led_status()
+                if status is None:
+                    break
+
+                actual = status.ir_power if led_type == "ir" else status.white_power
+                if actual == power:
+                    break
+
+                logger.warning(
+                    f"{led_name} LED power reads back as {actual}% instead of "
+                    f"{power}% - attempt {attempt + 1}/{attempts}"
+                )
+                if attempt == attempts - 1:
+                    continue  # letzte Runde war reine Kontrolle
+
+                with self._command_lock:
+                    self.comm.clear_buffers(aggressive=True)
+                    if not self.comm.send_bytes(cmd):
+                        break
+                    self.comm.read_bytes(1, timeout=1.0)
+                    time.sleep(0.05)
+            else:
+                logger.error(
+                    f"{led_name} LED power could not be set to {power}% - "
+                    "frames will be under-illuminated"
+                )
+
+        return True
 
     # ========================================================================
     # SYNC PULSE (For Recording)

@@ -388,6 +388,30 @@ class FrameCaptureService:
             self._current_led_type = None
             self._white_led_continuous = False
 
+    def _expected_power(self, led_type: str) -> int:
+        """Power that was last requested for this LED, 0 when unknown."""
+        try:
+            return int(self.esp32.state.get_led_power(led_type))
+        except Exception:
+            return 0
+
+    def _led_lit(self, state, actual_power: int, led_type: str) -> bool:
+        """
+        Decide whether an LED is really lighting the scene.
+
+        A plain "power > 0" is not enough: a power command that silently did
+        not take hold leaves the LED on at a value far below the requested
+        one, which the firmware still reports as on while the image stays at
+        noise level. The readback is therefore compared against what was
+        asked for, with 10 percent slack for firmware-side rounding.
+        """
+        if not state:
+            return False
+
+        wanted = self._expected_power(led_type)
+        floor = max(1, int(wanted * 0.9)) if wanted > 0 else 1
+        return actual_power >= floor
+
     def verify_led_on(self, led_type: str, dual_mode: bool, attempts: int = 3) -> bool:
         """
         Make sure the LED this frame needs is actually lit.
@@ -408,8 +432,8 @@ class FrameCaptureService:
             status = self.esp32.get_led_status()
 
             if status is not None:
-                ir_on = bool(status.ir_state) and status.ir_power > 0
-                white_on = bool(status.white_state) and status.white_power > 0
+                ir_on = self._led_lit(status.ir_state, status.ir_power, "ir")
+                white_on = self._led_lit(status.white_state, status.white_power, "white")
 
                 if dual_mode:
                     satisfied = ir_on and white_on
@@ -427,7 +451,8 @@ class FrameCaptureService:
 
                 logger.warning(
                     f"[LED VERIFY] {led_type} LED not lit "
-                    f"(ir={ir_on}/{status.ir_power}%, white={white_on}/{status.white_power}%) "
+                    f"(ir={ir_on}: {status.ir_power}% of {self._expected_power('ir')}%, "
+                    f"white={white_on}: {status.white_power}% of {self._expected_power('white')}%) "
                     f"- attempt {attempt + 1}/{attempts}"
                 )
             else:
