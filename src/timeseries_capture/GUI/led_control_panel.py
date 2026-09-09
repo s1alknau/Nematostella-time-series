@@ -194,10 +194,10 @@ class LEDControlPanel(QWidget):
 
         calib_layout.addLayout(target_layout)
 
-        # How much of the frame may sit at the sensor limit. The search
-        # reduces the LED power until it stays below this.
+        # Distance the brightest pixels keep from the sensor limit. The
+        # search reduces the LED power until they sit that far below it.
         saturation_layout = QHBoxLayout()
-        saturation_layout.addWidget(QLabel("Max saturated (%):"))
+        saturation_layout.addWidget(QLabel("Headroom (%):"))
 
         self.saturation_spinbox = QDoubleSpinBox()
         self.saturation_spinbox.setRange(0.0, 50.0)
@@ -205,9 +205,10 @@ class LEDControlPanel(QWidget):
         self.saturation_spinbox.setSingleStep(0.5)
         self.saturation_spinbox.setValue(5.0)
         self.saturation_spinbox.setToolTip(
-            "Share of pixels that may reach the sensor limit.\n"
-            "The calibration lowers the LED power until saturation stays below\n"
-            "this value, even if the target intensity is not reached."
+            "Distance the brightest pixels keep from the sensor limit.\n"
+            "5 % means they are regulated to about 95 % of full scale, so\n"
+            "nothing is clipped and the value range is still used fully.\n"
+            "The LED power is lowered for this even if the target is missed."
         )
         self.saturation_spinbox.setMinimumWidth(100)
         saturation_layout.addWidget(self.saturation_spinbox)
@@ -405,8 +406,8 @@ class LEDControlPanel(QWidget):
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
 
-    def get_saturation_limit_percent(self) -> float:
-        """Share of pixels that may sit at the sensor limit."""
+    def get_saturation_headroom_percent(self) -> float:
+        """How far below the sensor limit the brightest pixels should stay."""
         return self.saturation_spinbox.value()
 
     def get_exposure_ms(self) -> float:

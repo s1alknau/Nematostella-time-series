@@ -1453,7 +1453,7 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         use_full_frame=use_full_frame,  # Use checkbox setting
                         roi_fraction=0.75,  # 75% x 75% center ROI when not using full frame
                         effective_max_getter=effective_max_getter,
-                        saturation_limit_percent=self.led_panel.get_saturation_limit_percent(),
+                        saturation_headroom_percent=self.led_panel.get_saturation_headroom_percent(),
                     )
 
                     # Run calibration based on mode

@@ -53,7 +53,8 @@ class CalibrationService:
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
-        saturation_limit_percent: float = 5.0,
+        saturation_headroom_percent: float = 5.0,
+        bright_percentile: float = 99.9,
         use_median: bool = True,
     ):
         """
@@ -86,33 +87,31 @@ class CalibrationService:
         # to observed-max heuristics — see _measure_intensity().
         self.effective_max_getter = effective_max_getter
 
+        # Median rather than mean, because a multiwell plate is mostly dark
+        # background with a few very bright rims: the mean follows those rims
+        # and says little about the wells, where the animals actually are. A
+        # rectangular ROI cannot do this job either - six wells spread across
+        # the frame can never be enclosed by one centred box without taking
+        # rims along.
+        self.use_median = use_median
+
         # Saturation guard. Wells are brighter at their edges than in the
         # middle, so a calibration that only looks at the mean can land on a
         # power where those edges already sit at the sensor limit - and an
         # animal that swims there stops producing any measurable change.
-        # Clipping beyond this share of the frame counts as "too bright" in
-        # the search, exactly like an intensity above the target. The search
-        # then settles on the highest power that keeps saturation within the
-        # limit - lowering the target instead does not help, because the
-        # search keeps raising the power towards it and the bright edges clip
-        # further.
-        #
-        # The default of 5 % comes from the rig: a working recording sits at
-        # 4.6 % saturated pixels, all of them in the well rims. A stricter
-        # limit would cap the power far below what the setup is actually run
-        # at and make the wells needlessly dark.
-        # Median rather than mean, because a multiwell plate is mostly dark
-        # background with a few very bright rims: the mean follows those rims
-        # and says little about the wells, where the animals actually are. The
-        # median ignores them - it describes the dark majority of the frame,
-        # which is what the target value is supposed to control. A rectangular
-        # ROI cannot do this job: six wells spread across the frame can never
-        # be enclosed by one centred box without taking rims along.
-        self.use_median = use_median
+        # Headroom instead of tolerated clipping: the search regulates so
+        # that the brightest pixels end up this far below the sensor limit.
+        # Nothing is cut off, and the value range is used as far as it goes.
+        # "Brightest" is a high percentile rather than the maximum, so a
+        # single hot pixel cannot dictate the illumination of the whole plate.
+        self.saturation_headroom_percent = saturation_headroom_percent
+        self.bright_percentile = bright_percentile
 
-        self.saturation_limit_percent = saturation_limit_percent
         self.initial_target_intensity = target_intensity
         self.last_saturation_percent = 0.0
+        # Where the bright pixels sit, in percent of full scale: 100 means at
+        # the limit, 95 means exactly the default headroom.
+        self.last_bright_level_percent = 0.0
         self.saturation_capped = False
 
         roi_desc = (
@@ -283,16 +282,18 @@ class CalibrationService:
                     f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
                 )
 
-                # Clipped pixels count as too bright no matter what the mean
-                # says: light that lands beyond the sensor limit is lost, and
-                # in a multiwell plate it is lost exactly where the animals sit
-                # closest to the rim.
-                too_saturated = self.last_saturation_percent > self.saturation_limit_percent
+                # The brightest pixels have to keep their distance from the
+                # sensor limit, no matter what the mean says. Light beyond the
+                # limit is lost, and in a multiwell plate it is lost exactly
+                # where an animal sits closest to the rim.
+                ceiling = 100.0 - self.saturation_headroom_percent
+                too_saturated = self.last_bright_level_percent > ceiling
                 if too_saturated:
                     self.saturation_capped = True
                     logger.info(
-                        f"  Saturated on {self.last_saturation_percent:.2f}% of pixels "
-                        f"(limit {self.saturation_limit_percent:.2f}%) - treating as too bright"
+                        f"  Brightest pixels at {self.last_bright_level_percent:.1f}% of full "
+                        f"scale (ceiling {ceiling:.1f}%, {self.last_saturation_percent:.2f}% "
+                        f"already clipped) - treating as too bright"
                     )
 
                 # Update best result. A saturated frame never becomes the
@@ -458,16 +459,18 @@ class CalibrationService:
                     f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
                 )
 
-                # Clipped pixels count as too bright no matter what the mean
-                # says: light that lands beyond the sensor limit is lost, and
-                # in a multiwell plate it is lost exactly where the animals sit
-                # closest to the rim.
-                too_saturated = self.last_saturation_percent > self.saturation_limit_percent
+                # The brightest pixels have to keep their distance from the
+                # sensor limit, no matter what the mean says. Light beyond the
+                # limit is lost, and in a multiwell plate it is lost exactly
+                # where an animal sits closest to the rim.
+                ceiling = 100.0 - self.saturation_headroom_percent
+                too_saturated = self.last_bright_level_percent > ceiling
                 if too_saturated:
                     self.saturation_capped = True
                     logger.info(
-                        f"  Saturated on {self.last_saturation_percent:.2f}% of pixels "
-                        f"(limit {self.saturation_limit_percent:.2f}%) - treating as too bright"
+                        f"  Brightest pixels at {self.last_bright_level_percent:.1f}% of full "
+                        f"scale (ceiling {ceiling:.1f}%, {self.last_saturation_percent:.2f}% "
+                        f"already clipped) - treating as too bright"
                     )
 
                 # Update best result. A saturated frame never becomes the
@@ -543,6 +546,7 @@ class CalibrationService:
         """Put the target back to what the user asked for, before a new trial."""
         self.target_intensity = self.initial_target_intensity
         self.last_saturation_percent = 0.0
+        self.last_bright_level_percent = 0.0
         self.saturation_capped = False
 
     def _apply_result_powers(self, result) -> None:
@@ -643,7 +647,7 @@ class CalibrationService:
 
         usable = [
             r for r in rows
-            if r["success"] and r["saturated_percent"] <= self.saturation_limit_percent
+            if r["success"] and not r["saturation_capped"]
         ]
         if usable:
             best = max(usable, key=lambda r: r["median"])
@@ -754,10 +758,11 @@ class CalibrationService:
                 intensity = raw_intensity * 255.0 / 255.0
                 full_scale = 255.0
 
-            # Saturation is checked on the whole frame, not on the ROI: the
-            # bright spots that matter sit at the well edges, which a centred
-            # ROI deliberately cuts away.
+            # Measured on the whole frame, not on the ROI: the bright spots
+            # that matter sit at the well rims, which a centred ROI cuts away.
             self.last_saturation_percent = float(np.mean(frame >= full_scale)) * 100.0
+            bright_value = float(np.percentile(frame, self.bright_percentile))
+            self.last_bright_level_percent = bright_value / full_scale * 100.0
 
             logger.debug(
                 f"Measured {statistic} intensity: {intensity:.1f}/255 "
