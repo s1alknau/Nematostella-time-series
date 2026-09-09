@@ -92,6 +92,15 @@ class CameraAdapter(ABC):
         """
         return None
 
+    def set_exposure_ms(self, exposure_ms: float) -> bool:
+        """
+        Set the camera exposure in milliseconds.
+
+        Returns True when the camera accepted it. Adapters that cannot set it
+        return False, and callers then keep whatever is configured.
+        """
+        return False
+
     def disable_auto_settings(self) -> dict:
         """
         Disable auto-gain and auto-exposure before recording.
@@ -744,6 +753,29 @@ class NapariViewerCameraAdapter(CameraAdapter):
                     pass
 
         return info
+
+    def set_exposure_ms(self, exposure_ms: float) -> bool:
+        """
+        Set the camera exposure through the ImSwitch DetectorsManager.
+
+        ImSwitch takes and reports the exposure in milliseconds and converts
+        to the microseconds the SDK wants, so the value goes through as is.
+        """
+        try:
+            detector = None
+            if self.camera_manager and self.detector_name:
+                detector = self.camera_manager[self.detector_name]
+
+            if detector is None or not hasattr(detector, "setParameter"):
+                logger.warning("set_exposure_ms: no detector with setParameter available")
+                return False
+
+            detector.setParameter("exposure", float(exposure_ms))
+            logger.info(f"Camera exposure set to {exposure_ms:.1f} ms")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not set exposure to {exposure_ms} ms: {e}")
+            return False
 
     def get_exposure_ms(self) -> float:
         """

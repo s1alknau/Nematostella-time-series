@@ -74,6 +74,11 @@ from .recording_controller import RecordingController
 
 logger = logging.getLogger(__name__)
 
+# Exposure times the calibration tries when it is asked to find one. Short
+# enough at the bottom to keep motion sharp, long enough at the top that the
+# LEDs do not have to run at full power for a dim sample.
+EXPOSURE_CANDIDATES_MS = (5, 10, 20, 30, 40)
+
 
 class NematostellaTimelapseCaptureWidget(QWidget):
     """
@@ -632,6 +637,54 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.log_panel.add_log(f"Failed to initialize multi-camera controller: {e}", "ERROR")
             logger.error(f"Multi-camera controller init failed: {e}", exc_info=True)
             self.multi_camera_controller = None
+
+    def _persist_exposure_to_setup(self, exposure_ms: float) -> bool:
+        """
+        Write the exposure into ImSwitch's active setup file.
+
+        Without this the value lives only in the running camera and is gone at
+        the next start, while the LED powers calibrated for it are kept - the
+        two would drift apart silently and every later recording would run at
+        an illumination that no longer matches its calibration.
+        """
+        try:
+            import json
+            import os
+
+            from imswitch.imcommon.model import dirtools
+            from imswitch.imcontrol.model import configfiletools
+
+            options, _ = configfiletools.loadOptions()
+            path = os.path.join(
+                dirtools.UserFileDirs.Root, "imcontrol_setups", options.setupFileName
+            )
+
+            with open(path, encoding="utf-8") as setup_file:
+                setup = json.load(setup_file)
+
+            written = 0
+            for detector in setup.get("detectors", {}).values():
+                properties = detector.get("managerProperties", {})
+                for section in ("hikcam", "camera"):
+                    block = properties.get(section)
+                    if isinstance(block, dict) and "exposure" in block:
+                        block["exposure"] = round(float(exposure_ms), 3)
+                        written += 1
+
+            if not written:
+                logger.warning(f"No camera section with an exposure entry in {path}")
+                return False
+
+            with open(path, "w", encoding="utf-8") as setup_file:
+                json.dump(setup, setup_file, indent=2)
+                setup_file.write("\n")
+
+            logger.info(f"Exposure {exposure_ms:.1f} ms written to {path}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Could not write the exposure to the setup file: {e}")
+            return False
 
     def _create_camera_adapter_for_config(self, camera_config):
         """Create camera adapter from camera config"""
@@ -1394,15 +1447,72 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                     )
 
                     # Run calibration based on mode
-                    if mode == "ir":
-                        result = calibrator.calibrate_ir(initial_power=50)
-                    elif mode == "white":
-                        result = calibrator.calibrate_white(initial_power=30)
-                    elif mode == "dual":
-                        result = calibrator.calibrate_dual(
-                            ir_initial_power=50, white_initial_power=30
+                    def run_selected_mode():
+                        if mode == "ir":
+                            return calibrator.calibrate_ir(initial_power=50)
+                        if mode == "white":
+                            return calibrator.calibrate_white(initial_power=30)
+                        if mode == "dual":
+                            return calibrator.calibrate_dual(
+                                ir_initial_power=50, white_initial_power=30
+                            )
+                        return None
+
+                    auto_exposure = (
+                        self.led_panel.get_auto_exposure()
+                        and hasattr(self.camera_adapter, "set_exposure_ms")
+                    )
+
+                    if auto_exposure:
+                        self.log_panel.add_log(
+                            f"⏱ Searching the exposure time as well: {EXPOSURE_CANDIDATES_MS} ms",
+                            "INFO",
                         )
+                        sweep = calibrator.calibrate_over_exposures(
+                            calibrate_once=run_selected_mode,
+                            set_exposure_ms=self.camera_adapter.set_exposure_ms,
+                            exposures_ms=EXPOSURE_CANDIDATES_MS,
+                        )
+
+                        for row in sweep["rows"]:
+                            self.log_panel.add_log(
+                                f"   {row['exposure_ms']:>5.1f} ms | median {row['median']:6.1f} | "
+                                f"mean {row['mean']:6.1f} | saturated {row['saturated_percent']:5.2f}% | "
+                                f"IR {row['ir_power']}% White {row['white_power']}% | "
+                                f"{'reached target' if row['success'] else 'target not reached'}",
+                                "INFO",
+                            )
+
+                        best = sweep["best"]
+                        if best is None:
+                            self.log_panel.add_log(
+                                "❌ No exposure time could be calibrated", "ERROR"
+                            )
+                            return
+
+                        result = best["result"]
+                        self.camera_adapter.set_exposure_ms(best["exposure_ms"])
+                        self.log_panel.add_log(
+                            f"⏱ Exposure set to {best['exposure_ms']:.1f} ms "
+                            f"(median {best['median']:.1f}, "
+                            f"saturated {best['saturated_percent']:.2f}%)",
+                            "SUCCESS",
+                        )
+
+                        if self._persist_exposure_to_setup(best["exposure_ms"]):
+                            self.log_panel.add_log(
+                                "💾 Exposure written to the ImSwitch setup file", "SUCCESS"
+                            )
+                        else:
+                            self.log_panel.add_log(
+                                "⚠️ Exposure could not be written to the setup file - "
+                                "it is set on the camera but will not survive a restart",
+                                "WARNING",
+                            )
                     else:
+                        result = run_selected_mode()
+
+                    if result is None:
                         self.log_panel.add_log(f"❌ Unknown calibration mode: {mode}", "ERROR")
                         return
 

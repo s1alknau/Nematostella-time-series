@@ -499,6 +499,111 @@ class CalibrationService:
             logger.info(f"Turning off {led_type.upper()} LED after calibration")
             self.led_off_callback()
 
+    def _reset_saturation_state(self) -> None:
+        """Put the target back to what the user asked for, before a new trial."""
+        self.target_intensity = self.initial_target_intensity
+        self.saturation_backoffs = 0
+        self.last_saturation_percent = 0.0
+
+    def measure_frame_stats(self) -> Optional[dict]:
+        """
+        Mean, median and saturated share of one frame, all on the 0-255 scale.
+
+        The median says how well the sensor range is actually used: a scene
+        that is mostly dark with a few bright reflections can carry a decent
+        mean while half its pixels sit near zero, and only the median makes
+        that visible.
+        """
+        frame = self.capture_callback()
+        if frame is None or frame.size == 0:
+            return None
+
+        full_scale = self._full_scale(frame) if frame.dtype.kind == "u" else 255.0
+        scale = 255.0 / full_scale
+
+        return {
+            "mean": float(np.mean(frame)) * scale,
+            "median": float(np.median(frame)) * scale,
+            "saturated_percent": float(np.mean(frame >= full_scale)) * 100.0,
+        }
+
+    def calibrate_over_exposures(
+        self,
+        calibrate_once: Callable[[], "CalibrationResult"],
+        set_exposure_ms: Callable[[float], bool],
+        exposures_ms,
+        settle_s: float = 1.0,
+    ) -> dict:
+        """
+        Run the LED calibration at several exposure times and keep the best.
+
+        "Best" is the exposure whose calibrated image uses the sensor range
+        best - the highest median - among those that stay below the saturation
+        limit. Mean alone would favour an image carrying a few bright
+        reflections over one that is evenly lit.
+
+        Each exposure is an independent trial, so the saturation backoff is
+        reset before every one; otherwise a lowered target would carry over
+        and make later exposures look worse than they are.
+
+        Returns a dict with one row per exposure and the chosen entry under
+        "best", or "best": None when no exposure could be calibrated.
+        """
+        rows = []
+
+        for exposure in exposures_ms:
+            if not set_exposure_ms(float(exposure)):
+                logger.warning(f"Exposure {exposure} ms could not be set - skipping")
+                continue
+
+            time.sleep(settle_s)
+            self._reset_saturation_state()
+
+            result = calibrate_once()
+            stats = self.measure_frame_stats()
+            if stats is None:
+                logger.warning(f"No frame after calibrating at {exposure} ms - skipping")
+                continue
+
+            row = {
+                "exposure_ms": float(exposure),
+                # The caller needs the result of the winning trial, not just
+                # its numbers - the LED powers live in there.
+                "result": result,
+                "success": bool(getattr(result, "success", False)),
+                "ir_power": getattr(result, "ir_power", None),
+                "white_power": getattr(result, "white_power", None),
+                "target_used": self.target_intensity,
+                "backoffs": self.saturation_backoffs,
+                **stats,
+            }
+            rows.append(row)
+            logger.info(
+                f"Exposure {exposure:>5.1f} ms: median {row['median']:6.1f}, "
+                f"mean {row['mean']:6.1f}, saturated {row['saturated_percent']:5.2f}%, "
+                f"IR {row['ir_power']}%, White {row['white_power']}%"
+            )
+
+        usable = [
+            r for r in rows
+            if r["success"] and r["saturated_percent"] <= self.saturation_limit_percent
+        ]
+        if usable:
+            best = max(usable, key=lambda r: r["median"])
+        elif rows:
+            # Nothing stayed clean - take the least saturated so the caller has
+            # something to work with, and say so.
+            best = min(rows, key=lambda r: r["saturated_percent"])
+            logger.warning(
+                "No exposure reached the target without saturation; falling back to "
+                f"{best['exposure_ms']:.1f} ms with {best['saturated_percent']:.2f}% saturated"
+            )
+        else:
+            best = None
+            logger.error("Exposure search produced no usable measurement at all")
+
+        return {"rows": rows, "best": best}
+
     def _full_scale(self, region) -> float:
         """
         Highest value this camera can produce, for unsigned integer frames.

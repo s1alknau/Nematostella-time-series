@@ -225,6 +225,17 @@ class LEDControlPanel(QWidget):
         )
         self.use_full_frame_checkbox.setStyleSheet("font-size: 11px;")
         calib_options_layout.addWidget(self.use_full_frame_checkbox)
+
+        self.auto_exposure_checkbox = QCheckBox("Also find exposure time")
+        self.auto_exposure_checkbox.setChecked(False)
+        self.auto_exposure_checkbox.setToolTip(
+            "Calibrates the LED power at several exposure times and keeps the one\n"
+            "that uses the sensor range best without saturating pixels.\n"
+            "The chosen time is applied and written to the setup file, so it also\n"
+            "holds after a restart. Takes noticeably longer than a single run."
+        )
+        self.auto_exposure_checkbox.setStyleSheet("font-size: 11px;")
+        calib_options_layout.addWidget(self.auto_exposure_checkbox)
         calib_options_layout.addStretch()
 
         calib_layout.addLayout(calib_options_layout)
@@ -342,6 +353,10 @@ class LEDControlPanel(QWidget):
     def get_use_full_frame(self) -> bool:
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
+
+    def get_auto_exposure(self) -> bool:
+        """Whether calibration should search the exposure time as well."""
+        return self.auto_exposure_checkbox.isChecked()
 
     def get_target_intensity(self) -> float:
         """Returns the target intensity value for calibration"""
