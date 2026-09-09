@@ -185,11 +185,10 @@ class HikGigECameraAdapter(CameraAdapter):
             # DIAGNOSTIC: log raw frame stats so we can tell whether the
             # adapter sees the same bright frame the napari live-view shows.
             # Remove once the calibration-measures-zero bug is understood.
-            print(
+            logger.debug(
                 f"[CAM-DEBUG] detector={self.detector_name} "
                 f"raw shape={frame.shape} dtype={frame.dtype} "
-                f"min={frame.min()} max={frame.max()} mean={frame.mean():.2f}",
-                flush=True,
+                f"min={frame.min()} max={frame.max()} mean={frame.mean():.2f}"
             )
 
             # Ensure correct format (uint16 for HIK)

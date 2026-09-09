@@ -248,6 +248,8 @@ class RecordingManager(QObject):
             if not recording_file:
                 raise RuntimeError("Failed to create recording file")
 
+            self._attach_recording_log(recording_file)
+
             # Set recording configuration
             self.data_manager.set_recording_config(  # type: ignore[union-attr]
                 {
@@ -995,12 +997,65 @@ class RecordingManager(QObject):
         except Exception as e:
             logger.warning(f"Could not restore priority: {e}")
 
+    def _attach_recording_log(self, recording_file: str) -> None:
+        """
+        Mirror this recording's log into a file next to the data.
+
+        Everything the capture path reports - LED verification, phase
+        switches, per-frame camera statistics - went to the console only,
+        which is gone once napari is closed. A finished recording therefore
+        carried no trace of what happened while it ran, and diagnosing an
+        unlit frame afterwards was guesswork.
+        """
+        from pathlib import Path
+
+        self._detach_recording_log()
+        try:
+            log_path = Path(recording_file).parent / "recording.log"
+            handler = logging.FileHandler(log_path, encoding="utf-8")
+            handler.setLevel(logging.DEBUG)
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
+            )
+
+            pkg_logger = logging.getLogger("timeseries_capture")
+            self._recording_log_prev_level = pkg_logger.level
+            if pkg_logger.level == logging.NOTSET or pkg_logger.level > logging.DEBUG:
+                pkg_logger.setLevel(logging.DEBUG)
+            pkg_logger.addHandler(handler)
+            self._recording_log_handler = handler
+            logger.info(f"Recording log: {log_path}")
+        except Exception as e:
+            logger.warning(f"Could not create recording log file: {e}")
+
+    def _detach_recording_log(self) -> None:
+        """Stop mirroring into the recording log and restore the log level."""
+        handler = getattr(self, "_recording_log_handler", None)
+        if handler is None:
+            return
+
+        pkg_logger = logging.getLogger("timeseries_capture")
+        pkg_logger.removeHandler(handler)
+
+        previous_level = getattr(self, "_recording_log_prev_level", None)
+        if previous_level is not None:
+            pkg_logger.setLevel(previous_level)
+
+        try:
+            handler.close()
+        except Exception:
+            pass
+        self._recording_log_handler = None
+
     def _finalize_recording(self):
         """Finalisiert Recording"""
         logger.info("Finalizing recording...")
 
         # Restore normal priority
         self._restore_normal_priority()
+
+        # Detached at the very end of this method, so everything below still
+        # reaches the recording log.
 
         try:
             # Turn off LED to save power
@@ -1046,6 +1101,8 @@ class RecordingManager(QObject):
 
         except Exception as e:
             logger.error(f"Error finalizing recording: {e}")
+        finally:
+            self._detach_recording_log()
 
     def _on_segment_changed(self, new_index: int):
         """
