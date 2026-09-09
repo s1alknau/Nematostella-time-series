@@ -121,6 +121,8 @@ class CalibrationService:
 
         self.initial_target_intensity = target_intensity
         self.last_saturation_percent = 0.0
+        self.last_raw_intensity = 0.0
+        self.last_full_scale = 255.0
         # Where the bright pixels sit, in percent of full scale: 100 means at
         # the limit, 95 means exactly the default headroom.
         self.last_bright_level_percent = 0.0
@@ -184,7 +186,7 @@ class CalibrationService:
             CalibrationResult with both LED powers (IR power will be >= 20%)
         """
         logger.info("Starting Dual LED calibration (SIMULTANEOUS mode)")
-        logger.info(f"Target intensity: {self.target_intensity}")
+        logger.info(f"Target intensity: {self.target_intensity}/255 (scale is bit-depth independent: 255 means the sensor limit)")
         logger.info(f"Initial powers: IR={ir_initial_power}%, White={white_initial_power}%")
 
         current_ir_power = ir_initial_power
@@ -291,7 +293,9 @@ class CalibrationService:
                 )
 
                 logger.info(
-                    f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
+                    f"  Measured intensity: {measured_intensity:.1f}/255 "
+                    f"(target {self.target_intensity:.1f}/255, error {error_percent:.1f}%) "
+                    f"= {self.last_raw_intensity:.0f} of {self.last_full_scale:.0f} grey levels"
                 )
 
                 # The brightest pixels have to keep their distance from the
@@ -471,7 +475,9 @@ class CalibrationService:
                 )
 
                 logger.info(
-                    f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
+                    f"  Measured intensity: {measured_intensity:.1f}/255 "
+                    f"(target {self.target_intensity:.1f}/255, error {error_percent:.1f}%) "
+                    f"= {self.last_raw_intensity:.0f} of {self.last_full_scale:.0f} grey levels"
                 )
 
                 # The brightest pixels have to keep their distance from the
@@ -778,6 +784,11 @@ class CalibrationService:
 
             # Measured on the whole frame, not on the ROI: the bright spots
             # that matter sit at the well rims, which a centred ROI cuts away.
+            # Kept for the log lines: the panel works on 0-255, the camera on
+            # its own grey levels, and only both together are unambiguous.
+            self.last_raw_intensity = raw_intensity
+            self.last_full_scale = full_scale
+
             self.last_saturation_percent = float(np.mean(frame >= full_scale)) * 100.0
             bright_value = float(np.percentile(frame, self.bright_percentile))
             self.last_bright_level_percent = bright_value / full_scale * 100.0

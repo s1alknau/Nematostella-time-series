@@ -1416,7 +1416,9 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
                     # Log calibration settings
                     self.log_panel.add_log(
-                        f"🎯 Target intensity: {target_intensity:.1f} (adjust based on your objective aperture)",
+                        f"🎯 Target intensity: {target_intensity:.1f}/255 - the scale follows "
+                        f"the camera's grey levels, so 255 is the sensor limit whether it "
+                        f"delivers 8, 12 or 16 bit",
                         "INFO",
                     )
                     self.log_panel.add_log(
