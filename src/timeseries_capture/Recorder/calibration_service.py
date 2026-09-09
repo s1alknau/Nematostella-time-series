@@ -53,9 +53,7 @@ class CalibrationService:
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
-        saturation_limit_percent: float = 0.05,
-        saturation_backoff_percent: float = 10.0,
-        max_saturation_backoffs: int = 3,
+        saturation_limit_percent: float = 0.5,
     ):
         """
         Args:
@@ -91,17 +89,16 @@ class CalibrationService:
         # middle, so a calibration that only looks at the mean can land on a
         # power where those edges already sit at the sensor limit - and an
         # animal that swims there stops producing any measurable change.
-        # Whenever the sensor clips while the mean is still at or below the
-        # target, the target itself is unreachable without clipping and gets
-        # lowered. It stays lowered for every case calibrated afterwards on
-        # this instance, so IR, White and Dual keep their relation to each
-        # other.
+        # Clipping beyond this share of the frame counts as "too bright" in
+        # the search, exactly like an intensity above the target. The search
+        # then settles on the highest power that still keeps the frame intact,
+        # even when the target cannot be reached that way - lowering the
+        # target instead does not help, because the search keeps raising the
+        # power towards it and the bright edges clip further.
         self.saturation_limit_percent = saturation_limit_percent
-        self.saturation_backoff_percent = saturation_backoff_percent
-        self.max_saturation_backoffs = max_saturation_backoffs
         self.initial_target_intensity = target_intensity
-        self.saturation_backoffs = 0
         self.last_saturation_percent = 0.0
+        self.saturation_capped = False
 
         roi_desc = (
             "full frame"
@@ -271,15 +268,29 @@ class CalibrationService:
                     f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
                 )
 
-                # Update best result
-                if error_percent < best_error:
+                # Clipped pixels count as too bright no matter what the mean
+                # says: light that lands beyond the sensor limit is lost, and
+                # in a multiwell plate it is lost exactly where the animals sit
+                # closest to the rim.
+                too_saturated = self.last_saturation_percent > self.saturation_limit_percent
+                if too_saturated:
+                    self.saturation_capped = True
+                    logger.info(
+                        f"  Saturated on {self.last_saturation_percent:.2f}% of pixels "
+                        f"(limit {self.saturation_limit_percent:.2f}%) - treating as too bright"
+                    )
+
+                # Update best result. A saturated frame never becomes the
+                # best one, otherwise the calibration would hand back exactly
+                # the setting it is meant to avoid.
+                if error_percent < best_error and not too_saturated:
                     best_ir_power = current_ir_power
                     best_white_power = current_white_power
                     best_intensity = measured_intensity
                     best_error = error_percent
 
                 # Check if within tolerance
-                if error_percent <= self.tolerance_percent:
+                if error_percent <= self.tolerance_percent and not too_saturated:
                     logger.info(
                         f"✅ Dual calibration successful! IR={best_ir_power}%, White={best_white_power}%, Intensity={best_intensity:.1f}, Error={error_percent:.1f}%"
                     )
@@ -296,7 +307,7 @@ class CalibrationService:
                     )
 
                 # Binary search adjustment - adjust both LEDs proportionally
-                if measured_intensity < self.target_intensity:
+                if measured_intensity < self.target_intensity and not too_saturated:
                     # Too dim, increase both powers proportionally
                     min_ir = current_ir_power
                     min_white = current_white_power
@@ -432,14 +443,28 @@ class CalibrationService:
                     f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
                 )
 
-                # Update best result
-                if error_percent < best_error:
+                # Clipped pixels count as too bright no matter what the mean
+                # says: light that lands beyond the sensor limit is lost, and
+                # in a multiwell plate it is lost exactly where the animals sit
+                # closest to the rim.
+                too_saturated = self.last_saturation_percent > self.saturation_limit_percent
+                if too_saturated:
+                    self.saturation_capped = True
+                    logger.info(
+                        f"  Saturated on {self.last_saturation_percent:.2f}% of pixels "
+                        f"(limit {self.saturation_limit_percent:.2f}%) - treating as too bright"
+                    )
+
+                # Update best result. A saturated frame never becomes the
+                # best one, otherwise the calibration would hand back exactly
+                # the setting it is meant to avoid.
+                if error_percent < best_error and not too_saturated:
                     best_power = current_power
                     best_intensity = measured_intensity
                     best_error = error_percent
 
                 # Check if within tolerance
-                if error_percent <= self.tolerance_percent:
+                if error_percent <= self.tolerance_percent and not too_saturated:
                     logger.info(
                         f"✅ Calibration successful! Power={best_power}%, Intensity={best_intensity:.1f}, Error={error_percent:.1f}%"
                     )
@@ -456,7 +481,7 @@ class CalibrationService:
                     )
 
                 # Binary search adjustment
-                if measured_intensity < self.target_intensity:
+                if measured_intensity < self.target_intensity and not too_saturated:
                     # Too dim, increase power
                     min_power = current_power
                     current_power = (current_power + max_power) // 2
@@ -502,8 +527,8 @@ class CalibrationService:
     def _reset_saturation_state(self) -> None:
         """Put the target back to what the user asked for, before a new trial."""
         self.target_intensity = self.initial_target_intensity
-        self.saturation_backoffs = 0
         self.last_saturation_percent = 0.0
+        self.saturation_capped = False
 
     def measure_frame_stats(self) -> Optional[dict]:
         """
@@ -574,7 +599,7 @@ class CalibrationService:
                 "ir_power": getattr(result, "ir_power", None),
                 "white_power": getattr(result, "white_power", None),
                 "target_used": self.target_intensity,
-                "backoffs": self.saturation_backoffs,
+                "saturation_capped": self.saturation_capped,
                 **stats,
             }
             rows.append(row)
@@ -629,35 +654,6 @@ class CalibrationService:
                     break
 
         return float(effective_max)
-
-    def _lower_target_for_saturation(self) -> None:
-        """
-        Lower the target because the sensor clips before reaching it.
-
-        Called only when the mean is at or below target while pixels already
-        sit at full scale - a target that cannot be met without losing those
-        pixels. Overshooting probes of the search are therefore not affected,
-        they measure above target.
-        """
-        if self.saturation_backoffs >= self.max_saturation_backoffs:
-            logger.warning(
-                f"Sensor still saturating ({self.last_saturation_percent:.2f}% of pixels) "
-                f"after {self.saturation_backoffs} corrections - leaving target at "
-                f"{self.target_intensity:.1f}. Reduce illumination or check for reflections."
-            )
-            return
-
-        self.saturation_backoffs += 1
-        previous = self.target_intensity
-        self.target_intensity = max(
-            1.0, previous * (1.0 - self.saturation_backoff_percent / 100.0)
-        )
-        logger.warning(
-            f"Sensor saturating on {self.last_saturation_percent:.2f}% of pixels at "
-            f"intensity {previous:.1f} - lowering target to {self.target_intensity:.1f} "
-            f"(correction {self.saturation_backoffs}/{self.max_saturation_backoffs}). "
-            "Applies to every case calibrated from here on."
-        )
 
     def _measure_intensity(self) -> Optional[float]:
         """
@@ -727,12 +723,6 @@ class CalibrationService:
                 f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, "
                 f"{region_desc}, saturated={self.last_saturation_percent:.3f}%)"
             )
-
-            if (
-                self.last_saturation_percent > self.saturation_limit_percent
-                and intensity <= self.target_intensity
-            ):
-                self._lower_target_for_saturation()
 
             return intensity
 
