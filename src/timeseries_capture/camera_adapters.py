@@ -363,6 +363,30 @@ class HikGigECameraAdapter(CameraAdapter):
 
         return info
 
+    def set_exposure_ms(self, exposure_ms: float) -> bool:
+        """
+        Set the camera exposure through the ImSwitch DetectorsManager.
+
+        ImSwitch takes and reports the exposure in milliseconds and converts
+        to the microseconds the SDK wants, so the value passes through as is.
+        """
+        try:
+            if not self.camera_manager or not self.detector_name:
+                logger.warning("set_exposure_ms: no ImSwitch detector available")
+                return False
+
+            detector = self.camera_manager[self.detector_name]
+            if not hasattr(detector, "setParameter"):
+                logger.warning("set_exposure_ms: detector has no setParameter()")
+                return False
+
+            detector.setParameter("exposure", float(exposure_ms))
+            logger.info(f"Camera exposure set to {exposure_ms:.1f} ms")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not set exposure to {exposure_ms} ms: {e}")
+            return False
+
     def disable_auto_settings(self) -> dict:
         """
         Disable auto-gain and auto-exposure on the HIK camera.
@@ -756,26 +780,31 @@ class NapariViewerCameraAdapter(CameraAdapter):
 
     def set_exposure_ms(self, exposure_ms: float) -> bool:
         """
-        Set the camera exposure through the ImSwitch DetectorsManager.
+        Set the camera exposure through the running ImSwitch instance.
 
-        ImSwitch takes and reports the exposure in milliseconds and converts
-        to the microseconds the SDK wants, so the value goes through as is.
+        This adapter has no camera manager of its own, so it locates the
+        DetectorsManager the same way get_exposure_ms() does.
         """
         try:
-            detector = None
-            if self.camera_manager and self.detector_name:
-                detector = self.camera_manager[self.detector_name]
+            import gc
 
-            if detector is None or not hasattr(detector, "setParameter"):
-                logger.warning("set_exposure_ms: no detector with setParameter available")
-                return False
-
-            detector.setParameter("exposure", float(exposure_ms))
-            logger.info(f"Camera exposure set to {exposure_ms:.1f} ms")
-            return True
+            for obj in gc.get_objects():
+                if (
+                    type(obj).__name__ == "DetectorsManager"
+                    and hasattr(obj, "_subManagers")
+                    and hasattr(obj, "getAllDeviceNames")
+                ):
+                    names = obj.getAllDeviceNames()
+                    if not names:
+                        continue
+                    detector = obj[names[0]]
+                    if hasattr(detector, "setParameter"):
+                        detector.setParameter("exposure", float(exposure_ms))
+                        logger.info(f"Camera exposure set to {exposure_ms:.1f} ms")
+                        return True
         except Exception as e:
             logger.warning(f"Could not set exposure to {exposure_ms} ms: {e}")
-            return False
+        return False
 
     def get_exposure_ms(self) -> float:
         """

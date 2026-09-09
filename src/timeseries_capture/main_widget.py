@@ -1508,36 +1508,42 @@ class NematostellaTimelapseCaptureWidget(QWidget):
 
                         best = sweep["best"]
                         if best is None:
+                            # Better a calibration at the exposure that is
+                            # already set than none at all - a failed search
+                            # says nothing about the LED calibration itself.
                             self.log_panel.add_log(
-                                "❌ No exposure time could be calibrated", "ERROR"
-                            )
-                            return
-
-                        result = best["result"]
-                        self.camera_adapter.set_exposure_ms(best["exposure_ms"])
-                        # From here on this is the exposure the calibration
-                        # belongs to - the value read before the search is the
-                        # old one and would make the mismatch warning fire on
-                        # every recording.
-                        camera_exposure_ms = best["exposure_ms"]
-                        self.led_panel.set_exposure_ms(best["exposure_ms"])
-                        self.log_panel.add_log(
-                            f"⏱ Exposure set to {best['exposure_ms']:.1f} ms "
-                            f"(median {best['median']:.1f}, "
-                            f"saturated {best['saturated_percent']:.2f}%)",
-                            "SUCCESS",
-                        )
-
-                        if self._persist_exposure_to_setup(best["exposure_ms"]):
-                            self.log_panel.add_log(
-                                "💾 Exposure written to the ImSwitch setup file", "SUCCESS"
-                            )
-                        else:
-                            self.log_panel.add_log(
-                                "⚠️ Exposure could not be written to the setup file - "
-                                "it is set on the camera but will not survive a restart",
+                                "⚠️ No exposure time could be measured - calibrating at "
+                                "the exposure currently set instead",
                                 "WARNING",
                             )
+                            result = run_selected_mode()
+                        else:
+                            result = best["result"]
+                            self.camera_adapter.set_exposure_ms(best["exposure_ms"])
+
+                            # From here on this is the exposure the calibration
+                            # belongs to. The value read before the search is
+                            # the old one and would make the mismatch warning
+                            # fire on every recording.
+                            camera_exposure_ms = best["exposure_ms"]
+                            self.led_panel.set_exposure_ms(best["exposure_ms"])
+                            self.log_panel.add_log(
+                                f"⏱ Exposure set to {best['exposure_ms']:.1f} ms "
+                                f"(median {best['median']:.1f}, "
+                                f"saturated {best['saturated_percent']:.2f}%)",
+                                "SUCCESS",
+                            )
+
+                            if self._persist_exposure_to_setup(best["exposure_ms"]):
+                                self.log_panel.add_log(
+                                    "💾 Exposure written to the ImSwitch setup file", "SUCCESS"
+                                )
+                            else:
+                                self.log_panel.add_log(
+                                    "⚠️ Exposure could not be written to the setup file - "
+                                    "it is set on the camera but will not survive a restart",
+                                    "WARNING",
+                                )
                     else:
                         result = run_selected_mode()
                         if camera_exposure_ms is not None:
