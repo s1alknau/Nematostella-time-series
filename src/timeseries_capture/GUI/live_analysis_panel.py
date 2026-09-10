@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from qtpy.QtCore import QSettings
+from qtpy.QtCore import QSettings, Qt
 from qtpy.QtCore import Signal as pyqtSignal
 from qtpy.QtGui import QImage, QPixmap
 from qtpy.QtWidgets import (
@@ -664,7 +664,12 @@ class LiveAnalysisPanel(QWidget):
             # Scale to fit label while keeping aspect ratio
             label_w = self.preview_label.width() or 400
             label_h = self.preview_label.height() or 300
-            pixmap = pixmap.scaled(label_w, label_h, 1, 1)  # KeepAspectRatio, SmoothTransformation
+            # The enum values, not their numbers: PyQt5 accepted plain ints
+            # here, PySide6 rejects them with a TypeError - and the frame then
+            # never reaches the label, which only shows "Display error".
+            pixmap = pixmap.scaled(
+                label_w, label_h, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
             self.preview_label.setPixmap(pixmap)
         except Exception as exc:
             logger.error(f"Failed to display frame: {exc}")
