@@ -179,7 +179,9 @@ class LEDControlPanel(QWidget):
 
         self.target_intensity_spinbox = QDoubleSpinBox()
         self.target_intensity_spinbox.setRange(1.0, 1000.0)
-        self.target_intensity_spinbox.setValue(200.0)
+        # 40 of 255 - the working point of this rig: reachable at 20 ms
+        # exposure without driving the plate rims deep into saturation.
+        self.target_intensity_spinbox.setValue(40.0)
         self.target_intensity_spinbox.setDecimals(1)
         self.target_intensity_spinbox.setSingleStep(10.0)
         self.target_intensity_spinbox.setToolTip(
@@ -200,7 +202,10 @@ class LEDControlPanel(QWidget):
 
         self.tolerance_spinbox = QDoubleSpinBox()
         self.tolerance_spinbox.setRange(0.1, 10.0)
-        self.tolerance_spinbox.setValue(1.0)
+        # 2.5 % rather than 1 %: the LED power is an integer percentage, so
+        # neighbouring settings can differ by more than one percent of the
+        # target - a tighter tolerance then cannot be met at all.
+        self.tolerance_spinbox.setValue(2.5)
         self.tolerance_spinbox.setDecimals(1)
         self.tolerance_spinbox.setSingleStep(0.5)
         self.tolerance_spinbox.setToolTip(
