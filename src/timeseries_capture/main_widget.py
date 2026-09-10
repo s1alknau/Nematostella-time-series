@@ -243,7 +243,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
         self.led_panel.led_off_requested.connect(self._on_led_off_requested)
         self.led_panel.led_power_changed.connect(self._on_led_power_changed)
         self.led_panel.calibration_requested.connect(self._on_calibration_requested)
-        self.led_panel.exposure_changed.connect(self._on_exposure_changed)
 
         # Live Analysis Panel
         self.live_analysis_panel.capture_frame_requested.connect(self._on_capture_preview_frame)
@@ -633,76 +632,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.log_panel.add_log(f"Failed to initialize multi-camera controller: {e}", "ERROR")
             logger.error(f"Multi-camera controller init failed: {e}", exc_info=True)
             self.multi_camera_controller = None
-
-    def _on_exposure_changed(self, exposure_ms: float):
-        """
-        Apply an exposure the user typed into the panel.
-
-        This deliberately overrides whatever a calibration found - the
-        calibrated LED powers stay as they are, and the exposure mismatch
-        warning at recording start will point out that the two no longer
-        belong together.
-        """
-        if not self.camera_adapter or not hasattr(self.camera_adapter, "set_exposure_ms"):
-            self.log_panel.add_log("⚠️ No camera to set the exposure on", "WARNING")
-            return
-
-        if not self.camera_adapter.set_exposure_ms(exposure_ms):
-            self.log_panel.add_log(f"❌ Camera refused {exposure_ms:.1f} ms", "ERROR")
-            return
-
-        self.log_panel.add_log(f"⏱ Exposure set to {exposure_ms:.1f} ms", "SUCCESS")
-
-        if self._persist_exposure_to_setup(exposure_ms):
-            self.log_panel.add_log("💾 Written to the ImSwitch setup file", "INFO")
-
-    def _persist_exposure_to_setup(self, exposure_ms: float) -> bool:
-        """
-        Write the exposure into ImSwitch's active setup file.
-
-        Without this the value lives only in the running camera and is gone at
-        the next start, while the LED powers calibrated for it are kept - the
-        two would drift apart silently and every later recording would run at
-        an illumination that no longer matches its calibration.
-        """
-        try:
-            import json
-            import os
-
-            from imswitch.imcommon.model import dirtools
-            from imswitch.imcontrol.model import configfiletools
-
-            options, _ = configfiletools.loadOptions()
-            path = os.path.join(
-                dirtools.UserFileDirs.Root, "imcontrol_setups", options.setupFileName
-            )
-
-            with open(path, encoding="utf-8") as setup_file:
-                setup = json.load(setup_file)
-
-            written = 0
-            for detector in setup.get("detectors", {}).values():
-                properties = detector.get("managerProperties", {})
-                for section in ("hikcam", "camera"):
-                    block = properties.get(section)
-                    if isinstance(block, dict) and "exposure" in block:
-                        block["exposure"] = round(float(exposure_ms), 3)
-                        written += 1
-
-            if not written:
-                logger.warning(f"No camera section with an exposure entry in {path}")
-                return False
-
-            with open(path, "w", encoding="utf-8") as setup_file:
-                json.dump(setup, setup_file, indent=2)
-                setup_file.write("\n")
-
-            logger.info(f"Exposure {exposure_ms:.1f} ms written to {path}")
-            return True
-
-        except Exception as e:
-            logger.warning(f"Could not write the exposure to the setup file: {e}")
-            return False
 
     def _create_camera_adapter_for_config(self, camera_config):
         """Create camera adapter from camera config"""
@@ -1463,9 +1392,6 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         )
                     else:
                         result = None
-
-                    if camera_exposure_ms is not None:
-                        self.led_panel.set_exposure_ms(camera_exposure_ms)
 
 
                     if result is None:

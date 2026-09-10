@@ -92,15 +92,6 @@ class CameraAdapter(ABC):
         """
         return None
 
-    def set_exposure_ms(self, exposure_ms: float) -> bool:
-        """
-        Set the camera exposure in milliseconds.
-
-        Returns True when the camera accepted it. Adapters that cannot set it
-        return False, and callers then keep whatever is configured.
-        """
-        return False
-
     def disable_auto_settings(self) -> dict:
         """
         Disable auto-gain and auto-exposure before recording.
@@ -362,30 +353,6 @@ class HikGigECameraAdapter(CameraAdapter):
                 logger.debug(f"Could not get detailed camera info: {e}")
 
         return info
-
-    def set_exposure_ms(self, exposure_ms: float) -> bool:
-        """
-        Set the camera exposure through the ImSwitch DetectorsManager.
-
-        ImSwitch takes and reports the exposure in milliseconds and converts
-        to the microseconds the SDK wants, so the value passes through as is.
-        """
-        try:
-            if not self.camera_manager or not self.detector_name:
-                logger.warning("set_exposure_ms: no ImSwitch detector available")
-                return False
-
-            detector = self.camera_manager[self.detector_name]
-            if not hasattr(detector, "setParameter"):
-                logger.warning("set_exposure_ms: detector has no setParameter()")
-                return False
-
-            detector.setParameter("exposure", float(exposure_ms))
-            logger.info(f"Camera exposure set to {exposure_ms:.1f} ms")
-            return True
-        except Exception as e:
-            logger.warning(f"Could not set exposure to {exposure_ms} ms: {e}")
-            return False
 
     def disable_auto_settings(self) -> dict:
         """
@@ -777,34 +744,6 @@ class NapariViewerCameraAdapter(CameraAdapter):
                     pass
 
         return info
-
-    def set_exposure_ms(self, exposure_ms: float) -> bool:
-        """
-        Set the camera exposure through the running ImSwitch instance.
-
-        This adapter has no camera manager of its own, so it locates the
-        DetectorsManager the same way get_exposure_ms() does.
-        """
-        try:
-            import gc
-
-            for obj in gc.get_objects():
-                if (
-                    type(obj).__name__ == "DetectorsManager"
-                    and hasattr(obj, "_subManagers")
-                    and hasattr(obj, "getAllDeviceNames")
-                ):
-                    names = obj.getAllDeviceNames()
-                    if not names:
-                        continue
-                    detector = obj[names[0]]
-                    if hasattr(detector, "setParameter"):
-                        detector.setParameter("exposure", float(exposure_ms))
-                        logger.info(f"Camera exposure set to {exposure_ms:.1f} ms")
-                        return True
-        except Exception as e:
-            logger.warning(f"Could not set exposure to {exposure_ms} ms: {e}")
-        return False
 
     def get_exposure_ms(self) -> float:
         """

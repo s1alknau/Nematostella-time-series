@@ -28,7 +28,6 @@ class LEDControlPanel(QWidget):
     led_off_requested = pyqtSignal(str)  # led_type: 'ir', 'white'
     led_power_changed = pyqtSignal(str, int)  # led_type, power
     calibration_requested = pyqtSignal(str)  # mode: 'ir', 'white', 'dual'
-    exposure_changed = pyqtSignal(float)  # exposure in ms, entered by the user
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -195,35 +194,6 @@ class LEDControlPanel(QWidget):
         calib_layout.addLayout(target_layout)
 
 
-        # Exposure. Filled from the camera after every calibration; editing it
-        # applies the value to the camera, so a user can override what the
-        # calibration found without leaving the plugin.
-        exposure_layout = QHBoxLayout()
-        exposure_layout.addWidget(QLabel("Exposure (ms):"))
-
-        self.exposure_spinbox = QDoubleSpinBox()
-        self.exposure_spinbox.setRange(0.1, 1000.0)
-        self.exposure_spinbox.setDecimals(1)
-        self.exposure_spinbox.setSingleStep(1.0)
-        self.exposure_spinbox.setValue(5.0)
-        self.exposure_spinbox.setToolTip(
-            "Camera exposure time.\n"
-            "Filled in after a calibration; change it here to override.\n"
-            "Applying also writes it to the ImSwitch setup file."
-        )
-        self.exposure_spinbox.setMinimumWidth(100)
-        exposure_layout.addWidget(self.exposure_spinbox)
-
-        self.apply_exposure_button = QPushButton("Apply")
-        self.apply_exposure_button.setToolTip("Set this exposure on the camera")
-        self.apply_exposure_button.clicked.connect(
-            lambda: self.exposure_changed.emit(self.exposure_spinbox.value())
-        )
-        exposure_layout.addWidget(self.apply_exposure_button)
-        exposure_layout.addStretch()
-
-        calib_layout.addLayout(exposure_layout)
-
         # Tolerance Input
         tolerance_layout = QHBoxLayout()
         tolerance_layout.addWidget(QLabel("Tolerance (%):"))
@@ -375,21 +345,6 @@ class LEDControlPanel(QWidget):
     def get_use_full_frame(self) -> bool:
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
-
-    def get_exposure_ms(self) -> float:
-        """Exposure currently shown in the panel."""
-        return self.exposure_spinbox.value()
-
-    def set_exposure_ms(self, exposure_ms: float):
-        """
-        Show an exposure without triggering the apply signal.
-
-        Used after a calibration to display what the camera ended up with;
-        emitting here would set the value the panel just received.
-        """
-        blocked = self.exposure_spinbox.blockSignals(True)
-        self.exposure_spinbox.setValue(float(exposure_ms))
-        self.exposure_spinbox.blockSignals(blocked)
 
     def get_target_intensity(self) -> float:
         """Returns the target intensity value for calibration"""
