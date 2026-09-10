@@ -39,6 +39,20 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _create_array(group, name, **kwargs):
+    """
+    Create an array in a Zarr group, on Zarr 3 as well as Zarr 2.
+
+    Zarr 3 dropped Group.create_dataset() in favour of create_array(); calling
+    the old name raises AttributeError, and in this writer that happened once
+    per frame - every frame was lost while the recording looked like it was
+    running.
+    """
+    if hasattr(group, "create_array"):
+        return group.create_array(name, **kwargs)
+    return group.create_dataset(name, **kwargs)
+
+
 # ============================================================================
 # TELEMETRY MODE (same as HDF5)
 # ============================================================================
@@ -77,8 +91,12 @@ class ZarrTimeseriesWriter:
             "temperature_celsius": np.float32,
             "humidity_percent": np.float32,
             "led_type_str": str,
-            "ir_led_power": np.uint8,
-            "white_led_power": np.uint8,
+            # int16, nicht uint8: diese Felder tragen -1, wenn der Wert
+            # unbekannt ist. Numpy 1 hat das stillschweigend zu 255
+            # umgebrochen, Numpy 2 wirft stattdessen - und der Schreiber
+            # verlor damit die gesamte Telemetrie des Bildes.
+            "ir_led_power": np.int16,
+            "white_led_power": np.int16,
             "phase_str": str,
             "cycle_number": np.int16,
             "frame_mean_intensity": np.float32,
@@ -103,8 +121,8 @@ class ZarrTimeseriesWriter:
             "capture_overhead_sec": np.float32,
             "capture_delay_sec": np.float32,
             "stabilization_ms": np.float32,
-            "capture_delay_ms": np.uint8,
-            "camera_trigger_latency_ms": np.uint8,
+            "capture_delay_ms": np.int16,
+            "camera_trigger_latency_ms": np.int16,
             "temperature": np.float32,
             "humidity": np.float32,
             "led_sync_success": np.bool_,  # binary flag
@@ -126,14 +144,16 @@ class ZarrTimeseriesWriter:
                     self.arrays[name] = self.g[name]
                 else:
                     if dtype is str:
-                        self.arrays[name] = self.g.create_dataset(
+                        self.arrays[name] = _create_array(
+                            self.g,
                             name,
                             shape=(0,),
                             chunks=(self.chunk_size,),
                             dtype="str",
                         )
                     else:
-                        self.arrays[name] = self.g.create_dataset(
+                        self.arrays[name] = _create_array(
+                            self.g,
                             name,
                             shape=(0,),
                             chunks=(self.chunk_size,),
@@ -701,12 +721,12 @@ class DataManagerZarr:
                 f"falling back to V2-style chunks=({self.img_chunk_frames}, H, W). "
                 f"Per-frame write amplification will be ~{self.img_chunk_frames * 2}x."
             )
-            self._frames_array = self._root["images"].create_dataset(
+            self._frames_array = _create_array(
+                self._root["images"],
                 "frames",
                 shape=(self._images_max_frames, h, w),
                 chunks=(self.img_chunk_frames, h, w),
                 dtype=dtype,
-                compressor=None,  # v2 uses singular 'compressor'
             )
         self._frames_array.attrs["frame_height"] = h
         self._frames_array.attrs["frame_width"] = w
@@ -960,11 +980,15 @@ class DataManagerZarr:
 
             # Write to analysis/ group
             ag = self._root.require_group("analysis")
-            ag.create_array("timestamps_sec", data=timestamps, dtype=np.float32, overwrite=True)
+            ag.create_array(
+                "timestamps_sec", data=timestamps.astype(np.float32), overwrite=True
+            )
 
             for i in range(n_rois):
                 arr = np.concatenate(roi_activity[i])
-                ag.create_array(f"roi_{i}_activity", data=arr, dtype=np.float32, overwrite=True)
+                ag.create_array(
+                    f"roi_{i}_activity", data=arr.astype(np.float32), overwrite=True
+                )
 
             ag.attrs["n_rois"] = n_rois
             ag.attrs["n_diffs"] = n_frames - 1
@@ -1050,8 +1074,7 @@ class DataManagerZarr:
                 del rois_group["masks"]
             rois_group.create_array(
                 "masks",
-                data=mask_array,
-                dtype=np.uint8,
+                data=mask_array.astype(np.uint8),
                 chunks=(1, mask_array.shape[1], mask_array.shape[2]),
             )
             rois_group.attrs["n_rois"] = len(masks)
