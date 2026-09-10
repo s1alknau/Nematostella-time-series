@@ -698,11 +698,7 @@ class RecordingManager(QObject):
                 #   2) Observed-max heuristic (fits 10/12/14/16-bit packed
                 #      into uint16 by looking at the frame's own max).
                 #   3) Full dtype capacity as last resort.
-                # Median, to match what the calibration measured: the
-                # threshold is derived from the calibrated value, so both have
-                # to describe the same thing. On a plate the mean follows the
-                # bright rims, the median the wells.
-                mean = float(np.median(arr))
+                mean = float(np.mean(arr))
                 if arr.dtype.kind == "f":
                     return mean * 255.0
                 if arr.dtype.kind != "u":

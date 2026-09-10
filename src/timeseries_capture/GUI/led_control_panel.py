@@ -194,48 +194,6 @@ class LEDControlPanel(QWidget):
 
         calib_layout.addLayout(target_layout)
 
-        # Distance the brightest pixels keep from the sensor limit. The
-        # search reduces the LED power until they sit that far below it.
-        saturation_layout = QHBoxLayout()
-        saturation_layout.addWidget(QLabel("Headroom (%):"))
-
-        self.saturation_spinbox = QDoubleSpinBox()
-        self.saturation_spinbox.setRange(0.0, 50.0)
-        self.saturation_spinbox.setDecimals(1)
-        self.saturation_spinbox.setSingleStep(0.5)
-        self.saturation_spinbox.setValue(5.0)
-        self.saturation_spinbox.setToolTip(
-            "Distance the brightest pixels keep from the sensor limit.\n"
-            "5 % means they are regulated to about 95 % of full scale, so\n"
-            "nothing is clipped and the value range is still used fully.\n"
-            "The LED power is lowered for this even if the target is missed."
-        )
-        self.saturation_spinbox.setMinimumWidth(100)
-        saturation_layout.addWidget(self.saturation_spinbox)
-        saturation_layout.addStretch()
-
-        calib_layout.addLayout(saturation_layout)
-
-        # Which pixels the headroom applies to.
-        percentile_layout = QHBoxLayout()
-        percentile_layout.addWidget(QLabel("Applies to percentile:"))
-
-        self.bright_percentile_spinbox = QDoubleSpinBox()
-        self.bright_percentile_spinbox.setRange(50.0, 100.0)
-        self.bright_percentile_spinbox.setDecimals(1)
-        self.bright_percentile_spinbox.setSingleStep(1.0)
-        self.bright_percentile_spinbox.setValue(95.0)
-        self.bright_percentile_spinbox.setToolTip(
-            "Which pixels have to keep the headroom.\n"
-            "95 means the brightest 5 percent may clip - on a multiwell plate\n"
-            "those are the rims, and sparing them would leave the wells dark.\n"
-            "99.9 protects almost every pixel and costs a lot of light."
-        )
-        self.bright_percentile_spinbox.setMinimumWidth(100)
-        percentile_layout.addWidget(self.bright_percentile_spinbox)
-        percentile_layout.addStretch()
-
-        calib_layout.addLayout(percentile_layout)
 
         # Exposure. Filled from the camera after every calibration; editing it
         # applies the value to the camera, so a user can override what the
@@ -299,27 +257,7 @@ class LEDControlPanel(QWidget):
         self.use_full_frame_checkbox.setStyleSheet("font-size: 11px;")
         calib_options_layout.addWidget(self.use_full_frame_checkbox)
 
-        self.respect_saturation_checkbox = QCheckBox("Limit by saturation")
-        self.respect_saturation_checkbox.setChecked(False)
-        self.respect_saturation_checkbox.setToolTip(
-            "Off: the search only chases the target value, as before.\n"
-            "On: it additionally keeps the bright pixels below the sensor\n"
-            "limit, using the headroom and percentile set below. That costs\n"
-            "light - on a plate with bright rims the wells stay darker."
-        )
-        self.respect_saturation_checkbox.setStyleSheet("font-size: 11px;")
-        calib_options_layout.addWidget(self.respect_saturation_checkbox)
 
-        self.auto_exposure_checkbox = QCheckBox("Also find exposure time")
-        self.auto_exposure_checkbox.setChecked(False)
-        self.auto_exposure_checkbox.setToolTip(
-            "Calibrates the LED power at several exposure times and keeps the one\n"
-            "that uses the sensor range best without saturating pixels.\n"
-            "The chosen time is applied and written to the setup file, so it also\n"
-            "holds after a restart. Takes noticeably longer than a single run."
-        )
-        self.auto_exposure_checkbox.setStyleSheet("font-size: 11px;")
-        calib_options_layout.addWidget(self.auto_exposure_checkbox)
         calib_options_layout.addStretch()
 
         calib_layout.addLayout(calib_options_layout)
@@ -438,18 +376,6 @@ class LEDControlPanel(QWidget):
         """Gibt zurück ob Full Frame für Kalibrierung verwendet werden soll"""
         return self.use_full_frame_checkbox.isChecked()
 
-    def get_respect_saturation(self) -> bool:
-        """Whether the search should keep the bright pixels below the limit."""
-        return self.respect_saturation_checkbox.isChecked()
-
-    def get_saturation_headroom_percent(self) -> float:
-        """How far below the sensor limit the brightest pixels should stay."""
-        return self.saturation_spinbox.value()
-
-    def get_bright_percentile(self) -> float:
-        """Percentile the headroom applies to."""
-        return self.bright_percentile_spinbox.value()
-
     def get_exposure_ms(self) -> float:
         """Exposure currently shown in the panel."""
         return self.exposure_spinbox.value()
@@ -464,10 +390,6 @@ class LEDControlPanel(QWidget):
         blocked = self.exposure_spinbox.blockSignals(True)
         self.exposure_spinbox.setValue(float(exposure_ms))
         self.exposure_spinbox.blockSignals(blocked)
-
-    def get_auto_exposure(self) -> bool:
-        """Whether calibration should search the exposure time as well."""
-        return self.auto_exposure_checkbox.isChecked()
 
     def get_target_intensity(self) -> float:
         """Returns the target intensity value for calibration"""

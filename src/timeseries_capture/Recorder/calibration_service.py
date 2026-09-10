@@ -53,10 +53,6 @@ class CalibrationService:
         use_full_frame: bool = False,
         roi_fraction: float = 0.75,
         effective_max_getter: Optional[Callable[[], Optional[float]]] = None,
-        respect_saturation: bool = False,
-        saturation_headroom_percent: float = 5.0,
-        bright_percentile: float = 95.0,
-        use_median: bool = True,
     ):
         """
         Args:
@@ -87,46 +83,6 @@ class CalibrationService:
         # (e.g. 4095 for 12-bit-in-uint16). When None the code falls back
         # to observed-max heuristics — see _measure_intensity().
         self.effective_max_getter = effective_max_getter
-
-        # Median rather than mean, because a multiwell plate is mostly dark
-        # background with a few very bright rims: the mean follows those rims
-        # and says little about the wells, where the animals actually are. A
-        # rectangular ROI cannot do this job either - six wells spread across
-        # the frame can never be enclosed by one centred box without taking
-        # rims along.
-        self.use_median = use_median
-
-        # Saturation guard. Wells are brighter at their edges than in the
-        # middle, so a calibration that only looks at the mean can land on a
-        # power where those edges already sit at the sensor limit - and an
-        # animal that swims there stops producing any measurable change.
-        # Headroom instead of tolerated clipping: the search regulates so
-        # that the brightest pixels end up this far below the sensor limit.
-        # Nothing is cut off, and the value range is used as far as it goes.
-        # "Brightest" is a percentile rather than the maximum, and which one
-        # decides what may be sacrificed. On this rig the well rims scatter so
-        # much more than the well interiors that keeping them below the limit
-        # leaves the interiors nearly black. With p95 the top 5 percent - the
-        # rims - are allowed to clip, everything below keeps its headroom.
-        # A percentile that already sits in the clipped range is no use as a
-        # control value: its true height is unknown, so the search can only
-        # push the power down until it becomes measurable again.
-        # Off by default: the classic search only chases the target value.
-        # The headroom rule below is an addition for setups whose bright spots
-        # would otherwise clip, and it costs light - on a plate with strongly
-        # scattering rims it holds the wells noticeably darker.
-        self.respect_saturation = respect_saturation
-        self.saturation_headroom_percent = saturation_headroom_percent
-        self.bright_percentile = bright_percentile
-
-        self.initial_target_intensity = target_intensity
-        self.last_saturation_percent = 0.0
-        self.last_raw_intensity = 0.0
-        self.last_full_scale = 255.0
-        # Where the bright pixels sit, in percent of full scale: 100 means at
-        # the limit, 95 means exactly the default headroom.
-        self.last_bright_level_percent = 0.0
-        self.saturation_capped = False
 
         roi_desc = (
             "full frame"
@@ -186,7 +142,7 @@ class CalibrationService:
             CalibrationResult with both LED powers (IR power will be >= 20%)
         """
         logger.info("Starting Dual LED calibration (SIMULTANEOUS mode)")
-        logger.info(f"Target intensity: {self.target_intensity}/255 (scale is bit-depth independent: 255 means the sensor limit)")
+        logger.info(f"Target intensity: {self.target_intensity}")
         logger.info(f"Initial powers: IR={ir_initial_power}%, White={white_initial_power}%")
 
         current_ir_power = ir_initial_power
@@ -293,39 +249,18 @@ class CalibrationService:
                 )
 
                 logger.info(
-                    f"  Measured intensity: {measured_intensity:.1f}/255 "
-                    f"(target {self.target_intensity:.1f}/255, error {error_percent:.1f}%) "
-                    f"= {self.last_raw_intensity:.0f} of {self.last_full_scale:.0f} grey levels"
+                    f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
                 )
 
-                # The brightest pixels have to keep their distance from the
-                # sensor limit, no matter what the mean says. Light beyond the
-                # limit is lost, and in a multiwell plate it is lost exactly
-                # where an animal sits closest to the rim.
-                ceiling = 100.0 - self.saturation_headroom_percent
-                too_saturated = (
-                    self.respect_saturation
-                    and self.last_bright_level_percent > ceiling
-                )
-                if too_saturated:
-                    self.saturation_capped = True
-                    logger.info(
-                        f"  Brightest pixels at {self.last_bright_level_percent:.1f}% of full "
-                        f"scale (ceiling {ceiling:.1f}%, {self.last_saturation_percent:.2f}% "
-                        f"already clipped) - treating as too bright"
-                    )
-
-                # Update best result. A saturated frame never becomes the
-                # best one, otherwise the calibration would hand back exactly
-                # the setting it is meant to avoid.
-                if error_percent < best_error and not too_saturated:
+                # Update best result
+                if error_percent < best_error:
                     best_ir_power = current_ir_power
                     best_white_power = current_white_power
                     best_intensity = measured_intensity
                     best_error = error_percent
 
                 # Check if within tolerance
-                if error_percent <= self.tolerance_percent and not too_saturated:
+                if error_percent <= self.tolerance_percent:
                     logger.info(
                         f"✅ Dual calibration successful! IR={best_ir_power}%, White={best_white_power}%, Intensity={best_intensity:.1f}, Error={error_percent:.1f}%"
                     )
@@ -342,7 +277,7 @@ class CalibrationService:
                     )
 
                 # Binary search adjustment - adjust both LEDs proportionally
-                if measured_intensity < self.target_intensity and not too_saturated:
+                if measured_intensity < self.target_intensity:
                     # Too dim, increase both powers proportionally
                     min_ir = current_ir_power
                     min_white = current_white_power
@@ -475,38 +410,17 @@ class CalibrationService:
                 )
 
                 logger.info(
-                    f"  Measured intensity: {measured_intensity:.1f}/255 "
-                    f"(target {self.target_intensity:.1f}/255, error {error_percent:.1f}%) "
-                    f"= {self.last_raw_intensity:.0f} of {self.last_full_scale:.0f} grey levels"
+                    f"  Measured intensity: {measured_intensity:.1f} (target: {self.target_intensity:.1f}, error: {error_percent:.1f}%)"
                 )
 
-                # The brightest pixels have to keep their distance from the
-                # sensor limit, no matter what the mean says. Light beyond the
-                # limit is lost, and in a multiwell plate it is lost exactly
-                # where an animal sits closest to the rim.
-                ceiling = 100.0 - self.saturation_headroom_percent
-                too_saturated = (
-                    self.respect_saturation
-                    and self.last_bright_level_percent > ceiling
-                )
-                if too_saturated:
-                    self.saturation_capped = True
-                    logger.info(
-                        f"  Brightest pixels at {self.last_bright_level_percent:.1f}% of full "
-                        f"scale (ceiling {ceiling:.1f}%, {self.last_saturation_percent:.2f}% "
-                        f"already clipped) - treating as too bright"
-                    )
-
-                # Update best result. A saturated frame never becomes the
-                # best one, otherwise the calibration would hand back exactly
-                # the setting it is meant to avoid.
-                if error_percent < best_error and not too_saturated:
+                # Update best result
+                if error_percent < best_error:
                     best_power = current_power
                     best_intensity = measured_intensity
                     best_error = error_percent
 
                 # Check if within tolerance
-                if error_percent <= self.tolerance_percent and not too_saturated:
+                if error_percent <= self.tolerance_percent:
                     logger.info(
                         f"✅ Calibration successful! Power={best_power}%, Intensity={best_intensity:.1f}, Error={error_percent:.1f}%"
                     )
@@ -523,7 +437,7 @@ class CalibrationService:
                     )
 
                 # Binary search adjustment
-                if measured_intensity < self.target_intensity and not too_saturated:
+                if measured_intensity < self.target_intensity:
                     # Too dim, increase power
                     min_power = current_power
                     current_power = (current_power + max_power) // 2
@@ -566,160 +480,6 @@ class CalibrationService:
             logger.info(f"Turning off {led_type.upper()} LED after calibration")
             self.led_off_callback()
 
-    def _reset_saturation_state(self) -> None:
-        """Put the target back to what the user asked for, before a new trial."""
-        self.target_intensity = self.initial_target_intensity
-        self.last_saturation_percent = 0.0
-        self.last_bright_level_percent = 0.0
-        self.saturation_capped = False
-
-    def _apply_result_powers(self, result) -> None:
-        """Set the LEDs to the powers a calibration result carries."""
-        for led_type in ("ir", "white"):
-            power = getattr(result, f"{led_type}_power", 0)
-            if power:
-                try:
-                    self.set_led_power_callback(power, led_type)
-                except Exception as e:
-                    logger.debug(f"Could not re-apply {led_type} power {power}: {e}")
-        time.sleep(0.3)
-
-    def measure_frame_stats(self) -> Optional[dict]:
-        """
-        Mean, median and saturated share of one frame, all on the 0-255 scale.
-
-        The median says how well the sensor range is actually used: a scene
-        that is mostly dark with a few bright reflections can carry a decent
-        mean while half its pixels sit near zero, and only the median makes
-        that visible.
-        """
-        frame = self.capture_callback()
-        if frame is None or frame.size == 0:
-            return None
-
-        full_scale = self._full_scale(frame) if frame.dtype.kind == "u" else 255.0
-        scale = 255.0 / full_scale
-
-        return {
-            "mean": float(np.mean(frame)) * scale,
-            "median": float(np.median(frame)) * scale,
-            "saturated_percent": float(np.mean(frame >= full_scale)) * 100.0,
-        }
-
-    def calibrate_over_exposures(
-        self,
-        calibrate_once: Callable[[], "CalibrationResult"],
-        set_exposure_ms: Callable[[float], bool],
-        exposures_ms,
-        settle_s: float = 1.0,
-    ) -> dict:
-        """
-        Run the LED calibration at several exposure times and keep the best.
-
-        "Best" is the exposure whose calibrated image uses the sensor range
-        best - the highest median - among those that stay below the saturation
-        limit. Mean alone would favour an image carrying a few bright
-        reflections over one that is evenly lit.
-
-        Each exposure is an independent trial, so the saturation backoff is
-        reset before every one; otherwise a lowered target would carry over
-        and make later exposures look worse than they are.
-
-        Returns a dict with one row per exposure and the chosen entry under
-        "best", or "best": None when no exposure could be calibrated.
-        """
-        rows = []
-
-        for exposure in exposures_ms:
-            if not set_exposure_ms(float(exposure)):
-                logger.warning(f"Exposure {exposure} ms could not be set - skipping")
-                continue
-
-            time.sleep(settle_s)
-            self._reset_saturation_state()
-
-            result = calibrate_once()
-
-            # The search leaves the LED wherever its last probe was, which is
-            # not necessarily the power it returns. Without re-applying the
-            # result the row would describe a setting nobody ends up using -
-            # and report saturation that the returned setting does not have.
-            self._apply_result_powers(result)
-            stats = self.measure_frame_stats()
-            if stats is None:
-                logger.warning(f"No frame after calibrating at {exposure} ms - skipping")
-                continue
-
-            row = {
-                "exposure_ms": float(exposure),
-                # The caller needs the result of the winning trial, not just
-                # its numbers - the LED powers live in there.
-                "result": result,
-                "success": bool(getattr(result, "success", False)),
-                "ir_power": getattr(result, "ir_power", None),
-                "white_power": getattr(result, "white_power", None),
-                "target_used": self.target_intensity,
-                "saturation_capped": self.saturation_capped,
-                **stats,
-            }
-            rows.append(row)
-            logger.info(
-                f"Exposure {exposure:>5.1f} ms: median {row['median']:6.1f}, "
-                f"mean {row['mean']:6.1f}, saturated {row['saturated_percent']:5.2f}%, "
-                f"IR {row['ir_power']}%, White {row['white_power']}%"
-            )
-
-        usable = [
-            r for r in rows
-            if r["success"] and not r["saturation_capped"]
-        ]
-        if usable:
-            best = max(usable, key=lambda r: r["median"])
-        elif rows:
-            # No exposure reached the target. Since the search caps the power
-            # at the saturation limit anyway, every row is clean and picking
-            # the least saturated one would decide almost at random. The
-            # brightest usable image is the useful answer instead - same
-            # criterion as above, just without the target being met.
-            best = max(rows, key=lambda r: r["median"])
-            logger.warning(
-                f"No exposure reached the target of {self.target_intensity:.1f}; taking the "
-                f"brightest that keeps the sensor intact: {best['exposure_ms']:.1f} ms, "
-                f"median {best['median']:.1f}, mean {best['mean']:.1f}, "
-                f"{best['saturated_percent']:.2f}% saturated"
-            )
-        else:
-            best = None
-            logger.error("Exposure search produced no usable measurement at all")
-
-        return {"rows": rows, "best": best}
-
-    def _full_scale(self, region) -> float:
-        """
-        Highest value this camera can produce, for unsigned integer frames.
-
-        Preference: the value the adapter reports from the pixel format, then
-        an observed-max heuristic for the usual bit depths, and the container
-        width as a last resort.
-        """
-        effective_max = None
-        if self.effective_max_getter is not None:
-            try:
-                effective_max = self.effective_max_getter()
-            except Exception:
-                effective_max = None
-
-        dtype_max_full = float(np.iinfo(region.dtype).max)
-        if effective_max is None:
-            observed_max = float(region.max())
-            effective_max = dtype_max_full
-            for bit_max in (1023.0, 4095.0, 16383.0):
-                if observed_max <= bit_max < dtype_max_full:
-                    effective_max = bit_max
-                    break
-
-        return float(effective_max)
-
     def _measure_intensity(self) -> Optional[float]:
         """
         Capture frame and measure mean intensity.
@@ -761,10 +521,7 @@ class CalibrationService:
                 region = frame[roi_y1:roi_y2, roi_x1:roi_x2]
                 region_desc = f"ROI ({region.shape}, {self.roi_fraction*100:.0f}% center)"
 
-            statistic = "median" if self.use_median else "mean"
-            raw_intensity = float(
-                np.median(region) if self.use_median else np.mean(region)
-            )
+            raw_intensity = float(np.mean(region))
 
             # Normalize to 0-255 scale so target_intensity=200 is meaningful
             # regardless of camera bit depth (uint8, 10/12/14/16-bit-in-uint16, float).
@@ -774,29 +531,27 @@ class CalibrationService:
             #   3) Full dtype range as last resort.
             if region.dtype.kind == "f":
                 intensity = raw_intensity * 255.0
-                full_scale = 1.0
             elif region.dtype.kind == "u":
-                full_scale = self._full_scale(region)
-                intensity = raw_intensity * 255.0 / full_scale
+                effective_max = None
+                if self.effective_max_getter is not None:
+                    try:
+                        effective_max = self.effective_max_getter()
+                    except Exception:
+                        effective_max = None
+                dtype_max_full = float(np.iinfo(region.dtype).max)
+                if effective_max is None:
+                    observed_max = float(region.max())
+                    effective_max = dtype_max_full
+                    for bit_max in (1023.0, 4095.0, 16383.0):
+                        if observed_max <= bit_max < dtype_max_full:
+                            effective_max = bit_max
+                            break
+                intensity = raw_intensity * 255.0 / float(effective_max)
             else:
                 intensity = raw_intensity * 255.0 / 255.0
-                full_scale = 255.0
-
-            # Measured on the whole frame, not on the ROI: the bright spots
-            # that matter sit at the well rims, which a centred ROI cuts away.
-            # Kept for the log lines: the panel works on 0-255, the camera on
-            # its own grey levels, and only both together are unambiguous.
-            self.last_raw_intensity = raw_intensity
-            self.last_full_scale = full_scale
-
-            self.last_saturation_percent = float(np.mean(frame >= full_scale)) * 100.0
-            bright_value = float(np.percentile(frame, self.bright_percentile))
-            self.last_bright_level_percent = bright_value / full_scale * 100.0
 
             logger.debug(
-                f"Measured {statistic} intensity: {intensity:.1f}/255 "
-                f"(raw={raw_intensity:.1f}, {region_desc}, "
-                f"saturated={self.last_saturation_percent:.3f}%)"
+                f"Measured intensity: {intensity:.1f}/255 (raw={raw_intensity:.1f}, {region_desc})"
             )
 
             return intensity

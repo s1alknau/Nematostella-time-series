@@ -74,11 +74,6 @@ from .recording_controller import RecordingController
 
 logger = logging.getLogger(__name__)
 
-# Exposure times the calibration tries when it is asked to find one. Short
-# enough at the bottom to keep motion sharp, long enough at the top that the
-# LEDs do not have to run at full power for a dim sample.
-EXPOSURE_CANDIDATES_MS = (5, 10, 20, 30, 40)
-
 
 class NematostellaTimelapseCaptureWidget(QWidget):
     """
@@ -1455,108 +1450,27 @@ class NematostellaTimelapseCaptureWidget(QWidget):
                         use_full_frame=use_full_frame,  # Use checkbox setting
                         roi_fraction=0.75,  # 75% x 75% center ROI when not using full frame
                         effective_max_getter=effective_max_getter,
-                        respect_saturation=self.led_panel.get_respect_saturation(),
-                        saturation_headroom_percent=self.led_panel.get_saturation_headroom_percent(),
-                        bright_percentile=self.led_panel.get_bright_percentile(),
                     )
 
                     # Run calibration based on mode
-                    def run_selected_mode():
-                        if mode == "ir":
-                            return calibrator.calibrate_ir(initial_power=50)
-                        if mode == "white":
-                            return calibrator.calibrate_white(initial_power=30)
-                        if mode == "dual":
-                            return calibrator.calibrate_dual(
-                                ir_initial_power=50, white_initial_power=30
-                            )
-                        return None
-
-                    auto_exposure = (
-                        self.led_panel.get_auto_exposure()
-                        and hasattr(self.camera_adapter, "set_exposure_ms")
-                    )
-
-                    if auto_exposure:
-                        self.log_panel.add_log(
-                            f"⏱ Searching the exposure time as well: {EXPOSURE_CANDIDATES_MS} ms",
-                            "INFO",
+                    if mode == "ir":
+                        result = calibrator.calibrate_ir(initial_power=50)
+                    elif mode == "white":
+                        result = calibrator.calibrate_white(initial_power=30)
+                    elif mode == "dual":
+                        result = calibrator.calibrate_dual(
+                            ir_initial_power=50, white_initial_power=30
                         )
-                        sweep = calibrator.calibrate_over_exposures(
-                            calibrate_once=run_selected_mode,
-                            set_exposure_ms=self.camera_adapter.set_exposure_ms,
-                            exposures_ms=EXPOSURE_CANDIDATES_MS,
-                        )
-
-                        for row in sweep["rows"]:
-                            self.log_panel.add_log(
-                                f"   {row['exposure_ms']:>5.1f} ms | median {row['median']:6.1f} | "
-                                f"mean {row['mean']:6.1f} | saturated {row['saturated_percent']:5.2f}% | "
-                                f"IR {row['ir_power']}% White {row['white_power']}% | "
-                                f"{'reached target' if row['success'] else 'target not reached'}",
-                                "INFO",
-                            )
-
-                        best = sweep["best"]
-                        if best is None:
-                            # Better a calibration at the exposure that is
-                            # already set than none at all - a failed search
-                            # says nothing about the LED calibration itself.
-                            self.log_panel.add_log(
-                                "⚠️ No exposure time could be measured - calibrating at "
-                                "the exposure currently set instead",
-                                "WARNING",
-                            )
-                            result = run_selected_mode()
-                        else:
-                            result = best["result"]
-                            self.camera_adapter.set_exposure_ms(best["exposure_ms"])
-
-                            # From here on this is the exposure the calibration
-                            # belongs to. The value read before the search is
-                            # the old one and would make the mismatch warning
-                            # fire on every recording.
-                            camera_exposure_ms = best["exposure_ms"]
-                            self.led_panel.set_exposure_ms(best["exposure_ms"])
-                            self.log_panel.add_log(
-                                f"⏱ Exposure set to {best['exposure_ms']:.1f} ms "
-                                f"(median {best['median']:.1f}, "
-                                f"saturated {best['saturated_percent']:.2f}%)",
-                                "SUCCESS",
-                            )
-
-                            if self._persist_exposure_to_setup(best["exposure_ms"]):
-                                self.log_panel.add_log(
-                                    "💾 Exposure written to the ImSwitch setup file", "SUCCESS"
-                                )
-                            else:
-                                self.log_panel.add_log(
-                                    "⚠️ Exposure could not be written to the setup file - "
-                                    "it is set on the camera but will not survive a restart",
-                                    "WARNING",
-                                )
                     else:
-                        result = run_selected_mode()
-                        if camera_exposure_ms is not None:
-                            self.led_panel.set_exposure_ms(camera_exposure_ms)
+                        result = None
+
+                    if camera_exposure_ms is not None:
+                        self.led_panel.set_exposure_ms(camera_exposure_ms)
+
 
                     if result is None:
                         self.log_panel.add_log(f"❌ Unknown calibration mode: {mode}", "ERROR")
                         return
-
-                    # The search stops at the highest power that keeps the
-                    # frame below the saturation limit. When that power does
-                    # not reach the target, the scene simply cannot deliver it
-                    # - saying so is more useful than a number that looks like
-                    # a failed calibration.
-                    if calibrator.saturation_capped:
-                        self.log_panel.add_log(
-                            f"🔅 Limited by saturation: the sensor clips before reaching "
-                            f"{target_intensity:.1f}. Result is the brightest setting that "
-                            f"keeps the frame intact "
-                            f"(measured {result.measured_intensity:.1f}).",
-                            "WARNING",
-                        )
 
                     # Report results
                     if result.success:
