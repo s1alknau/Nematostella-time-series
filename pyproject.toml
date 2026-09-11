@@ -43,7 +43,7 @@ testing = [
     "pytest-qt",
     "pytest-mock",
     "napari",
-    "pyqt5",
+    "pyside6",
 ]
 
 # Development dependencies
