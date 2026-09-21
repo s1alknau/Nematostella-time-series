@@ -1,0 +1,28 @@
+{
+  "name": "LSFT Tomograph (ESP32 NodeMCU)",
+  "version": "latest",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "lsft/bootloader.bin",
+          "offset": 4096
+        },
+        {
+          "path": "lsft/partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "lsft/boot_app0.bin",
+          "offset": 57344
+        },
+        {
+          "path": "lsft/firmware.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

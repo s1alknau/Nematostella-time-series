@@ -247,8 +247,13 @@
 
     <p class="section-title">1 — Select your board</p>
     <select id="board-select">
-      <option value="esp32dev">ESP32 DevKit (classic ESP32)</option>
-      <option value="esp32-s3-box-3">ESP32-S3-BOX-3</option>
+      <optgroup label="Nematostella LED Controller">
+        <option value="esp32dev">ESP32 DevKit (classic ESP32)</option>
+        <option value="esp32-s3-box-3">ESP32-S3-BOX-3</option>
+      </optgroup>
+      <optgroup label="Light Sheet Tomograph (LSFT)">
+        <option value="lsft">ESP32 NodeMCU &mdash; lasers &amp; capillary rotation</option>
+      </optgroup>
     </select>
 
     <p class="section-title">Pin assignment</p>
@@ -296,11 +301,14 @@
   </nav>
 
   <footer>
-    Firmware is auto-built from
+    LED controller firmware is auto-built from
     <a href="https://github.com/s1alknau/Nematostella-time-series" target="_blank">
       github.com/s1alknau/Nematostella-time-series
-    </a>
-    on every push to the main branch.
+    </a>,
+    LSFT firmware from
+    <a href="https://github.com/s1alknau/napari-lsft" target="_blank">
+      github.com/s1alknau/napari-lsft
+    </a>.
   </footer>
 
   <script>
@@ -319,6 +327,22 @@
           ["IR LED",    "GPIO 10"],
           ["White LED", "GPIO 11"],
           ["DHT22",     "GPIO 12"],
+        ]
+      },
+      // Light sheet tomograph. A classic ESP32 on purpose: the optional
+      // on-board galvo output needs GPIO25/26, the only two real DACs, which
+      // the S2/S3/C3 parts do not have.
+      "lsft": {
+        manifest: "firmware/manifest_lsft.json",
+        pins: [
+          ["Laser 488 nm",       "GPIO 16"],
+          ["Laser 532 nm",       "GPIO 17"],
+          ["Laser 632 nm",       "GPIO 18"],
+          ["Laser 405 nm",       "GPIO 19"],
+          ["Capillary IN1",      "GPIO 26"],
+          ["Capillary IN2",      "GPIO 25"],
+          ["Capillary IN3",      "GPIO 33"],
+          ["Capillary IN4",      "GPIO 32"],
         ]
       }
     };

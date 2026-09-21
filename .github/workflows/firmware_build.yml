@@ -7,6 +7,11 @@ on:
     paths:
       - "Firmware/**"
   workflow_dispatch:
+  # The LSFT firmware lives in another repository, so a change there cannot
+  # trigger this workflow by path. Run it by hand after such a change, or have
+  # napari-lsft send a repository_dispatch with this type.
+  repository_dispatch:
+    types: [lsft-firmware]
 
 jobs:
   build-and-deploy:
@@ -31,6 +36,15 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      # The light sheet tomograph's firmware is developed in its own repo.
+      # Checking it out here keeps a single source of truth -- the alternative
+      # would be a copy of the sources that quietly drifts.
+      - name: Check out the LSFT firmware
+        uses: actions/checkout@v4
+        with:
+          repository: s1alknau/napari-lsft
+          path: napari-lsft
+
       - name: Build esp32dev
         run: |
           cd Firmware/LED_Nematostella
@@ -40,6 +54,11 @@ jobs:
         run: |
           cd Firmware/LED_Nematostella
           pio run -e esp32-s3-box-3
+
+      - name: Build LSFT firmware
+        run: |
+          cd napari-lsft/firmware
+          pio run -e lsft
 
       - name: Copy firmware binaries to docs/
         run: |
@@ -56,6 +75,15 @@ jobs:
           cp Firmware/LED_Nematostella/.pio/build/esp32-s3-box-3/bootloader.bin docs/firmware/esp32-s3-box-3/
           cp Firmware/LED_Nematostella/.pio/build/esp32-s3-box-3/partitions.bin docs/firmware/esp32-s3-box-3/
           cp "$BOOT_APP0" docs/firmware/esp32-s3-box-3/boot_app0.bin
+
+          # Same layout and offsets as esp32dev: the LSFT board is a classic
+          # ESP32 too (the galvo fallback needs the two real DACs, which only
+          # the classic part has).
+          mkdir -p docs/firmware/lsft
+          cp napari-lsft/firmware/.pio/build/lsft/firmware.bin   docs/firmware/lsft/
+          cp napari-lsft/firmware/.pio/build/lsft/bootloader.bin docs/firmware/lsft/
+          cp napari-lsft/firmware/.pio/build/lsft/partitions.bin docs/firmware/lsft/
+          cp "$BOOT_APP0" docs/firmware/lsft/boot_app0.bin
 
       - name: Commit updated firmware binaries
         run: |
