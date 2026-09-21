@@ -1,0 +1,28 @@
+{
+  "name": "LSFT Galvo Scanner (UC2 board, XIAO ESP32-S3)",
+  "version": "latest",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "lsft-galvo/bootloader.bin",
+          "offset": 0
+        },
+        {
+          "path": "lsft-galvo/partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "lsft-galvo/ota_data_initial.bin",
+          "offset": 53248
+        },
+        {
+          "path": "lsft-galvo/firmware.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

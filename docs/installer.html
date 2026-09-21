@@ -253,6 +253,7 @@
       </optgroup>
       <optgroup label="Light Sheet Tomograph (LSFT)">
         <option value="lsft">ESP32 NodeMCU &mdash; lasers &amp; capillary rotation</option>
+        <option value="lsft-galvo">UC2 galvo board &mdash; light sheet sweep</option>
       </optgroup>
     </select>
 
@@ -323,6 +324,7 @@
       },
       "esp32-s3-box-3": {
         manifest: "firmware/manifest_esp32-s3-box-3.json",
+        s3: true,
         pins: [
           ["IR LED",    "GPIO 10"],
           ["White LED", "GPIO 11"],
@@ -344,6 +346,21 @@
           ["Capillary IN3",      "GPIO 33"],
           ["Capillary IN4",      "GPIO 32"],
         ]
+      },
+      // UC2 galvo add-on: a XIAO ESP32-S3 driving an MCP4822 over SPI. The
+      // D-numbers are the XIAO silkscreen, the GPIOs what the firmware uses.
+      "lsft-galvo": {
+        manifest: "firmware/manifest_lsft-galvo.json",
+        s3: true,
+        pins: [
+          ["DAC SCK  (D9)",  "GPIO 7"],
+          ["DAC SDI  (D8)",  "GPIO 9"],
+          ["DAC CS   (D10)", "GPIO 8"],
+          ["DAC LDAC (D7)",  "GPIO 6"],
+          ["Pixel trigger",  "GPIO 2"],
+          ["Line trigger",   "GPIO 3"],
+          ["Frame trigger",  "GPIO 4"],
+        ]
       }
     };
 
@@ -363,7 +380,7 @@
           `<tr><td>${fn}</td><td><span class="gpio">${gpio}</span></td></tr>`)
         .join("");
 
-      s3hint.style.display = key === "esp32-s3-box-3" ? "block" : "none";
+      s3hint.style.display = board.s3 ? "block" : "none";
     }
 
     select.addEventListener("change", updateBoard);

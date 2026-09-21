@@ -60,6 +60,13 @@ jobs:
           cd napari-lsft/firmware
           pio run -e lsft
 
+      # -j 2 on purpose: the default parallelism spawns enough cc1plus to
+      # exhaust the runner's memory on this target.
+      - name: Build LSFT galvo firmware
+        run: |
+          cd napari-lsft/firmware/galvo
+          pio run -e UC2_3_Xiao -j 2
+
       - name: Copy firmware binaries to docs/
         run: |
           BOOT_APP0=$(find ~/.platformio -name boot_app0.bin | head -1)
@@ -84,6 +91,16 @@ jobs:
           cp napari-lsft/firmware/.pio/build/lsft/bootloader.bin docs/firmware/lsft/
           cp napari-lsft/firmware/.pio/build/lsft/partitions.bin docs/firmware/lsft/
           cp "$BOOT_APP0" docs/firmware/lsft/boot_app0.bin
+
+          # The galvo board is an ESP32-S3 and its layout differs: the
+          # bootloader sits at 0x0, not 0x1000, and it carries an OTA data
+          # partition instead of boot_app0.
+          mkdir -p docs/firmware/lsft-galvo
+          GALVO=napari-lsft/firmware/galvo/.pio/build/UC2_3_Xiao
+          cp $GALVO/firmware.bin          docs/firmware/lsft-galvo/
+          cp $GALVO/bootloader.bin        docs/firmware/lsft-galvo/
+          cp $GALVO/partitions.bin        docs/firmware/lsft-galvo/
+          cp $GALVO/ota_data_initial.bin  docs/firmware/lsft-galvo/
 
       - name: Commit updated firmware binaries
         run: |
