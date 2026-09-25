@@ -18,8 +18,20 @@ class CameraConfig:
     """Configuration for a single camera-ESP32 unit"""
 
     id: str
-    name: str
+    name: str  # Human-readable label, e.g. "Camera 1 - Position A"
     type: str  # "hik_gige", "hik_usb", etc.
+
+    # ImSwitch detector name, exactly as the setup JSON spells it (e.g.
+    # "WidefieldCamera"). This is what actually picks the camera: ImSwitch
+    # publishes one napari layer per detector, named "Live: <detector>", and
+    # each recording unit reads its frames from that layer. Without it every
+    # unit would grab the first live layer it finds and all of them would
+    # silently film the same camera. `name` is a label and must not be used
+    # for this — it never matches a detector name.
+    detector: Optional[str] = None
+
+    # Documentation only: ImSwitch addresses HikCam detectors by
+    # cameraListIndex, not by address, so nothing here selects a camera.
     ip: Optional[str] = None  # For GigE cameras
     usb_index: Optional[int] = None  # For USB cameras
     esp32_port: str = "COM3"
@@ -103,6 +115,25 @@ class CameraSystemConfig:
         if len(ips) != len(set(ips)):
             errors.append("Duplicate camera IP addresses found")
 
+        # Check detector names — this is what actually picks the camera.
+        # A missing or duplicated name does not fail loudly at runtime: the
+        # units just read the same live layer and produce identical-looking
+        # recordings, which is only noticed in the data. So fail here instead.
+        if self.num_enabled_cameras > 1:
+            for cam in self.enabled_cameras:
+                if not cam.detector:
+                    errors.append(
+                        f"Camera {cam.id}: 'detector' is required with more than one "
+                        f"camera - it names the ImSwitch detector to record from"
+                    )
+
+            detectors = [cam.detector for cam in self.enabled_cameras if cam.detector]
+            if len(detectors) != len(set(detectors)):
+                errors.append(
+                    "Duplicate detector names found - every camera must record "
+                    "from its own ImSwitch detector"
+                )
+
         # Validate each camera
         for cam in self.cameras:
             try:
@@ -140,6 +171,7 @@ def load_camera_system_config(config_path: Path) -> CameraSystemConfig:
             id=cam_data["id"],
             name=cam_data["name"],
             type=cam_data["type"],
+            detector=cam_data.get("detector"),
             ip=cam_data.get("ip"),
             usb_index=cam_data.get("usb_index"),
             esp32_port=cam_data["esp32_port"],

@@ -634,16 +634,48 @@ class NematostellaTimelapseCaptureWidget(QWidget):
             self.multi_camera_controller = None
 
     def _create_camera_adapter_for_config(self, camera_config):
-        """Create camera adapter from camera config"""
-        if camera_config.type in ["hik_gige", "hik_usb"]:
-            from .camera_adapters import ImSwitchCameraAdapter
+        """Create a camera adapter bound to exactly one camera.
 
-            # Use ImSwitch camera manager to get camera
-            return ImSwitchCameraAdapter(
-                camera_manager=self.camera_manager, camera_name=camera_config.name
-            )
-        else:
+        ImSwitch publishes one napari layer per detector, named
+        "Live: <detector>", so binding a unit to its camera means binding it
+        to that layer by name. Leaving the name off makes the adapter take the
+        first live layer it finds, which with several cameras means every unit
+        records the same one -- hence the explicit layer name here.
+        """
+        if camera_config.type not in ("hik_gige", "hik_usb"):
             raise ValueError(f"Unsupported camera type: {camera_config.type}")
+
+        detector = camera_config.detector
+
+        # Same order as the single-camera path: the ImSwitch manager first.
+        # The napari route only snapshots the live layer and cannot sync with
+        # LED cycling -- see _try_find_imswitch_camera_manager above, where
+        # that cost 11 of 12 frames to darkness. It stays as a fallback only.
+        if self.camera_manager is not None and detector:
+            return create_camera_adapter(
+                camera_type="hik",
+                camera_manager=self.camera_manager,
+                detector_name=detector,
+            )
+
+        if self.viewer is not None and detector:
+            logger.warning(
+                "Camera %s: no ImSwitch camera manager, falling back to the "
+                "napari layer. Frames are not synced to LED cycling.",
+                camera_config.id,
+            )
+            return create_camera_adapter(
+                camera_type="napari",
+                napari_viewer=self.viewer,
+                layer_name=f"Live: {detector}",
+            )
+
+        raise ValueError(
+            f"Camera {camera_config.id}: cannot bind to a camera. "
+            f"Needs 'detector' in the config"
+            f"{' (missing)' if not detector else ''}"
+            f" plus a napari viewer or an ImSwitch camera manager."
+        )
 
     def _create_esp32_controller_for_port(self, port: str):
         """Create ESP32 controller for COM port"""

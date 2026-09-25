@@ -5,6 +5,7 @@
       "id": "cam1",
       "name": "Camera 1 - Position A",
       "type": "hik_gige",
+      "detector": "WidefieldCamera1",
       "ip": "192.168.1.101",
       "esp32_port": "COM3",
       "enabled": true
@@ -13,6 +14,7 @@
       "id": "cam2",
       "name": "Camera 2 - Position B",
       "type": "hik_gige",
+      "detector": "WidefieldCamera2",
       "ip": "192.168.1.102",
       "esp32_port": "COM4",
       "enabled": true
@@ -21,6 +23,7 @@
       "id": "cam3",
       "name": "Camera 3 - Position C",
       "type": "hik_gige",
+      "detector": "WidefieldCamera3",
       "ip": "192.168.1.103",
       "esp32_port": "COM5",
       "enabled": true
@@ -29,6 +32,7 @@
       "id": "cam4",
       "name": "Camera 4 - Position D",
       "type": "hik_gige",
+      "detector": "WidefieldCamera4",
       "ip": "192.168.1.104",
       "esp32_port": "COM6",
       "enabled": true
@@ -37,6 +41,7 @@
       "id": "cam5",
       "name": "Camera 5 - Position E",
       "type": "hik_gige",
+      "detector": "WidefieldCamera5",
       "ip": "192.168.1.105",
       "esp32_port": "COM7",
       "enabled": true
@@ -45,6 +50,7 @@
       "id": "cam6",
       "name": "Camera 6 - Position F",
       "type": "hik_gige",
+      "detector": "WidefieldCamera6",
       "ip": "192.168.1.106",
       "esp32_port": "COM8",
       "enabled": true
