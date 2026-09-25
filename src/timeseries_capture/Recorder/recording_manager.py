@@ -71,6 +71,14 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 _WIN_HIGH_PRIORITY_CLASS = 0x00000080
 
+# Consecutive failed saves before the recording gives up. A single failure is
+# worth riding out -- a transient I/O hiccup should not end a 72 h run. A full
+# disk, on the other hand, fails every save from here on, and continuing wins
+# nothing: one such run kept going for 30 more hours, wrote not a single
+# frame, and could not even log why, because the log sits on the same disk.
+# At a 5 s interval this threshold gives up after roughly a minute.
+MAX_CONSECUTIVE_SAVE_FAILURES = 12
+
 
 def _win32_begin_precise_timing():
     if sys.platform != "win32":
@@ -174,6 +182,69 @@ class RecordingManager(QObject):
     # RECORDING CONTROL
     # ========================================================================
 
+    def _free_space_note(self) -> str:
+        """" free space on the target disk" for an error message, or ''.
+
+        Best effort on purpose: this runs while something is already going
+        wrong, so it must never raise and add a second failure on top.
+        """
+        try:
+            import shutil
+
+            config = self.state.get_config()
+            if not config or not config.output_dir:
+                return ""
+            free = shutil.disk_usage(config.output_dir).free
+            return f" {free / 1024**3:.1f} GB free on the target disk."
+        except Exception:
+            return ""
+
+    def estimate_free_space(self, config: RecordingConfig, streams: int = 1):
+        """Size up the planned run against the target disk.
+
+        Split out from the check so the multi-camera controller can ask once
+        for all its units instead of letting each unit measure the same disk
+        on its own and all of them conclude there is room.
+        """
+        from .disk_space import estimate_recording_space, frame_bytes_from_camera
+
+        camera = getattr(self.frame_capture, "camera", None) or getattr(
+            self.frame_capture, "camera_adapter", None
+        )
+        frame_bytes = frame_bytes_from_camera(
+            camera, save_as_uint8=getattr(config, "save_as_uint8", False)
+        )
+
+        return estimate_recording_space(
+            output_dir=config.output_dir,
+            duration_min=config.duration_min,
+            interval_sec=config.interval_sec,
+            frame_bytes=frame_bytes,
+            streams=streams,
+        )
+
+    def check_free_space(self, config: RecordingConfig, streams: int = 1) -> bool:
+        """True when the run fits. Logs the numbers either way."""
+        estimate = self.estimate_free_space(config, streams=streams)
+
+        if not estimate.known:
+            # Never block on a guess: refusing a good recording because the
+            # frame size could not be read would be worse than the problem.
+            logger.warning(f"Disk space: {estimate.describe()}")
+            return True
+
+        if estimate.fits:
+            logger.info(f"Disk space: {estimate.describe()}")
+            return True
+
+        logger.error(f"Disk space: {estimate.describe()}")
+        logger.error(
+            "Refusing to start: free up space or shorten the recording. "
+            "Starting anyway would fill the disk mid-run and lose the "
+            "remainder without a readable error."
+        )
+        return False
+
     def start_recording(
         self,
         config: RecordingConfig,
@@ -192,6 +263,12 @@ class RecordingManager(QObject):
         """
         if self.state.is_active():
             logger.error("Recording already active")
+            return False
+
+        # Refuse a run the disk cannot hold. Once it is full the writer dies
+        # without a usable error and the log, living on the same disk, cannot
+        # say so either -- see disk_space for what that cost once.
+        if not self.check_free_space(config):
             return False
 
         logger.info("Starting recording...")
@@ -455,6 +532,11 @@ class RecordingManager(QObject):
             # Reset placeholder-frame reference (will be set on first success)
             self._last_good_frame = None
             self._placeholder_frame_count = 0
+
+            # Consecutive failed saves. A full disk fails every save from then
+            # on, and the run used to continue for hours writing nothing --
+            # the log could not report it either, living on the same disk.
+            self._consecutive_save_failures = 0
 
             # Start recording state
             self.state.start_recording()
@@ -939,6 +1021,7 @@ class RecordingManager(QObject):
                 self.state.increment_frame()
 
                 if success:
+                    self._consecutive_save_failures = 0
                     # Cache the actual frame for placeholder fallback.  Skip
                     # caching when this WAS the placeholder (don't re-cache a
                     # replicated stale frame).  In-place copy to the existing
@@ -969,9 +1052,31 @@ class RecordingManager(QObject):
                     else:
                         logger.debug(f"Frame {frame_number} saved successfully")
                 else:
+                    self._consecutive_save_failures += 1
                     logger.error(
-                        f"Failed to save frame {frame_number} — counter advanced to keep cadence"
+                        f"Failed to save frame {frame_number} - counter advanced "
+                        f"to keep cadence "
+                        f"({self._consecutive_save_failures} in a row)"
                     )
+                    # The signal goes to the GUI, not to the disk, so it still
+                    # arrives when the disk is the thing that is broken.
+                    self.error_occurred.emit(
+                        f"Could not save frame {frame_number} "
+                        f"({self._consecutive_save_failures} in a row)"
+                    )
+
+                    if self._consecutive_save_failures >= MAX_CONSECUTIVE_SAVE_FAILURES:
+                        free = self._free_space_note()
+                        logger.error(
+                            f"Stopping recording: {self._consecutive_save_failures} "
+                            f"saves failed in a row.{free} Everything after the "
+                            f"last good frame would be lost anyway."
+                        )
+                        self.error_occurred.emit(
+                            f"Recording stopped: {self._consecutive_save_failures} "
+                            f"saves failed in a row.{free}"
+                        )
+                        self.stop_recording()
 
         except Exception as e:
             logger.error(f"Error capturing frame: {e}")

@@ -152,6 +152,14 @@ class MultiCameraController:
             logger.error("Cannot start recordings: Not all units connected")
             return {cam_id: False for cam_id in self.units.keys()}
 
+        # One space check for the whole batch, before anything starts. Every
+        # unit writes its own file to the same disk, so asking each of them
+        # separately would have all of them see the full free space and all
+        # of them say yes -- and together overrun it. Checking here also
+        # means no camera starts a run that its siblings will cut short.
+        if not self._check_free_space_for_all(config):
+            return {cam_id: False for cam_id in self.units.keys()}
+
         results = {}
 
         logger.info(f"Starting recordings on {len(self.units)} cameras...")
@@ -179,6 +187,36 @@ class MultiCameraController:
         )
 
         return results
+
+    def _check_free_space_for_all(self, config: RecordingConfig) -> bool:
+        """True when the disk holds one recording per unit.
+
+        Uses any one unit to size a single stream -- the cameras are the same
+        model and write the same frame size -- and multiplies by the number of
+        units actually starting.
+        """
+        if not self.units:
+            return True
+
+        probe = next(iter(self.units.values()))
+        estimate = probe.recording_manager.estimate_free_space(
+            config, streams=len(self.units)
+        )
+
+        if not estimate.known:
+            logger.warning(f"Disk space: {estimate.describe()}")
+            return True
+
+        if estimate.fits:
+            logger.info(f"Disk space: {estimate.describe()}")
+            return True
+
+        logger.error(f"Disk space: {estimate.describe()}")
+        logger.error(
+            f"Refusing to start {len(self.units)} recordings: free up space, "
+            f"shorten the run, or record with fewer cameras."
+        )
+        return False
 
     def stop_all_recordings(self) -> Dict[str, bool]:
         """
