@@ -59,8 +59,20 @@ LSFT_ASSETS = {
 
 # The LSFT README points at the asset via its repo-relative path; the copy sits
 # next to the page, so flatten the path.
+_LSFT_BLOB = "https://github.com/s1alknau/napari-lsft/blob/main/"
+_LSFT_TREE = "https://github.com/s1alknau/napari-lsft/tree/main/"
+
 LSFT_REWRITES = [
+    # The GIF is copied next to the page, so its link just loses the folder.
     ("examples/lsft_nema_hd_anim.gif", "lsft_nema_hd_anim.gif"),
+    # Everything else the LSFT README points at lives only in that repo, not
+    # in docs/. Repo-relative links are right on GitHub but dangle on the
+    # site ("target lsft/firmware/README.md is not found among documentation
+    # files"), so they are rewritten to absolute GitHub URLs here instead of
+    # being changed in the README.
+    ("(acquisition/acquire_lsft.py)", f"({_LSFT_BLOB}acquisition/acquire_lsft.py)"),
+    ("(firmware/README.md)", f"({_LSFT_BLOB}firmware/README.md)"),
+    ("(firmware/)", f"({_LSFT_TREE}firmware)"),
 ]
 
 # Text rewrites applied to the copied analysis markdown (in order):
