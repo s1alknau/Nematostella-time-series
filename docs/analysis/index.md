@@ -1,8 +1,5 @@
 # Analysis Plugin — Overview
 
-[![PyPI](https://img.shields.io/pypi/v/napari-hdf5-activity.svg?color=teal)](https://pypi.org/project/napari-hdf5-activity)
-[![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-hdf5-activity)](https://napari-hub.org/plugins/napari-hdf5-activity)
-
 **`napari-hdf5-activity`** is a [napari](https://napari.org) plugin for analyzing
 activity and movement behavior from **HDF5, Zarr, and AVI** timelapse
 recordings — the companion to the [Recording Plugin](../recording.md).
@@ -72,6 +69,9 @@ periodograms and writes CSV and figure exports.
 - [Extended Analysis](extended-analysis.md) — in-depth analysis reference.
 - [Performance Optimizations](performance.md) — multiprocessing & tuning.
 - [AVI Integration](avi-integration.md) — working with AVI recordings.
+- [Processing Zarr recordings without the plugin](user-guide.md#processing-zarr-recordings-without-the-plugin)
+  — read frames and telemetry with plain `zarr` + NumPy, and compute the same
+  per-ROI activity signal in your own scripts.
 
 !!! note
     These pages are pulled automatically from the
